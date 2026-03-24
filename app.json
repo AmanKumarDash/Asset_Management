@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "asset-tracking-app",
+    "slug": "asset-tracking-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png",
+    "scheme": "assettrackingapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.assettrackingapp"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
