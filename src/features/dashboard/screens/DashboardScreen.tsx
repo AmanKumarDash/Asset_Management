@@ -174,14 +174,23 @@ function SectionButton({
   );
 }
 
-function MobileStatsGrid() {
+function MobileStatsGrid({ width }: { width: number }) {
+  const horizontalPadding = 32;
+  const columnGap = 10;
+  const cardWidth = (width - horizontalPadding - columnGap) / 2;
+
   return (
-    <View className="mb-6 flex-row flex-wrap px-4" style={{ gap: 10 }}>
-      {stats.map((stat) => (
+    <View className="mb-6 flex-row flex-wrap justify-between px-4">
+      {stats.map((stat, index) => (
         <View
           key={stat.label}
           className="rounded-[16px] border px-4 py-4"
-          style={{ width: "48.4%", backgroundColor: adminTheme.surfaceAlt, borderColor: adminTheme.border }}
+          style={{
+            width: cardWidth,
+            marginBottom: index < stats.length - 2 ? columnGap : 0,
+            backgroundColor: adminTheme.surfaceAlt,
+            borderColor: adminTheme.border,
+          }}
         >
           <Text
             className="text-[22px] font-semibold"
@@ -347,6 +356,7 @@ function MobileAuditCards() {
 }
 
 function MobileDashboard() {
+  const { width } = useWindowDimensions();
   const openAddEmployee = () => router.push("/employees/new");
 
   return (
@@ -356,7 +366,7 @@ function MobileDashboard() {
       showsVerticalScrollIndicator={false}
     >
       <MobileHeader />
-      <MobileStatsGrid />
+      <MobileStatsGrid width={width} />
       <MobileEmployeeCards onAddEmployee={openAddEmployee} />
       <MobileAuditCards />
     </ScrollView>

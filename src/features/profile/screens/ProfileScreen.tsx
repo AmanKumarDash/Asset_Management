@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useState } from "react";
 import {
   Pressable,
@@ -42,6 +43,7 @@ function MobileProfile() {
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => setSaved(true);
+  const handleLogout = () => router.replace("/login");
 
   return (
     <ScrollView
@@ -129,6 +131,19 @@ function MobileProfile() {
       <View className="px-4 pt-5">
         <Pressable onPress={handleSave} className="items-center rounded-[18px] px-5 py-4" style={{ backgroundColor: adminTheme.primary }}>
           <Text className="text-base font-semibold text-white">Save Changes</Text>
+        </Pressable>
+      </View>
+
+      <View className="px-4 pt-3">
+        <Pressable
+          onPress={handleLogout}
+          className="flex-row items-center justify-center rounded-[18px] border px-5 py-4"
+          style={{ borderColor: "#F3D3D3", backgroundColor: "#FFF5F5" }}
+        >
+          <Feather name="log-out" size={18} color="#D64545" />
+          <Text className="ml-3 text-base font-semibold" style={{ color: "#D64545" }}>
+            Logout
+          </Text>
         </Pressable>
       </View>
     </ScrollView>

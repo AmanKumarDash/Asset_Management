@@ -1,10 +1,5 @@
-import PlaceholderScreen from "@/features/navigation/screens/PlaceholderScreen";
+import ReportsScreen from "@/features/reports/screens/ReportsScreen";
 
 export default function Reports() {
-  return (
-    <PlaceholderScreen
-      title="Reports"
-      description="Reports and export views can be added here without changing the app shell."
-    />
-  );
+  return <ReportsScreen />;
 }

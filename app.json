@@ -4,7 +4,7 @@
     "slug": "asset-tracking-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "assettrackingapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -22,14 +22,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png",
+          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -42,6 +42,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "30a9bcb3-01f8-4512-97e4-d17bf833ab7c"
+      }
     }
   }
 }

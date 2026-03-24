@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { View, useWindowDimensions } from "react-native";
 import { usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,8 +13,9 @@ type AppShellProps = {
 export default function AppShell({ children }: AppShellProps) {
   const { width } = useWindowDimensions();
   const pathname = usePathname();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isDesktop = width >= 1024;
-  const showMobileNav = pathname !== "/employees/new";
+  const showMobileNav = pathname !== "/employees/new" && pathname !== "/reports";
 
   if (!isDesktop) {
     return (
@@ -43,7 +44,11 @@ export default function AppShell({ children }: AppShellProps) {
         className="flex-1 flex-row"
         style={{ backgroundColor: adminTheme.background }}
       >
-        <AppSidebar isDesktop />
+        <AppSidebar
+          isDesktop
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
+        />
         <View className="flex-1" style={{ backgroundColor: adminTheme.background }}>
           {children}
         </View>
