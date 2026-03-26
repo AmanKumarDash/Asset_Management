@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -9,8 +9,24 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { currentUser } from "../data/currentUser";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { AppUser } from "@/features/auth/types/auth";
 import { adminTheme } from "@/theme/adminTheme";
+
+const emptyUser: AppUser = {
+  initials: "",
+  name: "",
+  role: "employee",
+  roleBadge: "Employee",
+  email: "",
+  employeeId: "",
+  department: "",
+  phone: "",
+  location: "",
+  avatarBg: adminTheme.employeePrimary,
+  avatarText: "#ffffff",
+  permissions: [],
+};
 
 type ProfileFieldProps = {
   label: string;
@@ -21,29 +37,95 @@ type ProfileFieldProps = {
 function ProfileField({ label, value, onChangeText }: ProfileFieldProps) {
   return (
     <View className="flex-1">
-      <Text className="mb-2 text-sm" style={{ color: adminTheme.muted }}>{label}</Text>
+      <Text className="mb-2 text-sm" style={{ color: adminTheme.muted }}>
+        {label}
+      </Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholderTextColor={adminTheme.muted}
         className="rounded-[14px] border px-4 py-3.5 text-base"
-        style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface, color: adminTheme.slate }}
+        style={{
+          borderColor: adminTheme.border,
+          backgroundColor: adminTheme.surface,
+          color: adminTheme.slate,
+        }}
       />
     </View>
   );
 }
 
-function MobileProfile() {
-  const [name, setName] = useState(currentUser.name);
-  const [email, setEmail] = useState(currentUser.email);
-  const [employeeId, setEmployeeId] = useState(currentUser.employeeId);
-  const [department, setDepartment] = useState(currentUser.department);
-  const [phone, setPhone] = useState(currentUser.phone);
-  const [location, setLocation] = useState(currentUser.location);
-  const [saved, setSaved] = useState(false);
+function getRoleColors(user: AppUser) {
+  return user.role === "admin"
+    ? {
+        badgeBg: adminTheme.accentGoldSoft,
+        badgeText: adminTheme.accentGold,
+        primary: adminTheme.primary,
+      }
+    : {
+        badgeBg: adminTheme.employeePrimarySoft,
+        badgeText: adminTheme.employeePrimary,
+        primary: adminTheme.employeePrimary,
+      };
+}
 
-  const handleSave = () => setSaved(true);
-  const handleLogout = () => router.replace("/login");
+function useProfileForm(user: AppUser) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [employeeId, setEmployeeId] = useState(user.employeeId);
+  const [department, setDepartment] = useState(user.department);
+  const [phone, setPhone] = useState(user.phone);
+  const [location, setLocation] = useState(user.location);
+
+  useEffect(() => {
+    setName(user.name);
+    setEmail(user.email);
+    setEmployeeId(user.employeeId);
+    setDepartment(user.department);
+    setPhone(user.phone);
+    setLocation(user.location);
+  }, [user]);
+
+  return {
+    fields: { name, email, employeeId, department, phone, location },
+    setters: {
+      setName,
+      setEmail,
+      setEmployeeId,
+      setDepartment,
+      setPhone,
+      setLocation,
+    },
+  };
+}
+
+function MobileProfile() {
+  const { user, updateUser, signOut } = useAuthSession();
+  const [saved, setSaved] = useState(false);
+  const profileUser = user ?? emptyUser;
+  const roleColors = getRoleColors(profileUser);
+  const { fields, setters } = useProfileForm(profileUser);
+
+  if (!user) {
+    return null;
+  }
+
+  const handleSave = () => {
+    updateUser({
+      name: fields.name,
+      email: fields.email,
+      employeeId: fields.employeeId,
+      department: fields.department,
+      phone: fields.phone,
+      location: fields.location,
+    });
+    setSaved(true);
+  };
+
+  const handleLogout = () => {
+    signOut();
+    router.replace("/login");
+  };
 
   return (
     <ScrollView
@@ -64,27 +146,30 @@ function MobileProfile() {
 
           <View
             className="h-12 w-12 items-center justify-center rounded-full"
-            style={{ backgroundColor: currentUser.avatarBg }}
+            style={{ backgroundColor: user.avatarBg }}
           >
-            <Text
-              className="text-base font-semibold"
-              style={{ color: currentUser.avatarText }}
-            >
-              {currentUser.initials}
+            <Text className="text-base font-semibold" style={{ color: user.avatarText }}>
+              {user.initials}
             </Text>
           </View>
         </View>
 
-        <View className="self-start rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.accentGoldSoft }}>
-          <Text className="text-xs font-medium" style={{ color: adminTheme.accentGold }}>
-            {currentUser.roleBadge}
+        <View
+          className="self-start rounded-full px-3 py-1"
+          style={{ backgroundColor: roleColors.badgeBg }}
+        >
+          <Text className="text-xs font-medium" style={{ color: roleColors.badgeText }}>
+            {user.roleBadge}
           </Text>
         </View>
       </View>
 
       {saved ? (
         <View className="px-4 pt-4">
-          <View className="flex-row items-center rounded-[16px] border px-4 py-3" style={{ borderColor: adminTheme.successBg, backgroundColor: adminTheme.successBg }}>
+          <View
+            className="flex-row items-center rounded-[16px] border px-4 py-3"
+            style={{ borderColor: adminTheme.successBg, backgroundColor: adminTheme.successBg }}
+          >
             <Feather name="check-circle" size={18} color={adminTheme.successText} />
             <Text className="ml-3 text-sm font-medium" style={{ color: adminTheme.successText }}>
               Profile changes saved locally
@@ -95,41 +180,45 @@ function MobileProfile() {
 
       <View className="px-4 pt-4">
         <View className="mb-4">
-          <ProfileField label="Full name" value={name} onChangeText={setName} />
+          <ProfileField label="Full name" value={fields.name} onChangeText={setters.setName} />
         </View>
         <View className="mb-4">
           <ProfileField
             label="Email address"
-            value={email}
-            onChangeText={setEmail}
+            value={fields.email}
+            onChangeText={setters.setEmail}
           />
         </View>
         <View className="mb-4">
           <ProfileField
             label="Employee ID"
-            value={employeeId}
-            onChangeText={setEmployeeId}
+            value={fields.employeeId}
+            onChangeText={setters.setEmployeeId}
           />
         </View>
         <View className="mb-4">
           <ProfileField
             label="Department"
-            value={department}
-            onChangeText={setDepartment}
+            value={fields.department}
+            onChangeText={setters.setDepartment}
           />
         </View>
         <View className="mb-4">
-          <ProfileField label="Phone" value={phone} onChangeText={setPhone} />
+          <ProfileField label="Phone" value={fields.phone} onChangeText={setters.setPhone} />
         </View>
         <ProfileField
           label="Location"
-          value={location}
-          onChangeText={setLocation}
+          value={fields.location}
+          onChangeText={setters.setLocation}
         />
       </View>
 
       <View className="px-4 pt-5">
-        <Pressable onPress={handleSave} className="items-center rounded-[18px] px-5 py-4" style={{ backgroundColor: adminTheme.primary }}>
+        <Pressable
+          onPress={handleSave}
+          className="items-center rounded-[18px] px-5 py-4"
+          style={{ backgroundColor: roleColors.primary }}
+        >
           <Text className="text-base font-semibold text-white">Save Changes</Text>
         </Pressable>
       </View>
@@ -151,15 +240,27 @@ function MobileProfile() {
 }
 
 function DesktopProfile() {
-  const [name, setName] = useState(currentUser.name);
-  const [email, setEmail] = useState(currentUser.email);
-  const [employeeId, setEmployeeId] = useState(currentUser.employeeId);
-  const [department, setDepartment] = useState(currentUser.department);
-  const [phone, setPhone] = useState(currentUser.phone);
-  const [location, setLocation] = useState(currentUser.location);
+  const { user, updateUser } = useAuthSession();
   const [saved, setSaved] = useState(false);
+  const profileUser = user ?? emptyUser;
+  const roleColors = getRoleColors(profileUser);
+  const { fields, setters } = useProfileForm(profileUser);
 
-  const handleSave = () => setSaved(true);
+  if (!user) {
+    return null;
+  }
+
+  const handleSave = () => {
+    updateUser({
+      name: fields.name,
+      email: fields.email,
+      employeeId: fields.employeeId,
+      department: fields.department,
+      phone: fields.phone,
+      location: fields.location,
+    });
+    setSaved(true);
+  };
 
   return (
     <ScrollView
@@ -177,13 +278,20 @@ function DesktopProfile() {
           </Text>
         </View>
 
-        <Pressable onPress={handleSave} className="rounded-xl px-5 py-2.5" style={{ backgroundColor: adminTheme.primary }}>
+        <Pressable
+          onPress={handleSave}
+          className="rounded-xl px-5 py-2.5"
+          style={{ backgroundColor: roleColors.primary }}
+        >
           <Text className="text-sm font-semibold text-white">Save Changes</Text>
         </Pressable>
       </View>
 
       {saved ? (
-        <View className="mb-4 flex-row items-center rounded-[16px] border px-4 py-3" style={{ borderColor: adminTheme.successBg, backgroundColor: adminTheme.successBg }}>
+        <View
+          className="mb-4 flex-row items-center rounded-[16px] border px-4 py-3"
+          style={{ borderColor: adminTheme.successBg, backgroundColor: adminTheme.successBg }}
+        >
           <Feather name="check-circle" size={18} color={adminTheme.successText} />
           <Text className="ml-3 text-sm font-medium" style={{ color: adminTheme.successText }}>
             Profile changes saved locally
@@ -191,61 +299,66 @@ function DesktopProfile() {
         </View>
       ) : null}
 
-      <View className="rounded-[20px] border bg-white p-5" style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}>
+      <View
+        className="rounded-[20px] border bg-white p-5"
+        style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+      >
         <View className="mb-6 flex-row items-center">
           <View
             className="mr-4 h-16 w-16 items-center justify-center rounded-full"
-            style={{ backgroundColor: currentUser.avatarBg }}
+            style={{ backgroundColor: user.avatarBg }}
           >
-            <Text
-              className="text-lg font-semibold"
-              style={{ color: currentUser.avatarText }}
-            >
-              {currentUser.initials}
+            <Text className="text-lg font-semibold" style={{ color: user.avatarText }}>
+              {user.initials}
             </Text>
           </View>
 
           <View>
             <Text className="text-[22px] font-semibold" style={{ color: adminTheme.slate }}>
-              {name}
+              {fields.name}
             </Text>
-            <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>{currentUser.role}</Text>
-            <View className="mt-2 self-start rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.accentGoldSoft }}>
-              <Text className="text-xs font-medium" style={{ color: adminTheme.accentGold }}>
-                {currentUser.roleBadge}
+            <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
+              {user.roleBadge}
+            </Text>
+            <View
+              className="mt-2 self-start rounded-full px-3 py-1"
+              style={{ backgroundColor: roleColors.badgeBg }}
+            >
+              <Text className="text-xs font-medium" style={{ color: roleColors.badgeText }}>
+                {user.roleBadge}
               </Text>
             </View>
           </View>
         </View>
 
         <View className="mb-5 flex-row gap-4">
-          <ProfileField label="Full name" value={name} onChangeText={setName} />
+          <ProfileField label="Full name" value={fields.name} onChangeText={setters.setName} />
           <ProfileField
             label="Email address"
-            value={email}
-            onChangeText={setEmail}
+            value={fields.email}
+            onChangeText={setters.setEmail}
           />
         </View>
 
         <View className="mb-5 flex-row gap-4">
           <ProfileField
             label="Employee ID"
-            value={employeeId}
-            onChangeText={setEmployeeId}
+            value={fields.employeeId}
+            onChangeText={setters.setEmployeeId}
           />
           <ProfileField
             label="Department"
-            value={department}
-            onChangeText={setDepartment}
+            value={fields.department}
+            onChangeText={setters.setDepartment}
           />
         </View>
 
         <View className="flex-row gap-4">
-          <ProfileField label="Phone" value={phone} onChangeText={setPhone} />
+          <ProfileField label="Phone" value={fields.phone} onChangeText={setters.setPhone} />
           <ProfileField
             label="Location"
-            value={location}
-            onChangeText={setLocation}
+            value={fields.location}
+            onChangeText={setters.setLocation}
           />
         </View>
       </View>

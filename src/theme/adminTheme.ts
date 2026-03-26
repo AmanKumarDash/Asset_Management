@@ -1,6 +1,9 @@
 export const adminTheme = {
   primary: "#1A56DB",
   primaryDark: "#1E40AF",
+  employeePrimary: "#0F6E56",
+  employeePrimaryDark: "#0B5846",
+  employeePrimarySoft: "#E6F4EF",
   slate: "#1E293B",
   slateSoft: "#475569",
   muted: "#64748B",

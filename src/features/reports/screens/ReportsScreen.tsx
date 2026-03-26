@@ -1,6 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import EmployeeReportsScreen from "./EmployeeReportsScreen";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   auditReportSummary,
   reportMismatches,
@@ -404,8 +406,17 @@ function MobileReports() {
 }
 
 export default function ReportsScreen() {
+  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const isMobile = width < 1024;
+
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === "employee") {
+    return <EmployeeReportsScreen />;
+  }
 
   return isMobile ? <MobileReports /> : <DesktopReports />;
 }

@@ -1,8 +1,8 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Href, router, usePathname } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { desktopNavItems } from "../config/navItems";
-import { currentUser } from "@/features/profile/data/currentUser";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { getDesktopNavItems } from "../config/navItems";
 import { adminTheme } from "@/theme/adminTheme";
 
 type AppSidebarProps = {
@@ -16,8 +16,32 @@ export default function AppSidebar({
   isCollapsed = false,
   onToggleCollapse,
 }: AppSidebarProps) {
+  const { user, signOut } = useAuthSession();
   const pathname = usePathname();
-  const handleLogout = () => router.replace("/login");
+  const handleLogout = () => {
+    signOut();
+    router.replace("/login");
+  };
+
+  if (!user) {
+    return null;
+  }
+
+  const desktopNavItems = getDesktopNavItems(user.role);
+  const activeColor =
+    user.role === "admin" ? adminTheme.primary : adminTheme.employeePrimary;
+  const activeBg =
+    user.role === "admin"
+      ? adminTheme.infoBg
+      : adminTheme.employeePrimarySoft;
+  const roleBadgeBg =
+    user.role === "admin"
+      ? adminTheme.accentGoldSoft
+      : adminTheme.employeePrimarySoft;
+  const roleBadgeText =
+    user.role === "admin"
+      ? adminTheme.accentGold
+      : adminTheme.employeePrimary;
 
   if (!isDesktop) {
     return (
@@ -29,7 +53,7 @@ export default function AppSidebar({
           <View className="flex-row items-center">
             <View
               className="mr-3 h-10 w-10 items-center justify-center rounded-xl"
-              style={{ backgroundColor: adminTheme.primary }}
+              style={{ backgroundColor: activeColor }}
             >
               <MaterialCommunityIcons name="view-grid" size={20} color="#ffffff" />
             </View>
@@ -39,10 +63,10 @@ export default function AppSidebar({
           </View>
           <View
             className="rounded-full px-3 py-1"
-            style={{ backgroundColor: adminTheme.accentGoldSoft }}
+            style={{ backgroundColor: roleBadgeBg }}
           >
-            <Text className="text-xs font-semibold" style={{ color: adminTheme.accentGold }}>
-              Admin
+            <Text className="text-xs font-semibold" style={{ color: roleBadgeText }}>
+              {user.roleBadge}
             </Text>
           </View>
         </View>
@@ -59,16 +83,16 @@ export default function AppSidebar({
                   onPress={() => router.push(item.href as Href)}
                   className="flex-row items-center rounded-xl border px-4 py-3"
                   style={{
-                    borderColor: isActive ? adminTheme.primary : adminTheme.border,
-                    backgroundColor: isActive ? adminTheme.infoBg : adminTheme.surface,
+                    borderColor: isActive ? activeColor : adminTheme.border,
+                    backgroundColor: isActive ? activeBg : adminTheme.surface,
                   }}
                 >
                   <Feather
                     name={item.icon}
                     size={16}
-                    color={isActive ? adminTheme.primary : adminTheme.muted}
+                    color={isActive ? activeColor : adminTheme.muted}
                   />
-                  <Text className="ml-2 text-sm font-medium" style={{ color: isActive ? adminTheme.primary : adminTheme.muted }}>
+                  <Text className="ml-2 text-sm font-medium" style={{ color: isActive ? activeColor : adminTheme.muted }}>
                     {item.label}
                   </Text>
                 </Pressable>
@@ -94,7 +118,7 @@ export default function AppSidebar({
           <View className={`flex-row items-center ${isCollapsed ? "justify-center" : ""}`}>
             <View
               className={`${isCollapsed ? "" : "mr-3"} h-10 w-10 items-center justify-center rounded-xl`}
-              style={{ backgroundColor: adminTheme.primary }}
+              style={{ backgroundColor: activeColor }}
             >
               <MaterialCommunityIcons name="view-grid" size={20} color="#ffffff" />
             </View>
@@ -127,22 +151,22 @@ export default function AppSidebar({
         <View className={`flex-row items-center ${isCollapsed ? "justify-center" : ""}`}>
           <View
             className={`${isCollapsed ? "" : "mr-3"} h-10 w-10 items-center justify-center rounded-full`}
-            style={{ backgroundColor: currentUser.avatarBg }}
+            style={{ backgroundColor: user.avatarBg }}
           >
             <Text
               className="text-sm font-bold"
-              style={{ color: currentUser.avatarText }}
+              style={{ color: user.avatarText }}
             >
-              {currentUser.initials}
+              {user.initials}
             </Text>
           </View>
           {!isCollapsed ? (
             <View>
               <Text className="text-base font-medium" style={{ color: adminTheme.slate }}>
-                {currentUser.name}
+                {user.name}
               </Text>
-              <Text className="mt-1 text-xs font-medium" style={{ color: adminTheme.accentGold }}>
-                {currentUser.role}
+              <Text className="mt-1 text-xs font-medium" style={{ color: roleBadgeText }}>
+                {user.roleBadge}
               </Text>
             </View>
           ) : null}
@@ -161,17 +185,17 @@ export default function AppSidebar({
               className={`mb-1.5 flex-row rounded-2xl px-3 py-3 ${
                 isCollapsed ? "justify-center" : "items-center"
               }`}
-              style={{ backgroundColor: isActive ? adminTheme.infoBg : "transparent" }}
+              style={{ backgroundColor: isActive ? activeBg : "transparent" }}
             >
               <Feather
                 name={item.icon}
                 size={16}
-                color={isActive ? adminTheme.primary : adminTheme.muted}
+                color={isActive ? activeColor : adminTheme.muted}
               />
               {!isCollapsed ? (
                 <Text
                   className={`ml-3 text-[16px] ${isActive ? "font-semibold" : ""}`}
-                  style={{ color: isActive ? adminTheme.primary : adminTheme.slateSoft }}
+                  style={{ color: isActive ? activeColor : adminTheme.slateSoft }}
                 >
                   {item.label}
                 </Text>

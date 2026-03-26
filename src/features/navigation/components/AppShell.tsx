@@ -15,7 +15,12 @@ export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isDesktop = width >= 1024;
-  const showMobileNav = pathname !== "/employees/new" && pathname !== "/reports";
+  const hideMobileNav =
+    pathname === "/employees/new" ||
+    pathname === "/reports" ||
+    pathname === "/audits" ||
+    pathname.startsWith("/audits/");
+  const showMobileNav = !hideMobileNav;
 
   if (!isDesktop) {
     return (

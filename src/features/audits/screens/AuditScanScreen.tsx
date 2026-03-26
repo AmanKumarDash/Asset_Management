@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import EmployeeAuditScanScreen from "./EmployeeAuditScanScreen";
 import {
   Animated,
   Easing,
@@ -17,6 +18,7 @@ import {
   auditScanOverview,
   initialAuditScanItems,
 } from "../data/auditScanData";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { adminTheme } from "@/theme/adminTheme";
 
 function getToneStyles(tone: AuditItemTone) {
@@ -702,8 +704,17 @@ function DesktopAuditScan({ width }: { width: number }) {
 }
 
 export default function AuditScanScreen() {
+  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const isMobile = width < 1024;
+
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === "employee") {
+    return <EmployeeAuditScanScreen />;
+  }
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }

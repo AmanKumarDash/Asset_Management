@@ -1,7 +1,9 @@
 import { router } from "expo-router";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import EmployeeDashboardScreen from "./EmployeeDashboardScreen";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { AppUser } from "@/features/auth/types/auth";
 import { employees } from "@/features/employees/data/employeeData";
-import { currentUser } from "@/features/profile/data/currentUser";
 import { adminTheme } from "@/theme/adminTheme";
 
 const stats = [
@@ -109,7 +111,7 @@ function StatusPill({ label, tone }: { label: string; tone: Tone }) {
   );
 }
 
-function MobileHeader() {
+function MobileHeader({ user }: { user: AppUser }) {
   return (
     <View className="mb-5 border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
       <View className="mb-4 items-center">
@@ -124,24 +126,24 @@ function MobileHeader() {
         <View>
           <View className="self-start rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.accentGoldSoft }}>
             <Text className="text-xs font-medium" style={{ color: adminTheme.accentGold }}>
-              {currentUser.roleBadge}
+              {user.roleBadge}
             </Text>
           </View>
           <Text className="mt-3 text-[30px] font-semibold" style={{ color: adminTheme.slate }}>
-            {currentUser.name}
+            {user.name}
           </Text>
         </View>
 
         <Pressable
           onPress={() => router.push("/profile")}
           className="h-12 w-12 items-center justify-center rounded-full"
-          style={{ backgroundColor: currentUser.avatarBg }}
+          style={{ backgroundColor: user.avatarBg }}
         >
           <Text
             className="text-base font-semibold"
-            style={{ color: currentUser.avatarText }}
+            style={{ color: user.avatarText }}
           >
-            {currentUser.initials}
+            {user.initials}
           </Text>
         </Pressable>
       </View>
@@ -355,7 +357,7 @@ function MobileAuditCards() {
   );
 }
 
-function MobileDashboard() {
+function MobileDashboard({ user }: { user: AppUser }) {
   const { width } = useWindowDimensions();
   const openAddEmployee = () => router.push("/employees/new");
 
@@ -365,7 +367,7 @@ function MobileDashboard() {
       contentContainerStyle={{ paddingBottom: 20 }}
       showsVerticalScrollIndicator={false}
     >
-      <MobileHeader />
+      <MobileHeader user={user} />
       <MobileStatsGrid width={width} />
       <MobileEmployeeCards onAddEmployee={openAddEmployee} />
       <MobileAuditCards />
@@ -467,8 +469,17 @@ function DesktopDashboard({ width }: { width: number }) {
 }
 
 export default function DashboardScreen() {
+  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const isMobile = width < 1024;
 
-  return isMobile ? <MobileDashboard /> : <DesktopDashboard width={width} />;
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === "employee") {
+    return <EmployeeDashboardScreen />;
+  }
+
+  return isMobile ? <MobileDashboard user={user} /> : <DesktopDashboard width={width} />;
 }

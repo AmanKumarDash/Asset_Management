@@ -1,4 +1,12 @@
-export const desktopNavItems = [
+import { UserRole } from "@/features/auth/types/auth";
+
+export type AppNavItem = {
+  label: string;
+  href: string;
+  icon: "grid" | "users" | "check-square" | "bar-chart-2" | "user";
+};
+
+const adminDesktopNavItems: AppNavItem[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
@@ -26,7 +34,30 @@ export const desktopNavItems = [
   },
 ] as const;
 
-export const mobileNavItems = [
+const employeeDesktopNavItems: AppNavItem[] = [
+  {
+    label: "My Dashboard",
+    href: "/dashboard",
+    icon: "grid",
+  },
+  {
+    label: "Scan Assets",
+    href: "/audits",
+    icon: "check-square",
+  },
+  {
+    label: "My Reports",
+    href: "/reports",
+    icon: "bar-chart-2",
+  },
+  {
+    label: "Profile",
+    href: "/profile",
+    icon: "user",
+  },
+] as const;
+
+const adminMobileNavItems: AppNavItem[] = [
   {
     label: "Home",
     href: "/dashboard",
@@ -48,3 +79,29 @@ export const mobileNavItems = [
     icon: "bar-chart-2",
   },
 ] as const;
+
+const employeeMobileNavItems: AppNavItem[] = [
+  {
+    label: "Home",
+    href: "/dashboard",
+    icon: "grid",
+  },
+  {
+    label: "Scan",
+    href: "/audits",
+    icon: "check-square",
+  },
+  {
+    label: "Profile",
+    href: "/profile",
+    icon: "user",
+  },
+] as const;
+
+export function getDesktopNavItems(role: UserRole) {
+  return role === "admin" ? adminDesktopNavItems : employeeDesktopNavItems;
+}
+
+export function getMobileNavItems(role: UserRole) {
+  return role === "admin" ? adminMobileNavItems : employeeMobileNavItems;
+}

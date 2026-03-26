@@ -1,11 +1,21 @@
 import { Feather } from "@expo/vector-icons";
 import { Href, router, usePathname } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import { mobileNavItems } from "../config/navItems";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { getMobileNavItems } from "../config/navItems";
 import { adminTheme } from "@/theme/adminTheme";
 
 export default function AppBottomNav() {
+  const { user } = useAuthSession();
   const pathname = usePathname();
+
+  if (!user) {
+    return null;
+  }
+
+  const mobileNavItems = getMobileNavItems(user.role);
+  const activeColor =
+    user.role === "admin" ? adminTheme.primary : adminTheme.employeePrimary;
 
   return (
     <View
@@ -26,11 +36,11 @@ export default function AppBottomNav() {
               <Feather
                 name={item.icon}
                 size={18}
-                color={isActive ? adminTheme.primary : adminTheme.muted}
+                color={isActive ? activeColor : adminTheme.muted}
               />
               <Text
                 className={`mt-1 text-xs ${isActive ? "font-medium" : ""}`}
-                style={{ color: isActive ? adminTheme.primary : adminTheme.muted }}
+                style={{ color: isActive ? activeColor : adminTheme.muted }}
               >
                 {item.label}
               </Text>
