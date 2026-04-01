@@ -9,25 +9,35 @@ import AuthInput from "../components/AuthInput";
 import { useAuthSession } from "../hooks/useAuthSession";
 
 export default function LoginScreen() {
-  const { user, signIn } = useAuthSession();
+  const { isHydrated, user, signIn } = useAuthSession();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isHydrated) {
+    return null;
+  }
 
   if (user) {
     return <Redirect href="/dashboard" />;
   }
 
-  // Login stays intentionally simple here: it forwards the credentials to the
-  // session provider, which decides whether this mock account is admin or employee.
-  const handleSignIn = () => {
-    const signedIn = signIn({ identifier, password });
+  const handleSignIn = async () => {
+    if (!identifier.trim() || !password.trim()) {
+      setError("Enter your email or employee ID and password.");
+      return;
+    }
 
-    if (!signedIn) {
+    setIsSubmitting(true);
+    const result = await signIn({ identifier, password });
+    setIsSubmitting(false);
+
+    if (!result.success) {
       appLogger.warn("LoginScreen", "Rejected sign-in attempt from login form.", {
         identifier,
       });
-      setError("Account not found. Use alka@company.com or aman@company.com.");
+      setError(result.message ?? "Unable to sign in right now. Please try again.");
       return;
     }
 
@@ -71,7 +81,13 @@ export default function LoginScreen() {
           <Text className="text-sm text-blue-600">Forgot password?</Text>
         </TouchableOpacity>
 
-        <AuthButton title="Sign In" onPress={handleSignIn} />
+        <AuthButton
+          title={isSubmitting ? "Signing In..." : "Sign In"}
+          onPress={() => {
+            void handleSignIn();
+          }}
+          disabled={isSubmitting}
+        />
 
         {error ? (
           <View className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
@@ -85,10 +101,11 @@ export default function LoginScreen() {
             your administrator if you need access.
           </Text>
           <Text className="mt-3 text-sm text-gray-600">
-            Demo accounts: `alka@company.com` for Admin, `aman@company.com` for Employee.
+            Make sure `EXPO_PUBLIC_API_URL` points to your backend before signing in.
           </Text>
         </View>
       </AuthCard>
     </View>
   );
 }
+

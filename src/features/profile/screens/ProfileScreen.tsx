@@ -9,15 +9,16 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { ROLE_BADGES, USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { AppUser } from "@/features/auth/types/auth";
+import { AppUser } from "@/models/user";
 import { adminTheme } from "@/theme/adminTheme";
 
 const emptyUser: AppUser = {
   initials: "",
   name: "",
-  role: "employee",
-  roleBadge: "Employee",
+  role: USER_ROLES.EMPLOYEE,
+  roleBadge: ROLE_BADGES[USER_ROLES.EMPLOYEE],
   email: "",
   employeeId: "",
   department: "",
@@ -56,7 +57,7 @@ function ProfileField({ label, value, onChangeText }: ProfileFieldProps) {
 }
 
 function getRoleColors(user: AppUser) {
-  return user.role === "admin"
+  return user.role === USER_ROLES.ADMIN
     ? {
         badgeBg: adminTheme.accentGoldSoft,
         badgeText: adminTheme.accentGold,
@@ -372,3 +373,4 @@ export default function ProfileScreen() {
 
   return isMobile ? <MobileProfile /> : <DesktopProfile />;
 }
+

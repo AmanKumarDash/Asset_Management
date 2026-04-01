@@ -1,20 +1,6 @@
-export type EmployeeStatusTone = "success" | "muted";
+import { EmployeeListItem } from "@/models/employee";
 
-export type EmployeeRecord = {
-  initials: string;
-  name: string;
-  department: string;
-  audit: string;
-  status: string;
-  statusTone: EmployeeStatusTone;
-  activeAt: string;
-  avatarColor: string;
-  avatarText: string;
-  email: string;
-  employeeId: string;
-};
-
-export const employees: EmployeeRecord[] = [
+export const employees: EmployeeListItem[] = [
   {
     initials: "AM",
     name: "Aman",

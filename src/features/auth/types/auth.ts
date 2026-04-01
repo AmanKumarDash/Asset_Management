@@ -1,38 +1,27 @@
-export type UserRole = "admin" | "employee";
+import type { AuthSession } from "@/models/session";
+import type {
+  AppPermission,
+  AppUser,
+  RoleBadge,
+  UserRole,
+} from "@/models/user";
 
-export type AppPermission =
-  | "view_dashboard"
-  | "manage_employees"
-  | "assign_audits"
-  | "perform_audit"
-  | "submit_audit"
-  | "view_all_reports"
-  | "view_own_reports"
-  | "manage_profile";
-
-export type AppUser = {
-  initials: string;
-  name: string;
-  role: UserRole;
-  roleBadge: "Admin" | "Employee";
-  email: string;
-  employeeId: string;
-  department: string;
-  phone: string;
-  location: string;
-  avatarBg: string;
-  avatarText: string;
-  permissions: AppPermission[];
-};
+export type { AuthSession, AppPermission, AppUser, RoleBadge, UserRole };
 
 export type SignInInput = {
   identifier: string;
   password: string;
 };
 
+export type SignInResult = {
+  success: boolean;
+  message?: string;
+};
+
 export type AuthSessionContextValue = {
+  isHydrated: boolean;
   user: AppUser | null;
-  signIn: (input: SignInInput) => boolean;
+  signIn: (input: SignInInput) => Promise<SignInResult>;
   signOut: () => void;
   updateUser: (updates: Partial<AppUser>) => void;
   hasPermission: (permission: AppPermission) => boolean;

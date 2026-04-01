@@ -1,4 +1,5 @@
-import { UserRole } from "@/features/auth/types/auth";
+import { USER_ROLES } from "@/constants/auth";
+import { UserRole } from "@/models/user";
 
 export type AppNavItem = {
   label: string;
@@ -99,9 +100,9 @@ const employeeMobileNavItems: AppNavItem[] = [
 ] as const;
 
 export function getDesktopNavItems(role: UserRole) {
-  return role === "admin" ? adminDesktopNavItems : employeeDesktopNavItems;
+  return role === USER_ROLES.ADMIN ? adminDesktopNavItems : employeeDesktopNavItems;
 }
 
 export function getMobileNavItems(role: UserRole) {
-  return role === "admin" ? adminMobileNavItems : employeeMobileNavItems;
+  return role === USER_ROLES.ADMIN ? adminMobileNavItems : employeeMobileNavItems;
 }

@@ -1,9 +1,10 @@
 import { router } from "expo-router";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { USER_ROLES } from "@/constants/auth";
 import EmployeeDashboardScreen from "./EmployeeDashboardScreen";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { AppUser } from "@/features/auth/types/auth";
 import { employees } from "@/features/employees/data/employeeData";
+import { AppUser } from "@/models/user";
 import { adminTheme } from "@/theme/adminTheme";
 
 const stats = [
@@ -477,9 +478,10 @@ export default function DashboardScreen() {
     return null;
   }
 
-  if (user.role === "employee") {
+  if (user.role === USER_ROLES.EMPLOYEE) {
     return <EmployeeDashboardScreen />;
   }
 
   return isMobile ? <MobileDashboard user={user} /> : <DesktopDashboard width={width} />;
 }
+

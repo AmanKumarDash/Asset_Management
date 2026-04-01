@@ -7,35 +7,27 @@
     "icon": "./assets/images/icon.png",
     "scheme": "assettrackingapp",
     "userInterfaceStyle": "automatic",
-
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "package": "com.anonymous.assettrackingapp",
       "jsEngine": "hermes",
-
       "enableProguardInReleaseBuilds": true,
       "enableShrinkResourcesInReleaseBuilds": true,
-
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": []
     },
-
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -49,14 +41,13 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {}
     }

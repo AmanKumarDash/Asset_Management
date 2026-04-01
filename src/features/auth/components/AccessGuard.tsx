@@ -1,8 +1,8 @@
 import { ReactNode } from "react";
 import { Redirect } from "expo-router";
+import { AppPermission, UserRole } from "@/models/user";
 import { appLogger } from "@/utils/appLogger";
 import { useAuthSession } from "../hooks/useAuthSession";
-import { AppPermission, UserRole } from "../types/auth";
 
 type AccessGuardProps = {
   children: ReactNode;
@@ -15,7 +15,11 @@ export default function AccessGuard({
   allowedRoles,
   requiredPermissions,
 }: AccessGuardProps) {
-  const { user, hasPermission } = useAuthSession();
+  const { isHydrated, user, hasPermission } = useAuthSession();
+
+  if (!isHydrated) {
+    return null;
+  }
 
   if (!user) {
     appLogger.warn("AccessGuard", "Redirecting to login because no active session was found.");

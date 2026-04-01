@@ -1,0 +1,58 @@
+import { AppPermission, RoleBadge, UserRole } from "@/models/user";
+
+export const USER_ROLES = {
+  ADMIN: "admin",
+  EMPLOYEE: "employee",
+} as const satisfies Record<string, UserRole>;
+
+export const USER_TYPE_IDS = {
+  ADMIN: 1,
+  EMPLOYEE: 2,
+} as const;
+
+export const ROLE_BADGES: Record<UserRole, RoleBadge> = {
+  [USER_ROLES.ADMIN]: "Admin",
+  [USER_ROLES.EMPLOYEE]: "Employee",
+};
+
+export const APP_PERMISSIONS = {
+  VIEW_DASHBOARD: "view_dashboard",
+  MANAGE_EMPLOYEES: "manage_employees",
+  ASSIGN_AUDITS: "assign_audits",
+  PERFORM_AUDIT: "perform_audit",
+  SUBMIT_AUDIT: "submit_audit",
+  VIEW_ALL_REPORTS: "view_all_reports",
+  VIEW_OWN_REPORTS: "view_own_reports",
+  MANAGE_PROFILE: "manage_profile",
+} as const satisfies Record<string, AppPermission>;
+
+export const KNOWN_PERMISSIONS: AppPermission[] = [
+  APP_PERMISSIONS.VIEW_DASHBOARD,
+  APP_PERMISSIONS.MANAGE_EMPLOYEES,
+  APP_PERMISSIONS.ASSIGN_AUDITS,
+  APP_PERMISSIONS.PERFORM_AUDIT,
+  APP_PERMISSIONS.SUBMIT_AUDIT,
+  APP_PERMISSIONS.VIEW_ALL_REPORTS,
+  APP_PERMISSIONS.VIEW_OWN_REPORTS,
+  APP_PERMISSIONS.MANAGE_PROFILE,
+];
+
+export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, AppPermission[]> = {
+  [USER_ROLES.ADMIN]: [
+    APP_PERMISSIONS.VIEW_DASHBOARD,
+    APP_PERMISSIONS.MANAGE_EMPLOYEES,
+    APP_PERMISSIONS.ASSIGN_AUDITS,
+    APP_PERMISSIONS.PERFORM_AUDIT,
+    APP_PERMISSIONS.SUBMIT_AUDIT,
+    APP_PERMISSIONS.VIEW_ALL_REPORTS,
+    APP_PERMISSIONS.VIEW_OWN_REPORTS,
+    APP_PERMISSIONS.MANAGE_PROFILE,
+  ],
+  [USER_ROLES.EMPLOYEE]: [
+    APP_PERMISSIONS.VIEW_DASHBOARD,
+    APP_PERMISSIONS.PERFORM_AUDIT,
+    APP_PERMISSIONS.SUBMIT_AUDIT,
+    APP_PERMISSIONS.VIEW_OWN_REPORTS,
+    APP_PERMISSIONS.MANAGE_PROFILE,
+  ],
+};
