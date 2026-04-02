@@ -1,3 +1,7 @@
+﻿import {
+  AuditSubmitRequest,
+  AuditSubmitResponse,
+} from "@/features/audits/types/audit";
 import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
 import { LoginResponse } from "@/features/auth/types/authApi";
 import { AxiosInstance } from "axios";
@@ -38,6 +42,20 @@ class ApiService {
     >(ENDPOINTS.INVENTORY.SEARCH_BARCODE_SCAN_MODE(searchText));
 
     return extractResponseData<InventoryBarcodeScanDetail[]>(response.data);
+  }
+
+  async submitScannedAuditTags(tagIds: string[]): Promise<AuditSubmitResponse> {
+    assertApiBaseUrlConfigured();
+
+    const payload: AuditSubmitRequest = {
+      TAG_IDs: tagIds,
+    };
+
+    const response = await this.api.post<
+      ApiEnvelope<AuditSubmitResponse> | AuditSubmitResponse
+    >(ENDPOINTS.AUDIT.SUBMIT_SCANNED_TAGS, payload);
+
+    return extractResponseData<AuditSubmitResponse>(response.data);
   }
 }
 

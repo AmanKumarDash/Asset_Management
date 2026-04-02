@@ -1,5 +1,6 @@
-import { USER_ROLES } from "@/constants/auth";
+﻿import { USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { AuditPhase } from "@/features/audits/types/audit";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
@@ -61,6 +62,116 @@ function getStatusIconName(tone: AuditItemTone): "check" | "x" | "plus" {
     default:
       return "plus";
   }
+}
+
+function getScanPanelHeading(
+  phase: AuditPhase,
+  connectionStatus: MqttConnectionStatus
+) {
+  if (phase === "idle") {
+    return "Ready to Start Audit";
+  }
+
+  if (phase === "submitting") {
+    return "Submitting audit snapshot...";
+  }
+
+  if (phase === "submitted") {
+    return "Audit report ready";
+  }
+
+  if (phase === "submitError") {
+    return "Audit submission failed";
+  }
+
+  if (connectionStatus === "connected") {
+    return "Scanning for RFID...";
+  }
+
+  if (connectionStatus === "error") {
+    return "Scanner connection failed";
+  }
+
+  return "Connecting to scanner...";
+}
+
+function getScanPanelDescription(
+  phase: AuditPhase,
+  connectionStatus: MqttConnectionStatus,
+  submitError: string | null
+) {
+  if (phase === "idle") {
+    return "Tap Start Audit to activate RFID scanning for this room and begin logging assets.";
+  }
+
+  if (phase === "submitting") {
+    return "MQTT has been disconnected and the scanned TAG_ID list is frozen. We are sending the snapshot to the backend for missing and extra comparison.";
+  }
+
+  if (phase === "submitted") {
+    return "MQTT is disconnected and the backend comparison has been applied. The list below now reflects the submitted audit result.";
+  }
+
+  if (phase === "submitError") {
+    return (
+      submitError ??
+      "MQTT is already disconnected and the scanned snapshot is frozen. Retry submit once the audit API is available."
+    );
+  }
+
+  if (connectionStatus === "connected") {
+    return "Hold the RFID reader near an asset tag. Live tag IDs will appear below as they are scanned.";
+  }
+
+  if (connectionStatus === "error") {
+    return "Unable to connect to the MQTT scanner right now. Check the broker settings and try again.";
+  }
+
+  return "Opening the live MQTT scanner connection for this audit.";
+}
+
+function getSubmitButtonLabel(phase: AuditPhase) {
+  if (phase === "submitting") {
+    return "Submitting...";
+  }
+
+  if (phase === "submitted") {
+    return "Report Ready";
+  }
+
+  if (phase === "submitError") {
+    return "Retry Submit";
+  }
+
+  return "Proceed to Submit";
+}
+
+function getListHeading(phase: AuditPhase) {
+  if (phase === "submitted") {
+    return "Audit report";
+  }
+
+  if (phase === "submitting") {
+    return "Submitting snapshot";
+  }
+
+  if (phase === "submitError") {
+    return "Frozen submission snapshot";
+  }
+
+  return "Scanned so far";
+}
+
+function getEmptyStateDescription(phase: AuditPhase) {
+  if (phase === "submitted") {
+    return "The audit report is ready, but no items were returned for display.";
+  }
+
+  if (phase === "submitting" || phase === "submitError") {
+    return "The scan snapshot has been frozen, but there are no submitted items to display yet.";
+  }
+
+  return "Start the audit to activate scanning and populate asset results.";
 }
 
 function LegendRow() {
@@ -182,14 +293,19 @@ function ScanningIndicator({ isActive }: { isActive: boolean }) {
 }
 
 function ScanPanel({
-  isScanning,
+  phase,
   connectionStatus,
   onStartAudit,
+  submitError,
 }: {
-  isScanning: boolean;
+  phase: AuditPhase;
   connectionStatus: MqttConnectionStatus;
   onStartAudit: () => void;
+  submitError: string | null;
 }) {
+  const showStartButton =
+    phase === "idle" || phase === "submitted" || phase === "submitError";
+
   return (
     <View
       className="items-center justify-center rounded-[22px] border px-6 py-10"
@@ -199,40 +315,28 @@ function ScanPanel({
         backgroundColor: adminTheme.surface,
       }}
     >
-      <ScanningIndicator isActive={isScanning} />
+      <ScanningIndicator isActive={phase === "scanning"} />
       <Text
         className="text-[18px] font-semibold"
         style={{ color: adminTheme.primary }}
       >
-        {!isScanning
-          ? "Ready to Start Audit"
-          : connectionStatus === "connected"
-            ? "Scanning for RFID..."
-            : connectionStatus === "error"
-              ? "Scanner connection failed"
-              : "Connecting to scanner..."}
+        {getScanPanelHeading(phase, connectionStatus)}
       </Text>
       <Text
         className="mt-2 text-center text-base leading-6"
         style={{ color: adminTheme.slateSoft, maxWidth: 520 }}
       >
-        {!isScanning
-          ? "Tap Start Audit to activate RFID scanning for this room and begin logging assets."
-          : connectionStatus === "connected"
-            ? "Hold the RFID reader near an asset tag. Live tag IDs will appear below as they are scanned."
-            : connectionStatus === "error"
-              ? "Unable to connect to the MQTT scanner right now. Check the broker settings and try again."
-              : "Opening the live MQTT scanner connection for this audit."}
+        {getScanPanelDescription(phase, connectionStatus, submitError)}
       </Text>
 
-      {!isScanning ? (
+      {showStartButton ? (
         <Pressable
           onPress={onStartAudit}
           className="mt-5 rounded-[14px] px-6 py-3.5"
           style={{ backgroundColor: adminTheme.primary }}
         >
           <Text className="text-base font-semibold text-white">
-            Start Audit
+            {phase === "idle" ? "Start Audit" : "Start New Audit"}
           </Text>
         </Pressable>
       ) : null}
@@ -359,18 +463,57 @@ function AuditScanList({ items }: { items: AuditScanItem[] }) {
   );
 }
 
+function SubmitActionButton({
+  phase,
+  canSubmit,
+  onSubmitAudit,
+  mobile = false,
+}: {
+  phase: AuditPhase;
+  canSubmit: boolean;
+  onSubmitAudit: () => void;
+  mobile?: boolean;
+}) {
+  const disabled =
+    phase === "submitting" || phase === "submitted" || !canSubmit;
+
+  return (
+    <Pressable
+      onPress={onSubmitAudit}
+      disabled={disabled}
+      className={`items-center rounded-[14px] ${
+        mobile ? "px-5 py-4" : "px-4 py-4"
+      }`}
+      style={{
+        backgroundColor: disabled ? adminTheme.mutedBg : adminTheme.primary,
+      }}
+    >
+      <Text
+        className={`${mobile ? "text-base" : "text-[18px]"} font-semibold`}
+        style={{ color: disabled ? adminTheme.mutedText : "#FFFFFF" }}
+      >
+        {getSubmitButtonLabel(phase)}
+      </Text>
+    </Pressable>
+  );
+}
+
 function DesktopProgressCard({
-  isScanning,
+  phase,
   scanned,
   found,
   missing,
   extra,
+  canSubmit,
+  onSubmitAudit,
 }: {
-  isScanning: boolean;
+  phase: AuditPhase;
   scanned: number;
   found: number;
   missing: number;
   extra: number;
+  canSubmit: boolean;
+  onSubmitAudit: () => void;
 }) {
   const progress = Math.min(scanned / auditScanOverview.totalAssets, 1);
 
@@ -437,22 +580,13 @@ function DesktopProgressCard({
         ))}
       </View>
 
-      <Pressable
-        disabled={!isScanning}
-        className="mt-4 items-center rounded-[14px] px-4 py-4"
-        style={{
-          backgroundColor: isScanning
-            ? adminTheme.primary
-            : adminTheme.mutedBg,
-        }}
-      >
-        <Text
-          className="text-[18px] font-semibold"
-          style={{ color: isScanning ? "#FFFFFF" : adminTheme.mutedText }}
-        >
-          Proceed to Submit
-        </Text>
-      </Pressable>
+      <View className="mt-4">
+        <SubmitActionButton
+          phase={phase}
+          canSubmit={canSubmit}
+          onSubmitAudit={onSubmitAudit}
+        />
+      </View>
     </View>
   );
 }
@@ -461,11 +595,15 @@ function MobileAuditScan() {
   const {
     items,
     isScanning,
+    auditPhase,
+    canSubmit,
+    submitError,
     connectionStatus,
     manualAssetId,
     setManualAssetId,
     startAudit,
     addManualAsset,
+    submitAudit,
     summary,
   } = useAuditScanState();
 
@@ -517,9 +655,10 @@ function MobileAuditScan() {
 
       <View className="px-4 pt-4">
         <ScanPanel
-          isScanning={isScanning}
+          phase={auditPhase}
           connectionStatus={connectionStatus}
           onStartAudit={startAudit}
+          submitError={submitError}
         />
       </View>
 
@@ -539,7 +678,7 @@ function MobileAuditScan() {
             className="text-[18px] font-semibold"
             style={{ color: adminTheme.slate }}
           >
-            Scanned so far
+            {getListHeading(auditPhase)}
           </Text>
           <View
             className="rounded-full px-3 py-1"
@@ -554,7 +693,7 @@ function MobileAuditScan() {
           </View>
         </View>
 
-        {isScanning ? (
+        {auditPhase !== "idle" && items.length > 0 ? (
           <AuditScanList items={items} />
         ) : (
           <View
@@ -565,10 +704,19 @@ function MobileAuditScan() {
             }}
           >
             <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
-              Start the audit to activate scanning and populate asset results.
+              {getEmptyStateDescription(auditPhase)}
             </Text>
           </View>
         )}
+      </View>
+
+      <View className="px-4 pt-4">
+        <SubmitActionButton
+          phase={auditPhase}
+          canSubmit={canSubmit}
+          onSubmitAudit={submitAudit}
+          mobile
+        />
       </View>
 
       <View className="px-4 pt-4">
@@ -587,11 +735,15 @@ function DesktopAuditScan({ width }: { width: number }) {
   const {
     items,
     isScanning,
+    auditPhase,
+    canSubmit,
+    submitError,
     connectionStatus,
     manualAssetId,
     setManualAssetId,
     startAudit,
     addManualAsset,
+    submitAudit,
     summary,
   } = useAuditScanState();
   const twoColumn = width >= 1340;
@@ -625,18 +777,21 @@ function DesktopAuditScan({ width }: { width: number }) {
       >
         <View style={{ flex: 1.25 }}>
           <ScanPanel
-          isScanning={isScanning}
-          connectionStatus={connectionStatus}
-          onStartAudit={startAudit}
-        />
+            phase={auditPhase}
+            connectionStatus={connectionStatus}
+            onStartAudit={startAudit}
+            submitError={submitError}
+          />
         </View>
         <View style={{ width: twoColumn ? 300 : 260 }}>
           <DesktopProgressCard
-            isScanning={isScanning}
+            phase={auditPhase}
             scanned={summary.scanned}
             found={summary.found}
             missing={summary.missing}
             extra={summary.extra}
+            canSubmit={canSubmit}
+            onSubmitAudit={submitAudit}
           />
         </View>
       </View>
@@ -654,8 +809,16 @@ function DesktopAuditScan({ width }: { width: number }) {
         <LegendRow />
       </View>
 
-      {isScanning ? (
-        <AuditScanList items={items} />
+      {auditPhase !== "idle" && items.length > 0 ? (
+        <>
+          <Text
+            className="mb-3 text-[18px] font-semibold"
+            style={{ color: adminTheme.slate }}
+          >
+            {getListHeading(auditPhase)}
+          </Text>
+          <AuditScanList items={items} />
+        </>
       ) : (
         <View
           className="rounded-[20px] border px-5 py-5"
@@ -665,8 +828,7 @@ function DesktopAuditScan({ width }: { width: number }) {
           }}
         >
           <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
-            Start the audit to activate live scanning, manual asset search, and
-            result tracking for this location.
+            {getEmptyStateDescription(auditPhase)}
           </Text>
         </View>
       )}
@@ -689,4 +851,3 @@ export default function AuditScanScreen() {
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }
-
