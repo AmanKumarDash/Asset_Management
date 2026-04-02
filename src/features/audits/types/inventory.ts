@@ -1,0 +1,21 @@
+export type InventoryBarcodeScanDetail = {
+  ProductId: number;
+  ProductCode: string;
+  ID: number;
+  ProductName: string;
+  MetricUnitShortName?: string;
+  ProductImagePath?: string;
+  LatestPrice?: number;
+  TotalReceiveqty?: number;
+  MRP?: number;
+  BatchId?: string;
+  BatchLotNo?: string;
+  ProductColour?: string;
+  ProductSize?: string;
+  ModelNo?: string;
+  ManufecturName?: string;
+  TagId?: string;
+  Sale_Price?: number;
+  Sale_BasePrice?: number;
+  ActualSellPrice?: number;
+};

@@ -1,7 +1,10 @@
+import { USER_ROLES } from "@/constants/auth";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { MqttConnectionStatus } from "@/network/mqttService";
+import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import EmployeeAuditScanScreen from "./EmployeeAuditScanScreen";
+import { useEffect, useRef } from "react";
 import {
   Animated,
   Easing,
@@ -16,10 +19,9 @@ import {
   AuditItemTone,
   AuditScanItem,
   auditScanOverview,
-  initialAuditScanItems,
 } from "../data/auditScanData";
-import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { adminTheme } from "@/theme/adminTheme";
+import { useAuditScanState } from "../hooks/useAuditScanState";
+import EmployeeAuditScanScreen from "./EmployeeAuditScanScreen";
 
 function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
@@ -59,59 +61,6 @@ function getStatusIconName(tone: AuditItemTone): "check" | "x" | "plus" {
     default:
       return "plus";
   }
-}
-
-function useAuditScanState() {
-  const [manualAssetId, setManualAssetId] = useState("");
-  const [isScanning, setIsScanning] = useState(false);
-  const [items, setItems] = useState(initialAuditScanItems);
-
-  const summary = useMemo(() => {
-    if (!isScanning) {
-      return { found: 0, missing: 0, extra: 0, scanned: 0 };
-    }
-
-    const found = items.filter((item) => item.tone === "found").length + 19;
-    const missing = items.filter((item) => item.tone === "missing").length;
-    const extra = items.filter((item) => item.tone === "extra").length + 1;
-    const scanned = found + missing + extra;
-
-    return { found, missing, extra, scanned };
-  }, [isScanning, items]);
-
-  const startAudit = () => {
-    setIsScanning(true);
-  };
-
-  const addManualAsset = () => {
-    const value = manualAssetId.trim();
-
-    if (!value || !isScanning) {
-      return;
-    }
-
-    setItems((current) => [
-      {
-        id: value,
-        title: "Manual Asset Entry",
-        subtitle: `${value} - Added manually`,
-        tone: "extra",
-        icon: "plus-circle",
-      },
-      ...current,
-    ]);
-    setManualAssetId("");
-  };
-
-  return {
-    items,
-    isScanning,
-    manualAssetId,
-    setManualAssetId,
-    startAudit,
-    addManualAsset,
-    summary,
-  };
 }
 
 function LegendRow() {
@@ -234,9 +183,11 @@ function ScanningIndicator({ isActive }: { isActive: boolean }) {
 
 function ScanPanel({
   isScanning,
+  connectionStatus,
   onStartAudit,
 }: {
   isScanning: boolean;
+  connectionStatus: MqttConnectionStatus;
   onStartAudit: () => void;
 }) {
   return (
@@ -253,15 +204,25 @@ function ScanPanel({
         className="text-[18px] font-semibold"
         style={{ color: adminTheme.primary }}
       >
-        {isScanning ? "Scanning for RFID..." : "Ready to Start Audit"}
+        {!isScanning
+          ? "Ready to Start Audit"
+          : connectionStatus === "connected"
+            ? "Scanning for RFID..."
+            : connectionStatus === "error"
+              ? "Scanner connection failed"
+              : "Connecting to scanner..."}
       </Text>
       <Text
         className="mt-2 text-center text-base leading-6"
         style={{ color: adminTheme.slateSoft, maxWidth: 520 }}
       >
-        {isScanning
-          ? "Hold the RFID reader near an asset tag, or enter asset ID manually"
-          : "Tap Start Audit to activate RFID scanning for this room and begin logging assets."}
+        {!isScanning
+          ? "Tap Start Audit to activate RFID scanning for this room and begin logging assets."
+          : connectionStatus === "connected"
+            ? "Hold the RFID reader near an asset tag. Live tag IDs will appear below as they are scanned."
+            : connectionStatus === "error"
+              ? "Unable to connect to the MQTT scanner right now. Check the broker settings and try again."
+              : "Opening the live MQTT scanner connection for this audit."}
       </Text>
 
       {!isScanning ? (
@@ -500,6 +461,7 @@ function MobileAuditScan() {
   const {
     items,
     isScanning,
+    connectionStatus,
     manualAssetId,
     setManualAssetId,
     startAudit,
@@ -554,7 +516,11 @@ function MobileAuditScan() {
       </View>
 
       <View className="px-4 pt-4">
-        <ScanPanel isScanning={isScanning} onStartAudit={startAudit} />
+        <ScanPanel
+          isScanning={isScanning}
+          connectionStatus={connectionStatus}
+          onStartAudit={startAudit}
+        />
       </View>
 
       <View className="px-4 pt-3">
@@ -621,6 +587,7 @@ function DesktopAuditScan({ width }: { width: number }) {
   const {
     items,
     isScanning,
+    connectionStatus,
     manualAssetId,
     setManualAssetId,
     startAudit,
@@ -657,7 +624,11 @@ function DesktopAuditScan({ width }: { width: number }) {
         style={{ gap: 18, alignItems: "flex-start" }}
       >
         <View style={{ flex: 1.25 }}>
-          <ScanPanel isScanning={isScanning} onStartAudit={startAudit} />
+          <ScanPanel
+          isScanning={isScanning}
+          connectionStatus={connectionStatus}
+          onStartAudit={startAudit}
+        />
         </View>
         <View style={{ width: twoColumn ? 300 : 260 }}>
           <DesktopProgressCard
@@ -712,9 +683,10 @@ export default function AuditScanScreen() {
     return null;
   }
 
-  if (user.role === "employee") {
+  if (user.role === USER_ROLES.EMPLOYEE) {
     return <EmployeeAuditScanScreen />;
   }
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }
+

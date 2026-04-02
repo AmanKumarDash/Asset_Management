@@ -1,6 +1,7 @@
-import { AxiosInstance } from "axios";
+import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
 import { LoginResponse } from "@/features/auth/types/authApi";
-import { axiosInstance, assertApiBaseUrlConfigured } from "./axiosConfig";
+import { AxiosInstance } from "axios";
+import { assertApiBaseUrlConfigured, axiosInstance } from "./axiosConfig";
 import { ENDPOINTS } from "./endpoints";
 import { ApiEnvelope, extractResponseData } from "./responses";
 
@@ -25,6 +26,18 @@ class ApiService {
     );
 
     return extractResponseData<LoginResponse>(response.data);
+  }
+
+  async searchInventoryBarcodeScanMode(
+    searchText: string
+  ): Promise<InventoryBarcodeScanDetail[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiEnvelope<InventoryBarcodeScanDetail[]> | InventoryBarcodeScanDetail[]
+    >(ENDPOINTS.INVENTORY.SEARCH_BARCODE_SCAN_MODE(searchText));
+
+    return extractResponseData<InventoryBarcodeScanDetail[]>(response.data);
   }
 }
 
