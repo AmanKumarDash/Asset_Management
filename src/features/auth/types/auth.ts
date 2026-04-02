@@ -1,3 +1,4 @@
+﻿import { OrganizationDetails } from "@/models/organization";
 import type { AuthSession } from "@/models/session";
 import type {
   AppPermission,
@@ -6,7 +7,7 @@ import type {
   UserRole,
 } from "@/models/user";
 
-export type { AuthSession, AppPermission, AppUser, RoleBadge, UserRole };
+export type { AuthSession, AppPermission, AppUser, OrganizationDetails, RoleBadge, UserRole };
 
 export type SignInInput = {
   identifier: string;
@@ -21,8 +22,10 @@ export type SignInResult = {
 export type AuthSessionContextValue = {
   isHydrated: boolean;
   user: AppUser | null;
+  organization: OrganizationDetails | null;
   signIn: (input: SignInInput) => Promise<SignInResult>;
   signOut: () => void;
   updateUser: (updates: Partial<AppUser>) => void;
+  refreshOrganization: () => Promise<OrganizationDetails | null>;
   hasPermission: (permission: AppPermission) => boolean;
 };

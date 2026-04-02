@@ -1,0 +1,41 @@
+﻿export type OrganizationAddress = {
+  Id: number;
+  Address1?: string | null;
+  Address2?: string | null;
+  CityName?: string | null;
+  City?: number | null;
+  DistrictName?: string | null;
+  DistrictId?: number | null;
+  StateName?: string | null;
+  StateId?: number | null;
+  CountryName?: string | null;
+  CountryId?: number | null;
+  Pin?: number | null;
+};
+
+export type OrganizationDetails = {
+  Id: number;
+  Name: string;
+  Address?: OrganizationAddress | null;
+  ShortName?: string | null;
+  PanOrTan?: string | null;
+  ImagePath?: string | null;
+  ImageLogoPath?: string | null;
+  EmailId?: string | null;
+  Phone?: string | null;
+  SubscriptionType?: number | null;
+  GSTNo?: string | null;
+  ContactPerson?: string | null;
+  OtherIndustryName?: string | null;
+  SignatureImage?: string | null;
+  CINNumber?: string | null;
+  CompletedataOrgStatus?: boolean | null;
+  GSTTypeID?: number | null;
+  subscription_paymentId?: number | null;
+  StatusId?: number | string | null;
+  GSTType?: string | null;
+  ReferenceId?: string | null;
+  SrcUrl?: string | null;
+  FirstName?: string | null;
+  LastName?: string | null;
+};

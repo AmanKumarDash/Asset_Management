@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+﻿import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { ROLE_BADGES, USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { OrganizationDetails } from "@/models/organization";
 import { AppUser } from "@/models/user";
 import { adminTheme } from "@/theme/adminTheme";
 
@@ -35,6 +36,11 @@ type ProfileFieldProps = {
   onChangeText: (value: string) => void;
 };
 
+type ReadonlyFieldProps = {
+  label: string;
+  value: string;
+};
+
 function ProfileField({ label, value, onChangeText }: ProfileFieldProps) {
   return (
     <View className="flex-1">
@@ -56,6 +62,27 @@ function ProfileField({ label, value, onChangeText }: ProfileFieldProps) {
   );
 }
 
+function ReadonlyField({ label, value }: ReadonlyFieldProps) {
+  return (
+    <View className="flex-1">
+      <Text className="mb-2 text-sm" style={{ color: adminTheme.muted }}>
+        {label}
+      </Text>
+      <View
+        className="rounded-[14px] border px-4 py-3.5"
+        style={{
+          borderColor: adminTheme.border,
+          backgroundColor: adminTheme.surfaceAlt,
+        }}
+      >
+        <Text className="text-base" style={{ color: adminTheme.slate }}>
+          {value || "-"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function getRoleColors(user: AppUser) {
   return user.role === USER_ROLES.ADMIN
     ? {
@@ -68,6 +95,32 @@ function getRoleColors(user: AppUser) {
         badgeText: adminTheme.employeePrimary,
         primary: adminTheme.employeePrimary,
       };
+}
+
+function getOrganizationAddress(organization: OrganizationDetails | null) {
+  if (!organization?.Address) {
+    return "";
+  }
+
+  return [
+    organization.Address.Address1,
+    organization.Address.Address2,
+    organization.Address.CityName,
+    organization.Address.StateName,
+    organization.Address.CountryName,
+  ]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .map((part) => part.trim())
+    .join(", ");
+}
+
+function getOrganizationContactName(organization: OrganizationDetails | null) {
+  const fullName = [organization?.FirstName, organization?.LastName]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .map((part) => part.trim())
+    .join(" ");
+
+  return fullName || organization?.ContactPerson?.trim() || "";
 }
 
 function useProfileForm(user: AppUser) {
@@ -100,8 +153,64 @@ function useProfileForm(user: AppUser) {
   };
 }
 
+function OrganizationSection({ organization }: { organization: OrganizationDetails | null }) {
+  return (
+    <View
+      className="rounded-[20px] border bg-white p-5"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <View className="mb-5 flex-row items-center">
+        <View
+          className="mr-3 h-11 w-11 items-center justify-center rounded-[14px]"
+          style={{ backgroundColor: adminTheme.infoBg }}
+        >
+          <Feather name="briefcase" size={18} color={adminTheme.primary} />
+        </View>
+        <View className="flex-1">
+          <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+            Organization Details
+          </Text>
+          <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
+            Loaded from the authenticated `GetDetails` API response
+          </Text>
+        </View>
+      </View>
+
+      {organization ? (
+        <>
+          <View className="mb-5 flex-row gap-4">
+            <ReadonlyField label="Organization name" value={organization.Name?.trim() || ""} />
+            <ReadonlyField label="Short name" value={organization.ShortName?.trim() || ""} />
+          </View>
+
+          <View className="mb-5 flex-row gap-4">
+            <ReadonlyField label="Contact person" value={getOrganizationContactName(organization)} />
+            <ReadonlyField label="Email" value={organization.EmailId?.trim() || ""} />
+          </View>
+
+          <View className="mb-5 flex-row gap-4">
+            <ReadonlyField label="Phone" value={organization.Phone?.trim() || ""} />
+            <ReadonlyField label="State" value={organization.Address?.StateName?.trim() || ""} />
+          </View>
+
+          <ReadonlyField label="Address" value={getOrganizationAddress(organization)} />
+        </>
+      ) : (
+        <View
+          className="rounded-[16px] border px-4 py-4"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <Text className="text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+            Organization details are not available in the current session yet.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function MobileProfile() {
-  const { user, updateUser, signOut } = useAuthSession();
+  const { user, organization, updateUser, signOut } = useAuthSession();
   const [saved, setSaved] = useState(false);
   const profileUser = user ?? emptyUser;
   const roleColors = getRoleColors(profileUser);
@@ -214,6 +323,10 @@ function MobileProfile() {
         />
       </View>
 
+      <View className="px-4 pt-4">
+        <OrganizationSection organization={organization} />
+      </View>
+
       <View className="px-4 pt-5">
         <Pressable
           onPress={handleSave}
@@ -241,7 +354,7 @@ function MobileProfile() {
 }
 
 function DesktopProfile() {
-  const { user, updateUser } = useAuthSession();
+  const { user, organization, updateUser, signOut } = useAuthSession();
   const [saved, setSaved] = useState(false);
   const profileUser = user ?? emptyUser;
   const roleColors = getRoleColors(profileUser);
@@ -263,6 +376,11 @@ function DesktopProfile() {
     setSaved(true);
   };
 
+  const handleLogout = () => {
+    signOut();
+    router.replace("/login");
+  };
+
   return (
     <ScrollView
       className="flex-1"
@@ -279,13 +397,24 @@ function DesktopProfile() {
           </Text>
         </View>
 
-        <Pressable
-          onPress={handleSave}
-          className="rounded-xl px-5 py-2.5"
-          style={{ backgroundColor: roleColors.primary }}
-        >
-          <Text className="text-sm font-semibold text-white">Save Changes</Text>
-        </Pressable>
+        <View className="flex-row" style={{ gap: 12 }}>
+          <Pressable
+            onPress={handleSave}
+            className="rounded-xl px-5 py-2.5"
+            style={{ backgroundColor: roleColors.primary }}
+          >
+            <Text className="text-sm font-semibold text-white">Save Changes</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleLogout}
+            className="rounded-xl border px-5 py-2.5"
+            style={{ borderColor: "#F3D3D3", backgroundColor: "#FFF5F5" }}
+          >
+            <Text className="text-sm font-semibold" style={{ color: "#D64545" }}>
+              Logout
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {saved ? (
@@ -301,7 +430,7 @@ function DesktopProfile() {
       ) : null}
 
       <View
-        className="rounded-[20px] border bg-white p-5"
+        className="mb-5 rounded-[20px] border bg-white p-5"
         style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
       >
         <View className="mb-6 flex-row items-center">
@@ -363,6 +492,8 @@ function DesktopProfile() {
           />
         </View>
       </View>
+
+      <OrganizationSection organization={organization} />
     </ScrollView>
   );
 }
@@ -373,4 +504,3 @@ export default function ProfileScreen() {
 
   return isMobile ? <MobileProfile /> : <DesktopProfile />;
 }
-

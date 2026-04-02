@@ -1,3 +1,6 @@
+﻿import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
+import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
+import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { Href, router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +19,6 @@ import {
   employeeScanOverview,
 } from "../data/employeeAuditData";
 import { AuditItemTone, AuditScanItem } from "../data/auditScanData";
-import { adminTheme } from "@/theme/adminTheme";
 
 function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
@@ -75,6 +77,12 @@ function useEmployeeScanState() {
     };
   }, [isScanning, items]);
 
+  const resetAudit = () => {
+    setIsScanning(false);
+    setManualAssetId("");
+    setItems(employeeInitialScanItems);
+  };
+
   const startAudit = () => setIsScanning(true);
 
   const addManualAsset = () => {
@@ -105,6 +113,7 @@ function useEmployeeScanState() {
     summary,
     startAudit,
     addManualAsset,
+    resetAudit,
   };
 }
 
@@ -258,7 +267,7 @@ function ScanList({ items }: { items: AuditScanItem[] }) {
         return (
           <View
             key={`${item.id}-${index}`}
-          className={`flex-row items-center rounded-[18px] border bg-white px-4 py-4 ${
+            className={`flex-row items-center rounded-[18px] border bg-white px-4 py-4 ${
               index < items.length - 1 ? "mb-3" : ""
             }`}
             style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
@@ -294,6 +303,56 @@ function ScanList({ items }: { items: AuditScanItem[] }) {
   );
 }
 
+function WarehouseSelectionNotice({
+  warehouseName,
+  onBack,
+}: {
+  warehouseName?: string | null;
+  onBack?: () => void;
+}) {
+  return (
+    <View
+      className="rounded-[20px] border px-5 py-5"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <View className="flex-row items-center justify-between" style={{ gap: 16 }}>
+        <View className="flex-1 flex-row items-center">
+          <View
+            className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
+            style={{ backgroundColor: adminTheme.employeePrimarySoft }}
+          >
+            <Feather name="package" size={18} color={adminTheme.employeePrimary} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-[16px] font-semibold" style={{ color: adminTheme.slate }}>
+              {warehouseName
+                ? `${warehouseName} selected`
+                : "Select a warehouse to continue"}
+            </Text>
+            <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+              {warehouseName
+                ? "The warehouse-specific scan screen is active now. Use back to return to the warehouse list."
+                : "Choose a warehouse first. After that, only the scanning screen will be shown."}
+            </Text>
+          </View>
+        </View>
+
+        {warehouseName && onBack ? (
+          <Pressable
+            onPress={onBack}
+            className="rounded-[14px] border px-4 py-3"
+            style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+          >
+            <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+              Back
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function DesktopEmployeeAuditScan() {
   const {
     isScanning,
@@ -303,7 +362,24 @@ function DesktopEmployeeAuditScan() {
     summary,
     startAudit,
     addManualAsset,
+    resetAudit,
   } = useEmployeeScanState();
+  const {
+    organization,
+    warehouses,
+    selectedWarehouse,
+    selectedWarehouseId,
+    setSelectedWarehouseId,
+    isLoading,
+    error,
+    refreshSetup,
+  } = useAuditSetup();
+  const hasSelectedWarehouse = Boolean(selectedWarehouseId);
+
+  const goBackToWarehouseSelection = () => {
+    resetAudit();
+    setSelectedWarehouseId(null);
+  };
 
   return (
     <ScrollView
@@ -314,10 +390,12 @@ function DesktopEmployeeAuditScan() {
       <View className="mb-5 flex-row items-start justify-between">
         <View>
           <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-            {employeeScanOverview.title}
+            {hasSelectedWarehouse
+              ? selectedWarehouse?.name ?? employeeScanOverview.title
+              : employeeScanOverview.title}
           </Text>
           <Text className="mt-1 text-base" style={{ color: adminTheme.slateSoft }}>
-            {employeeScanOverview.desktopMeta}
+            {hasSelectedWarehouse ? "Warehouse scan" : employeeScanOverview.desktopMeta}
           </Text>
         </View>
         <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
@@ -325,126 +403,155 @@ function DesktopEmployeeAuditScan() {
         </Text>
       </View>
 
-      <View className="mb-5 flex-row" style={{ gap: 18, alignItems: "flex-start" }}>
-        <View style={{ flex: 1.25 }}>
-          <EmployeeScanPanel isScanning={isScanning} onStartAudit={startAudit} />
-        </View>
-
-        <View
-          className="w-[280px] rounded-[20px] border p-5"
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-        >
-          <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Scan progress
-          </Text>
-          <View className="mt-5 flex-row items-center justify-between">
-            <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
-              Scanned
-            </Text>
-            <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-              {summary.scanned} / {employeeScanOverview.totalAssets}
-            </Text>
-          </View>
-          <View className="mt-3 h-[4px] rounded-full" style={{ backgroundColor: adminTheme.border }}>
-            <View
-              className="h-[4px] rounded-full"
-              style={{
-                width: `${(summary.scanned / employeeScanOverview.totalAssets) * 100}%`,
-                backgroundColor: adminTheme.employeePrimary,
-              }}
+      {!hasSelectedWarehouse ? (
+        <>
+          <View className="mb-5">
+            <AuditSetupPanel
+              organization={organization}
+              warehouses={warehouses}
+              selectedWarehouseId={selectedWarehouseId}
+              onSelectWarehouse={setSelectedWarehouseId}
+              isLoading={isLoading}
+              error={error}
+              onRetry={refreshSetup}
+              primaryColor={adminTheme.employeePrimary}
+              selectionLocked={isScanning}
             />
           </View>
 
-          <View className="mt-4 flex-row" style={{ gap: 10 }}>
-            {[
-              { label: "Found", value: summary.found, bg: "#EAF5DB", color: "#5D8B1F" },
-              { label: "Missing", value: summary.missing, bg: "#FCE8E8", color: "#C0392B" },
-              { label: "Extra", value: summary.extra, bg: "#FFF1DB", color: "#B7791F" },
-            ].map((item) => (
-              <View
-                key={item.label}
-                className="flex-1 items-center rounded-[16px] py-4"
-                style={{ backgroundColor: item.bg }}
-              >
-                <Text className="text-[18px] font-semibold" style={{ color: item.color }}>
-                  {item.value}
-                </Text>
-                <Text className="mt-1 text-xs" style={{ color: item.color }}>
-                  {item.label}
-                </Text>
-              </View>
-            ))}
+          <WarehouseSelectionNotice />
+        </>
+      ) : (
+        <>
+          <View className="mb-5">
+            <WarehouseSelectionNotice
+              warehouseName={selectedWarehouse?.name}
+              onBack={goBackToWarehouseSelection}
+            />
           </View>
 
-          <Pressable
-            onPress={() => router.push("/audits/submit" as Href)}
-            disabled={!isScanning}
-            className="mt-4 items-center rounded-[14px] px-4 py-4"
-            style={{
-              backgroundColor: isScanning
-                ? adminTheme.employeePrimary
-                : adminTheme.mutedBg,
-            }}
-          >
-            <Text
-              className="text-base font-semibold"
-              style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
+          <View className="mb-5 flex-row" style={{ gap: 18, alignItems: "flex-start" }}>
+            <View style={{ flex: 1.25 }}>
+              <EmployeeScanPanel isScanning={isScanning} onStartAudit={startAudit} />
+            </View>
+
+            <View
+              className="w-[280px] rounded-[20px] border p-5"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
             >
-              {"Proceed to Submit"}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+              <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                Scan progress
+              </Text>
+              <View className="mt-5 flex-row items-center justify-between">
+                <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+                  Scanned
+                </Text>
+                <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                  {summary.scanned} / {employeeScanOverview.totalAssets}
+                </Text>
+              </View>
+              <View className="mt-3 h-[4px] rounded-full" style={{ backgroundColor: adminTheme.border }}>
+                <View
+                  className="h-[4px] rounded-full"
+                  style={{
+                    width: `${(summary.scanned / employeeScanOverview.totalAssets) * 100}%`,
+                    backgroundColor: adminTheme.employeePrimary,
+                  }}
+                />
+              </View>
 
-      <View className="mb-5 flex-row items-center" style={{ gap: 10 }}>
-        <View
-          className="flex-1 flex-row items-center rounded-[14px] border px-4"
-          style={{
-            borderColor: adminTheme.border,
-            backgroundColor: isScanning ? adminTheme.surface : adminTheme.surfaceAlt,
-          }}
-        >
-          <Feather name="search" size={18} color={adminTheme.muted} />
-          <TextInput
-            value={manualAssetId}
-            editable={isScanning}
-            onChangeText={setManualAssetId}
-            placeholder="Enter asset ID manually (e.g. AST-00182)"
-            placeholderTextColor="#94A3B8"
-            className="flex-1 py-3 pl-3 text-base"
-            style={{ color: adminTheme.slate }}
-          />
-        </View>
-        <Pressable
-          onPress={addManualAsset}
-          disabled={!isScanning}
-          className="rounded-[14px] px-6 py-3.5"
-          style={{
-            backgroundColor: isScanning
-              ? adminTheme.employeePrimary
-              : adminTheme.mutedBg,
-          }}
-        >
-          <Text
-            className="text-base font-semibold"
-            style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
-          >
-            Add Asset
-          </Text>
-        </Pressable>
-      </View>
+              <View className="mt-4 flex-row" style={{ gap: 10 }}>
+                {[
+                  { label: "Found", value: summary.found, bg: "#EAF5DB", color: "#5D8B1F" },
+                  { label: "Missing", value: summary.missing, bg: "#FCE8E8", color: "#C0392B" },
+                  { label: "Extra", value: summary.extra, bg: "#FFF1DB", color: "#B7791F" },
+                ].map((item) => (
+                  <View
+                    key={item.label}
+                    className="flex-1 items-center rounded-[16px] py-4"
+                    style={{ backgroundColor: item.bg }}
+                  >
+                    <Text className="text-[18px] font-semibold" style={{ color: item.color }}>
+                      {item.value}
+                    </Text>
+                    <Text className="mt-1 text-xs" style={{ color: item.color }}>
+                      {item.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
 
-      {isScanning ? (
-        <ScanList items={items} />
-      ) : (
-        <View
-          className="rounded-[20px] border px-5 py-5"
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-        >
-          <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
-            Start the audit to activate scanning, manual entry, and progress tracking.
-          </Text>
-        </View>
+              <Pressable
+                onPress={() => router.push("/audits/submit" as Href)}
+                disabled={!isScanning}
+                className="mt-4 items-center rounded-[14px] px-4 py-4"
+                style={{
+                  backgroundColor: isScanning
+                    ? adminTheme.employeePrimary
+                    : adminTheme.mutedBg,
+                }}
+              >
+                <Text
+                  className="text-base font-semibold"
+                  style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
+                >
+                  {"Proceed to Submit"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View className="mb-5 flex-row items-center" style={{ gap: 10 }}>
+            <View
+              className="flex-1 flex-row items-center rounded-[14px] border px-4"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: isScanning ? adminTheme.surface : adminTheme.surfaceAlt,
+              }}
+            >
+              <Feather name="search" size={18} color={adminTheme.muted} />
+              <TextInput
+                value={manualAssetId}
+                editable={isScanning}
+                onChangeText={setManualAssetId}
+                placeholder="Enter asset ID manually (e.g. AST-00182)"
+                placeholderTextColor="#94A3B8"
+                className="flex-1 py-3 pl-3 text-base"
+                style={{ color: adminTheme.slate }}
+              />
+            </View>
+            <Pressable
+              onPress={addManualAsset}
+              disabled={!isScanning}
+              className="rounded-[14px] px-6 py-3.5"
+              style={{
+                backgroundColor: isScanning
+                  ? adminTheme.employeePrimary
+                  : adminTheme.mutedBg,
+              }}
+            >
+              <Text
+                className="text-base font-semibold"
+                style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
+              >
+                Add Asset
+              </Text>
+            </Pressable>
+          </View>
+
+          {isScanning ? (
+            <ScanList items={items} />
+          ) : (
+            <View
+              className="rounded-[20px] border px-5 py-5"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            >
+              <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+                Start the audit to activate scanning, manual entry, and progress tracking.
+              </Text>
+            </View>
+          )}
+        </>
       )}
     </ScrollView>
   );
@@ -459,7 +566,24 @@ function MobileEmployeeAuditScan() {
     summary,
     startAudit,
     addManualAsset,
+    resetAudit,
   } = useEmployeeScanState();
+  const {
+    organization,
+    warehouses,
+    selectedWarehouse,
+    selectedWarehouseId,
+    setSelectedWarehouseId,
+    isLoading,
+    error,
+    refreshSetup,
+  } = useAuditSetup();
+  const hasSelectedWarehouse = Boolean(selectedWarehouseId);
+
+  const goBackToWarehouseSelection = () => {
+    resetAudit();
+    setSelectedWarehouseId(null);
+  };
 
   return (
     <ScrollView
@@ -470,7 +594,14 @@ function MobileEmployeeAuditScan() {
       <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
         <View className="flex-row items-start">
           <Pressable
-            onPress={() => router.push("/dashboard")}
+            onPress={() => {
+              if (hasSelectedWarehouse) {
+                goBackToWarehouseSelection();
+                return;
+              }
+
+              router.push("/dashboard");
+            }}
             className="mr-3 mt-1 h-9 w-9 items-center justify-center rounded-[12px] border"
             style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
           >
@@ -478,104 +609,137 @@ function MobileEmployeeAuditScan() {
           </Pressable>
           <View className="flex-1">
             <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-              {employeeScanOverview.title}
+              {hasSelectedWarehouse
+                ? selectedWarehouse?.name ?? employeeScanOverview.title
+                : employeeScanOverview.title}
             </Text>
             <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-              {employeeScanOverview.subtitle}
+              {hasSelectedWarehouse ? "Warehouse scan" : employeeScanOverview.subtitle}
             </Text>
           </View>
         </View>
       </View>
 
-      <View className="px-4 pt-4">
-        <EmployeeScanPanel
-          isScanning={isScanning}
-          onStartAudit={startAudit}
-          mobile
-        />
-      </View>
-
-      <View className="px-4 pt-3">
-        <View className="flex-row items-center" style={{ gap: 10 }}>
-          <View
-            className="flex-1 rounded-[14px] border px-4"
-            style={{
-              borderColor: adminTheme.border,
-              backgroundColor: isScanning ? adminTheme.surface : adminTheme.surfaceAlt,
-            }}
-          >
-            <TextInput
-              value={manualAssetId}
-              editable={isScanning}
-              onChangeText={setManualAssetId}
-              placeholder="Enter asset ID manually"
-              placeholderTextColor="#94A3B8"
-              className="py-3 text-base"
-              style={{ color: adminTheme.slate }}
+      {!hasSelectedWarehouse ? (
+        <>
+          <View className="px-4 pt-4">
+            <AuditSetupPanel
+              organization={organization}
+              warehouses={warehouses}
+              selectedWarehouseId={selectedWarehouseId}
+              onSelectWarehouse={setSelectedWarehouseId}
+              isLoading={isLoading}
+              error={error}
+              onRetry={refreshSetup}
+              primaryColor={adminTheme.employeePrimary}
+              selectionLocked={isScanning}
             />
           </View>
-          <Pressable
-            onPress={addManualAsset}
-            disabled={!isScanning}
-            className="rounded-[14px] px-5 py-3"
-            style={{
-              backgroundColor: isScanning
-                ? adminTheme.employeePrimary
-                : adminTheme.mutedBg,
-            }}
-          >
-            <Text
-              className="text-base font-semibold"
-              style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
-            >
-              Add
-            </Text>
-          </Pressable>
-        </View>
-      </View>
 
-      <View className="px-4 pt-4">
-        <View className="mb-3 flex-row items-center justify-between">
-          <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Scanned so far
-          </Text>
-          <View
-            className="rounded-full px-3 py-1"
-            style={{ backgroundColor: adminTheme.employeePrimarySoft }}
-          >
-            <Text className="text-sm font-medium" style={{ color: adminTheme.employeePrimary }}>
-              {summary.scanned} / {employeeScanOverview.totalAssets}
-            </Text>
+          <View className="px-4 pt-4">
+            <WarehouseSelectionNotice />
           </View>
-        </View>
-
-        {isScanning ? (
-          <ScanList items={items} />
-        ) : (
-          <View
-            className="rounded-[18px] border px-4 py-5"
-            style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-          >
-            <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
-              Start the audit to view scanned asset results.
-            </Text>
+        </>
+      ) : (
+        <>
+          <View className="px-4 pt-4">
+            <WarehouseSelectionNotice
+              warehouseName={selectedWarehouse?.name}
+              onBack={goBackToWarehouseSelection}
+            />
           </View>
-        )}
-      </View>
 
-      {isScanning ? (
-        <View className="px-4 pt-4">
-          <Pressable
-            onPress={() => router.push("/audits/submit" as Href)}
-            className="items-center rounded-[18px] px-5 py-4"
-            style={{ backgroundColor: adminTheme.employeePrimary }}
-          >
-            <Text className="text-base font-semibold text-white">
-              Proceed to Submit
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
+          <View className="px-4 pt-4">
+            <EmployeeScanPanel
+              isScanning={isScanning}
+              onStartAudit={startAudit}
+              mobile
+            />
+          </View>
+
+          <View className="px-4 pt-3">
+            <View className="flex-row items-center" style={{ gap: 10 }}>
+              <View
+                className="flex-1 rounded-[14px] border px-4"
+                style={{
+                  borderColor: adminTheme.border,
+                  backgroundColor: isScanning ? adminTheme.surface : adminTheme.surfaceAlt,
+                }}
+              >
+                <TextInput
+                  value={manualAssetId}
+                  editable={isScanning}
+                  onChangeText={setManualAssetId}
+                  placeholder="Enter asset ID manually"
+                  placeholderTextColor="#94A3B8"
+                  className="py-3 text-base"
+                  style={{ color: adminTheme.slate }}
+                />
+              </View>
+              <Pressable
+                onPress={addManualAsset}
+                disabled={!isScanning}
+                className="rounded-[14px] px-5 py-3"
+                style={{
+                  backgroundColor: isScanning
+                    ? adminTheme.employeePrimary
+                    : adminTheme.mutedBg,
+                }}
+              >
+                <Text
+                  className="text-base font-semibold"
+                  style={{ color: isScanning ? "#ffffff" : adminTheme.mutedText }}
+                >
+                  Add
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View className="px-4 pt-4">
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                Scanned so far
+              </Text>
+              <View
+                className="rounded-full px-3 py-1"
+                style={{ backgroundColor: adminTheme.employeePrimarySoft }}
+              >
+                <Text className="text-sm font-medium" style={{ color: adminTheme.employeePrimary }}>
+                  {summary.scanned} / {employeeScanOverview.totalAssets}
+                </Text>
+              </View>
+            </View>
+
+            {isScanning ? (
+              <ScanList items={items} />
+            ) : (
+              <View
+                className="rounded-[18px] border px-4 py-5"
+                style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+              >
+                <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
+                  Start the audit to view scanned asset results.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {isScanning ? (
+            <View className="px-4 pt-4">
+              <Pressable
+                onPress={() => router.push("/audits/submit" as Href)}
+                className="items-center rounded-[18px] px-5 py-4"
+                style={{ backgroundColor: adminTheme.employeePrimary }}
+              >
+                <Text className="text-base font-semibold text-white">
+                  Proceed to Submit
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </>
+      )}
     </ScrollView>
   );
 }

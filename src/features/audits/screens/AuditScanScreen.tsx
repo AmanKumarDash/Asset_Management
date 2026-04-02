@@ -1,5 +1,7 @@
 ﻿import { USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
+import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
 import { AuditPhase } from "@/features/audits/types/audit";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
@@ -591,6 +593,59 @@ function DesktopProgressCard({
   );
 }
 
+function WarehouseSelectionNotice({
+  warehouseName,
+  onBack,
+}: {
+  warehouseName?: string | null;
+  onBack?: () => void;
+}) {
+  return (
+    <View
+      className="rounded-[20px] border px-5 py-5"
+      style={{
+        borderColor: adminTheme.border,
+        backgroundColor: adminTheme.surface,
+      }}
+    >
+      <View className="flex-row items-center justify-between" style={{ gap: 16 }}>
+        <View className="flex-1 flex-row items-center">
+          <View
+            className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
+            style={{ backgroundColor: adminTheme.infoBg }}
+          >
+            <Feather name="package" size={18} color={adminTheme.primary} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-[16px] font-semibold" style={{ color: adminTheme.slate }}>
+              {warehouseName
+                ? `${warehouseName} selected`
+                : "Select a warehouse to continue"}
+            </Text>
+            <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+              {warehouseName
+                ? "The warehouse-specific scan screen is active now. Use back to return to the warehouse list."
+                : "Choose a warehouse first. After that, only the scanning screen will be shown."}
+            </Text>
+          </View>
+        </View>
+
+        {warehouseName && onBack ? (
+          <Pressable
+            onPress={onBack}
+            className="rounded-[14px] border px-4 py-3"
+            style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+          >
+            <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+              Back
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function MobileAuditScan() {
   const {
     items,
@@ -604,8 +659,29 @@ function MobileAuditScan() {
     startAudit,
     addManualAsset,
     submitAudit,
+    resetAudit,
     summary,
+    auditWarehouseId,
   } = useAuditScanState();
+  const {
+    organization,
+    warehouses,
+    selectedWarehouse,
+    selectedWarehouseId,
+    setSelectedWarehouseId,
+    isLoading,
+    error,
+    refreshSetup,
+  } = useAuditSetup();
+  const selectionLocked =
+    auditPhase === "scanning" || auditPhase === "submitting";
+  const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
+  const hasSelectedWarehouse = Boolean(activeWarehouseId);
+
+  const goBackToWarehouseSelection = () => {
+    resetAudit();
+    setSelectedWarehouseId(null);
+  };
 
   return (
     <ScrollView
@@ -620,6 +696,11 @@ function MobileAuditScan() {
         <View className="flex-row items-start">
           <Pressable
             onPress={() => {
+              if (hasSelectedWarehouse) {
+                goBackToWarehouseSelection();
+                return;
+              }
+
               if (router.canGoBack()) {
                 router.back();
               } else {
@@ -644,89 +725,127 @@ function MobileAuditScan() {
               className="text-[18px] font-semibold"
               style={{ color: adminTheme.slate }}
             >
-              {auditScanOverview.title}
+              {hasSelectedWarehouse
+                ? selectedWarehouse?.name ?? auditScanOverview.title
+                : auditScanOverview.title}
             </Text>
             <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-              {auditScanOverview.subtitle}
+              {hasSelectedWarehouse
+                ? "Warehouse scan"
+                : auditScanOverview.subtitle}
             </Text>
           </View>
         </View>
       </View>
 
-      <View className="px-4 pt-4">
-        <ScanPanel
-          phase={auditPhase}
-          connectionStatus={connectionStatus}
-          onStartAudit={startAudit}
-          submitError={submitError}
-        />
-      </View>
+      {!hasSelectedWarehouse ? (
+        <>
+          <View className="px-4 pt-4">
+            <AuditSetupPanel
+              organization={organization}
+              warehouses={warehouses}
+              selectedWarehouseId={selectedWarehouseId}
+              onSelectWarehouse={setSelectedWarehouseId}
+              isLoading={isLoading}
+              error={error}
+              onRetry={refreshSetup}
+              selectionLocked={selectionLocked}
+            />
+          </View>
 
-      <View className="px-4 pt-3">
-        <ManualEntryRow
-          value={manualAssetId}
-          onChange={setManualAssetId}
-          onAdd={addManualAsset}
-          isScanning={isScanning}
-          mobile
-        />
-      </View>
+          <View className="px-4 pt-4">
+            <WarehouseSelectionNotice />
+          </View>
+        </>
+      ) : (
+        <>
+          <View className="px-4 pt-4">
+            <WarehouseSelectionNotice
+              warehouseName={selectedWarehouse?.name}
+              onBack={goBackToWarehouseSelection}
+            />
+          </View>
 
-      <View className="px-4 pt-3">
-        <View className="mb-3 flex-row items-center justify-between">
-          <Text
-            className="text-[18px] font-semibold"
-            style={{ color: adminTheme.slate }}
-          >
-            {getListHeading(auditPhase)}
-          </Text>
-          <View
-            className="rounded-full px-3 py-1"
-            style={{ backgroundColor: adminTheme.infoBg }}
-          >
-            <Text
-              className="text-sm font-medium"
-              style={{ color: adminTheme.primary }}
+          <View className="px-4 pt-4">
+            <ScanPanel
+              phase={auditPhase}
+              connectionStatus={connectionStatus}
+              onStartAudit={() => {
+                if (activeWarehouseId) {
+                  startAudit(activeWarehouseId);
+                }
+              }}
+              submitError={submitError}
+            />
+          </View>
+
+          <View className="px-4 pt-3">
+            <ManualEntryRow
+              value={manualAssetId}
+              onChange={setManualAssetId}
+              onAdd={addManualAsset}
+              isScanning={isScanning}
+              mobile
+            />
+          </View>
+
+          <View className="px-4 pt-3">
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text
+                className="text-[18px] font-semibold"
+                style={{ color: adminTheme.slate }}
+              >
+                {getListHeading(auditPhase)}
+              </Text>
+              <View
+                className="rounded-full px-3 py-1"
+                style={{ backgroundColor: adminTheme.infoBg }}
+              >
+                <Text
+                  className="text-sm font-medium"
+                  style={{ color: adminTheme.primary }}
+                >
+                  {summary.scanned} / {auditScanOverview.totalAssets}
+                </Text>
+              </View>
+            </View>
+
+            {auditPhase !== "idle" && items.length > 0 ? (
+              <AuditScanList items={items} />
+            ) : (
+              <View
+                className="rounded-[18px] border px-4 py-5"
+                style={{
+                  borderColor: adminTheme.border,
+                  backgroundColor: adminTheme.surface,
+                }}
+              >
+                <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
+                  {getEmptyStateDescription(auditPhase)}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View className="px-4 pt-4">
+            <SubmitActionButton
+              phase={auditPhase}
+              canSubmit={canSubmit}
+              onSubmitAudit={submitAudit}
+              mobile
+            />
+          </View>
+
+          <View className="px-4 pt-4">
+            <View
+              className="flex-row items-center justify-center rounded-[16px] px-4 py-3"
+              style={{ backgroundColor: adminTheme.surface }}
             >
-              {summary.scanned} / {auditScanOverview.totalAssets}
-            </Text>
+              <LegendRow />
+            </View>
           </View>
-        </View>
-
-        {auditPhase !== "idle" && items.length > 0 ? (
-          <AuditScanList items={items} />
-        ) : (
-          <View
-            className="rounded-[18px] border px-4 py-5"
-            style={{
-              borderColor: adminTheme.border,
-              backgroundColor: adminTheme.surface,
-            }}
-          >
-            <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
-              {getEmptyStateDescription(auditPhase)}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View className="px-4 pt-4">
-        <SubmitActionButton
-          phase={auditPhase}
-          canSubmit={canSubmit}
-          onSubmitAudit={submitAudit}
-          mobile
-        />
-      </View>
-
-      <View className="px-4 pt-4">
-        <View
-          className="flex-row items-center justify-center rounded-[16px] px-4 py-3"
-          style={{ backgroundColor: adminTheme.surface }}
-        >
-          <LegendRow />
-        </View>
-      </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -744,9 +863,30 @@ function DesktopAuditScan({ width }: { width: number }) {
     startAudit,
     addManualAsset,
     submitAudit,
+    resetAudit,
     summary,
+    auditWarehouseId,
   } = useAuditScanState();
+  const {
+    organization,
+    warehouses,
+    selectedWarehouse,
+    selectedWarehouseId,
+    setSelectedWarehouseId,
+    isLoading,
+    error,
+    refreshSetup,
+  } = useAuditSetup();
   const twoColumn = width >= 1340;
+  const selectionLocked =
+    auditPhase === "scanning" || auditPhase === "submitting";
+  const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
+  const hasSelectedWarehouse = Boolean(activeWarehouseId);
+
+  const goBackToWarehouseSelection = () => {
+    resetAudit();
+    setSelectedWarehouseId(null);
+  };
 
   return (
     <ScrollView
@@ -760,10 +900,14 @@ function DesktopAuditScan({ width }: { width: number }) {
             className="text-[28px] font-semibold"
             style={{ color: adminTheme.slate }}
           >
-            {auditScanOverview.title}
+            {hasSelectedWarehouse
+              ? selectedWarehouse?.name ?? auditScanOverview.title
+              : auditScanOverview.title}
           </Text>
           <Text className="mt-1 text-base" style={{ color: adminTheme.slateSoft }}>
-            {auditScanOverview.desktopMeta}
+            {hasSelectedWarehouse
+              ? "Warehouse scan"
+              : auditScanOverview.desktopMeta}
           </Text>
         </View>
         <Text className="text-[16px]" style={{ color: adminTheme.slateSoft }}>
@@ -771,66 +915,98 @@ function DesktopAuditScan({ width }: { width: number }) {
         </Text>
       </View>
 
-      <View
-        className="mb-4 flex-row"
-        style={{ gap: 18, alignItems: "flex-start" }}
-      >
-        <View style={{ flex: 1.25 }}>
-          <ScanPanel
-            phase={auditPhase}
-            connectionStatus={connectionStatus}
-            onStartAudit={startAudit}
-            submitError={submitError}
-          />
-        </View>
-        <View style={{ width: twoColumn ? 300 : 260 }}>
-          <DesktopProgressCard
-            phase={auditPhase}
-            scanned={summary.scanned}
-            found={summary.found}
-            missing={summary.missing}
-            extra={summary.extra}
-            canSubmit={canSubmit}
-            onSubmitAudit={submitAudit}
-          />
-        </View>
-      </View>
-
-      <View className="mb-5">
-        <ManualEntryRow
-          value={manualAssetId}
-          onChange={setManualAssetId}
-          onAdd={addManualAsset}
-          isScanning={isScanning}
-        />
-      </View>
-
-      <View className="mb-3">
-        <LegendRow />
-      </View>
-
-      {auditPhase !== "idle" && items.length > 0 ? (
+      {!hasSelectedWarehouse ? (
         <>
-          <Text
-            className="mb-3 text-[18px] font-semibold"
-            style={{ color: adminTheme.slate }}
-          >
-            {getListHeading(auditPhase)}
-          </Text>
-          <AuditScanList items={items} />
+          <View className="mb-5">
+            <AuditSetupPanel
+              organization={organization}
+              warehouses={warehouses}
+              selectedWarehouseId={selectedWarehouseId}
+              onSelectWarehouse={setSelectedWarehouseId}
+              isLoading={isLoading}
+              error={error}
+              onRetry={refreshSetup}
+              selectionLocked={selectionLocked}
+            />
+          </View>
+
+          <WarehouseSelectionNotice />
         </>
       ) : (
-        <View
-          className="rounded-[20px] border px-5 py-5"
-          style={{
-            borderColor: adminTheme.border,
-            backgroundColor: adminTheme.surface,
-          }}
-        >
-          <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
-            {getEmptyStateDescription(auditPhase)}
-          </Text>
-        </View>
+        <>
+          <View className="mb-5">
+            <WarehouseSelectionNotice
+              warehouseName={selectedWarehouse?.name}
+              onBack={goBackToWarehouseSelection}
+            />
+          </View>
+
+          <View
+            className="mb-4 flex-row"
+            style={{ gap: 18, alignItems: "flex-start" }}
+          >
+            <View style={{ flex: 1.25 }}>
+              <ScanPanel
+                phase={auditPhase}
+                connectionStatus={connectionStatus}
+                onStartAudit={() => {
+                  if (activeWarehouseId) {
+                    startAudit(activeWarehouseId);
+                  }
+                }}
+                submitError={submitError}
+              />
+            </View>
+            <View style={{ width: twoColumn ? 300 : 260 }}>
+              <DesktopProgressCard
+                phase={auditPhase}
+                scanned={summary.scanned}
+                found={summary.found}
+                missing={summary.missing}
+                extra={summary.extra}
+                canSubmit={canSubmit}
+                onSubmitAudit={submitAudit}
+              />
+            </View>
+          </View>
+
+          <View className="mb-5">
+            <ManualEntryRow
+              value={manualAssetId}
+              onChange={setManualAssetId}
+              onAdd={addManualAsset}
+              isScanning={isScanning}
+            />
+          </View>
+
+          <View className="mb-3">
+            <LegendRow />
+          </View>
+
+          {auditPhase !== "idle" && items.length > 0 ? (
+            <>
+              <Text
+                className="mb-3 text-[18px] font-semibold"
+                style={{ color: adminTheme.slate }}
+              >
+                {getListHeading(auditPhase)}
+              </Text>
+              <AuditScanList items={items} />
+            </>
+          ) : (
+            <View
+              className="rounded-[20px] border px-5 py-5"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: adminTheme.surface,
+              }}
+            >
+              <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+                {getEmptyStateDescription(auditPhase)}
+              </Text>
+            </View>
+          )}
+        </>
       )}
     </ScrollView>
   );

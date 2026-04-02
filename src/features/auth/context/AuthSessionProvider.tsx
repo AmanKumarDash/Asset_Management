@@ -1,4 +1,4 @@
-import {
+﻿import {
   ReactNode,
   createContext,
   useCallback,
@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { STORAGE_KEYS } from "@/constants/storage";
+import { OrganizationDetails } from "@/models/organization";
 import { AuthSession } from "@/models/session";
 import { AppPermission, AppUser } from "@/models/user";
 import { apiService } from "@/network/ApiService";
@@ -34,16 +35,19 @@ function deriveInitials(name: string) {
 export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
+  const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     const hydrateSession = async () => {
-      const [storedToken, storedRefreshToken, storedUser] = await Promise.all([
-        secureStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
-        secureStorage.getItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
-        storage.getObject<AppUser>(STORAGE_KEYS.AUTH_USER),
-      ]);
+      const [storedToken, storedRefreshToken, storedUser, storedOrganization] =
+        await Promise.all([
+          secureStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
+          secureStorage.getItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
+          storage.getObject<AppUser>(STORAGE_KEYS.AUTH_USER),
+          storage.getObject<OrganizationDetails>(STORAGE_KEYS.AUTH_ORGANIZATION),
+        ]);
 
       if (!isMounted) {
         return;
@@ -51,12 +55,14 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
       setAccessToken(storedToken);
       setUser(storedUser);
+      setOrganization(storedOrganization);
       setIsHydrated(true);
 
       appLogger.info("AuthSession", "Hydrated auth session from storage.", {
         hasToken: Boolean(storedToken),
         hasRefreshToken: Boolean(storedRefreshToken),
         hasUser: Boolean(storedUser),
+        hasOrganization: Boolean(storedOrganization),
       });
     };
 
@@ -91,20 +97,57 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  const persistOrganization = useCallback(async (value: OrganizationDetails | null) => {
+    if (value) {
+      await storage.setObject(STORAGE_KEYS.AUTH_ORGANIZATION, value);
+      return;
+    }
+
+    await storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION);
+  }, []);
+
   const clearSession = useCallback(async () => {
     await Promise.all([
       storage.removeItem(STORAGE_KEYS.AUTH_USER),
       storage.removeItem(STORAGE_KEYS.AUTH_ACCESS_TOKEN_EXPIRES_AT),
       storage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
+      storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
     ]);
   }, []);
 
+  const refreshOrganization = useCallback(async () => {
+    try {
+      const payload = await apiService.getOrganizationDetails();
+      setOrganization(payload);
+      await persistOrganization(payload);
+
+      appLogger.info("AuthSession", "Loaded organization details.", {
+        organizationId: payload.Id,
+        organizationName: payload.Name,
+      });
+
+      return payload;
+    } catch (error) {
+      const message = getApiErrorMessage(
+        error,
+        "Unable to load organization details right now."
+      );
+
+      appLogger.warn("AuthSession", "Organization fetch failed.", {
+        message,
+      });
+
+      return null;
+    }
+  }, [persistOrganization]);
+
   useEffect(() => {
     setSessionExpiredHandler(() => {
       setAccessToken(null);
       setUser(null);
+      setOrganization(null);
       void clearSession();
     });
 
@@ -112,6 +155,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setSessionExpiredHandler(null);
     };
   }, [clearSession]);
+
   const signIn = useCallback(
     async ({ identifier, password }: SignInInput): Promise<SignInResult> => {
       try {
@@ -123,7 +167,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
         setAccessToken(session.token);
         setUser(session.user);
+        setOrganization(null);
         await persistSession(session);
+        await persistOrganization(null);
+
+        const organizationPayload = await refreshOrganization();
 
         appLogger.info("AuthSession", "User signed in successfully.", {
           role: session.user.role,
@@ -131,6 +179,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
           hasRefreshToken: Boolean(session.refreshToken),
           accessTokenExpiresAt: session.accessTokenExpiresAt,
           refreshTokenExpiresAt: session.refreshTokenExpiresAt,
+          hasOrganization: Boolean(organizationPayload),
         });
 
         return { success: true };
@@ -142,6 +191,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
         setAccessToken(null);
         setUser(null);
+        setOrganization(null);
         await clearSession();
 
         appLogger.warn("AuthSession", "Sign-in failed.", {
@@ -155,7 +205,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         };
       }
     },
-    [clearSession, persistSession]
+    [clearSession, persistOrganization, persistSession, refreshOrganization]
   );
 
   const signOut = useCallback(() => {
@@ -164,6 +214,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     });
     setAccessToken(null);
     setUser(null);
+    setOrganization(null);
     void clearSession();
   }, [clearSession, user]);
 
@@ -200,12 +251,14 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     () => ({
       isHydrated,
       user,
+      organization,
       signIn,
       signOut,
       updateUser,
+      refreshOrganization,
       hasPermission,
     }),
-    [hasPermission, isHydrated, signIn, signOut, updateUser, user]
+    [hasPermission, isHydrated, organization, refreshOrganization, signIn, signOut, updateUser, user]
   );
 
   return (
@@ -214,5 +267,3 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     </AuthSessionContext.Provider>
   );
 }
-
-

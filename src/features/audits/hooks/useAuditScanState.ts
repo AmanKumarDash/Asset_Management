@@ -367,6 +367,7 @@ export function useAuditScanState() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<MqttConnectionStatus>("idle");
+  const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
   const scannedTagIdsRef = useRef(new Set<string>());
@@ -514,8 +515,9 @@ export function useAuditScanState() {
     return getSummaryFromItems(liveItems);
   }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds]);
 
-  const startAudit = useCallback(() => {
+  const resetAudit = useCallback(() => {
     scanSessionRef.current += 1;
+    mqttService.disconnectMqtt();
     itemCacheRef.current.clear();
     pendingLookupsRef.current.clear();
     scannedTagIdsRef.current = new Set<string>();
@@ -528,8 +530,19 @@ export function useAuditScanState() {
     setReportSummary({ found: 0, missing: 0, extra: 0, scanned: 0 });
     setSubmitError(null);
     setConnectionStatus("idle");
-    setAuditPhase("scanning");
+    setAuditWarehouseId(null);
+    setAuditPhase("idle");
   }, []);
+
+  const startAudit = useCallback((warehouseId?: string) => {
+    if (!warehouseId) {
+      return;
+    }
+
+    resetAudit();
+    setAuditWarehouseId(warehouseId);
+    setAuditPhase("scanning");
+  }, [resetAudit]);
 
   const addManualAsset = useCallback(() => {
     const value = manualAssetId.trim();
@@ -629,6 +642,11 @@ export function useAuditScanState() {
     startAudit,
     addManualAsset,
     submitAudit,
+    resetAudit,
     summary,
+    auditWarehouseId,
   };
 }
+
+
+
