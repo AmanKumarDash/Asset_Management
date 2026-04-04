@@ -1,4 +1,4 @@
-﻿import { isAxiosError } from "axios";
+import { isAxiosError } from "axios";
 
 export type ApiEnvelope<T> = {
   data?: T;
@@ -20,11 +20,13 @@ export type ApiCollectionEnvelope<T> = ApiEnvelope<T[]> & {
   Value?: T[];
 };
 
+// Unwraps single-object API responses even when backend uses different envelope casing conventions.
 export function extractResponseData<T>(payload: ApiEnvelope<T> | T): T {
   const envelope = payload as ApiEnvelope<T>;
   return envelope.data ?? envelope.Data ?? (payload as T);
 }
 
+// Unwraps list responses from several common backend envelope shapes and falls back to an empty array.
 export function extractResponseCollection<T>(
   payload: ApiCollectionEnvelope<T> | T[]
 ): T[] {
@@ -52,6 +54,7 @@ export function extractResponseCollection<T>(
   return collection ?? [];
 }
 
+// Converts unknown axios and runtime errors into a safe user-facing message for forms and screens.
 export function getApiErrorMessage(
   error: unknown,
   fallbackMessage = "Something went wrong. Please try again."

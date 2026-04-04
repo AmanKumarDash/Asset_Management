@@ -1,4 +1,4 @@
-﻿import {
+import {
   ReactNode,
   createContext,
   useCallback,
@@ -23,6 +23,7 @@ export const AuthSessionContext = createContext<AuthSessionContextValue | null>(
   null
 );
 
+// Generates avatar initials from the user's display name whenever profile data changes.
 function deriveInitials(name: string) {
   return name
     .split(" ")
@@ -32,6 +33,7 @@ function deriveInitials(name: string) {
     .join("");
 }
 
+// Owns auth/session state for the whole app, including token hydration and org bootstrap.
 export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
@@ -40,6 +42,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    // Restores the last known session from storage so refresh/login is not required on every app launch.
     const hydrateSession = async () => {
       const [storedToken, storedRefreshToken, storedUser, storedOrganization] =
         await Promise.all([
@@ -73,6 +76,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Persists the current user and token metadata after login so session state survives app restarts.
   const persistSession = useCallback(async (session: AuthSession) => {
     await Promise.all([
       storage.setObject(STORAGE_KEYS.AUTH_USER, session.user),
@@ -97,6 +101,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  // Persists organization details separately because they are loaded after login and reused across screens.
   const persistOrganization = useCallback(async (value: OrganizationDetails | null) => {
     if (value) {
       await storage.setObject(STORAGE_KEYS.AUTH_ORGANIZATION, value);
@@ -106,6 +111,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     await storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION);
   }, []);
 
+  // Removes all persisted auth-related data during sign-out and expired-session cleanup.
   const clearSession = useCallback(async () => {
     await Promise.all([
       storage.removeItem(STORAGE_KEYS.AUTH_USER),
@@ -117,6 +123,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  // Refreshes organization details on demand so profile and audit screens can reuse one shared source of truth.
   const refreshOrganization = useCallback(async () => {
     try {
       const payload = await apiService.getOrganizationDetails();
@@ -144,6 +151,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   }, [persistOrganization]);
 
   useEffect(() => {
+    // Gives the axios layer a way to clear app state when token refresh can no longer recover the session.
     setSessionExpiredHandler(() => {
       setAccessToken(null);
       setUser(null);
@@ -156,6 +164,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     };
   }, [clearSession]);
 
+  // Handles login, session persistence, and the follow-up organization bootstrap required by the app.
   const signIn = useCallback(
     async ({ identifier, password }: SignInInput): Promise<SignInResult> => {
       try {
@@ -208,6 +217,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     [clearSession, persistOrganization, persistSession, refreshOrganization]
   );
 
+  // Clears in-memory and persisted session state when the user leaves the app intentionally.
   const signOut = useCallback(() => {
     appLogger.info("AuthSession", "User signed out.", {
       email: user?.email ?? "unknown",
@@ -218,6 +228,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     void clearSession();
   }, [clearSession, user]);
 
+  // Updates the local user profile snapshot and re-derives initials for headers and avatars.
   const updateUser = useCallback((updates: Partial<AppUser>) => {
     setUser((current) => {
       if (!current) {
@@ -243,6 +254,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Small helper used by protected screens to check role-based capabilities from the current session.
   const hasPermission = useCallback((permission: AppPermission) => {
     return user?.permissions.includes(permission) ?? false;
   }, [user]);

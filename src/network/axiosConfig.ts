@@ -10,6 +10,7 @@ import axios, {
 import { ENDPOINTS } from "./endpoints";
 import { ApiEnvelope, extractResponseData } from "./responses";
 
+// Shared axios defaults keep every request pointed at the same backend and JSON contract.
 const baseConfig = {
   baseURL: API_BASE_URL || undefined,
   timeout: API_TIMEOUT_MS,
@@ -42,6 +43,7 @@ let accessToken: string | null = null;
 let sessionExpiredHandler: (() => void) | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 
+// Refresh responses are not fully consistent, so this normalizes all known token field names.
 function extractTokenBundle(payload: RefreshTokenResponse) {
   return {
     token:
@@ -62,6 +64,7 @@ function extractTokenBundle(payload: RefreshTokenResponse) {
   };
 }
 
+// Store the latest auth tokens after a successful refresh so the next app launch stays signed in.
 async function persistRefreshedTokens(bundle: {
   token: string | null;
   refreshToken: string | null;
@@ -90,6 +93,7 @@ async function persistRefreshedTokens(bundle: {
   ]);
 }
 
+// Clear all persisted auth state when refresh fails so the app cannot keep using stale credentials.
 async function clearPersistedAuthTokens() {
   await Promise.all([
     secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
@@ -100,6 +104,7 @@ async function clearPersistedAuthTokens() {
   ]);
 }
 
+// Runs a single refresh request for all pending 401s and reuses the same promise until it finishes.
 async function refreshAccessToken() {
   if (refreshPromise) {
     return refreshPromise;
@@ -166,6 +171,7 @@ async function refreshAccessToken() {
   return refreshPromise;
 }
 
+// Fail fast with a clear message when the API base URL has not been configured in the environment.
 export function assertApiBaseUrlConfigured() {
   if (API_BASE_URL) {
     return;
@@ -176,16 +182,19 @@ export function assertApiBaseUrlConfigured() {
   );
 }
 
+// Keeps the in-memory bearer token in sync with sign-in, sign-out, and token refresh events.
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
+// Lets the auth provider decide what should happen when refresh ultimately fails.
 export function setSessionExpiredHandler(handler: (() => void) | null) {
   sessionExpiredHandler = handler;
 }
 
 export const axiosInstance = axios.create(baseConfig);
 
+// Inject the latest bearer token into every outgoing request when a session is active.
 axiosInstance.interceptors.request.use((config) => {
   const headers = AxiosHeaders.from(config.headers);
 
@@ -209,6 +218,7 @@ axiosInstance.interceptors.response.use(
       !requestUrl.includes(ENDPOINTS.AUTH.LOGIN) &&
       !requestUrl.includes(ENDPOINTS.AUTH.REFRESH);
 
+    // Retry once after refresh for normal protected endpoints, but never loop on login/refresh calls.
     if (shouldAttemptRefresh && originalRequest) {
       originalRequest._retry = true;
 

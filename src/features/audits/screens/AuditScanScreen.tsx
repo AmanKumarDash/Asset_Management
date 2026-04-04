@@ -1,4 +1,4 @@
-﻿import { USER_ROLES } from "@/constants/auth";
+import { USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
 import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
@@ -107,11 +107,11 @@ function getScanPanelDescription(
   }
 
   if (phase === "submitting") {
-    return "MQTT has been disconnected and the scanned TAG_ID list is frozen. We are sending the snapshot to the backend for missing and extra comparison.";
+    return "MQTT has been disconnected and the scanned snapshot is frozen. We are sending the warehouse staging payload to the backend now.";
   }
 
   if (phase === "submitted") {
-    return "MQTT is disconnected and the backend comparison has been applied. The list below now reflects the submitted audit result.";
+    return "MQTT is disconnected and the warehouse staging request has been submitted. The list below reflects the final scanned snapshot.";
   }
 
   if (phase === "submitError") {
@@ -1027,3 +1027,4 @@ export default function AuditScanScreen() {
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }
+

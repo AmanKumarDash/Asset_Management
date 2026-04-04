@@ -1,4 +1,4 @@
-﻿import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { OrganizationAddress } from "@/models/organization";
 import { WarehouseSummary } from "@/models/warehouse";
 import { apiService, WarehouseApiRecord } from "@/network/ApiService";
@@ -6,6 +6,7 @@ import { getApiErrorMessage } from "@/network/responses";
 import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+// Reads the first non-empty string from a record so we can support slightly different backend field names.
 function pickString(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -18,6 +19,7 @@ function pickString(record: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+// Reads an id from mixed API payloads and normalizes it to a string for easy UI selection handling.
 function pickId(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -34,6 +36,7 @@ function pickId(record: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+// Builds a readable address line for warehouse cards when full address information is available.
 function getAddressSubtitle(address: unknown) {
   if (!address || typeof address !== "object") {
     return null;
@@ -51,6 +54,7 @@ function getAddressSubtitle(address: unknown) {
   return parts.length > 0 ? parts.join(" - ") : null;
 }
 
+// Converts a raw warehouse API record into the app's stable warehouse shape used by the audit UI.
 function normalizeWarehouse(record: WarehouseApiRecord, index: number): WarehouseSummary {
   const id = pickId(record, ["Id", "ID", "WarehouseId", "warehouseId"]) ??
     `warehouse-${index + 1}`;
@@ -86,6 +90,7 @@ function normalizeWarehouse(record: WarehouseApiRecord, index: number): Warehous
   };
 }
 
+// Deduplicates warehouse records so repeated backend rows do not create duplicate options in the selector.
 function normalizeWarehouses(records: WarehouseApiRecord[]) {
   const seen = new Set<string>();
 
@@ -101,6 +106,7 @@ function normalizeWarehouses(records: WarehouseApiRecord[]) {
     });
 }
 
+// Loads the organization and warehouse data needed before a user can start an audit session.
 export function useAuditSetup() {
   const { user, organization, refreshOrganization } = useAuthSession();
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
@@ -108,6 +114,7 @@ export function useAuditSetup() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Refreshes the setup screen by ensuring org details exist first, then loading warehouses for that org.
   const loadAuditSetup = useCallback(async () => {
     if (!user) {
       return;
@@ -158,10 +165,12 @@ export function useAuditSetup() {
     }
   }, [organization, refreshOrganization, user]);
 
+  // Auto-load setup data whenever the authenticated user context becomes available.
   useEffect(() => {
     void loadAuditSetup();
   }, [loadAuditSetup]);
 
+  // Exposes the full selected warehouse object so screens do not have to re-lookup it by id.
   const selectedWarehouse = useMemo(
     () =>
       warehouses.find((warehouse) => warehouse.id === selectedWarehouseId) ?? null,

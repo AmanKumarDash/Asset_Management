@@ -1,6 +1,7 @@
 import { appLogger } from "@/utils/appLogger";
 import mqtt from "mqtt";
 
+// These are the MQTT connection details used to receive scanned tag data.
 const MQTT_BROKER = "wss://no-counter.smaketsolutions.com:9002";
 const MQTT_TOPIC = "SMDEV-001p";
 const MQTT_USERNAME = "smaket";
@@ -17,12 +18,15 @@ export type MqttConnectionStatus =
 type MessageListener = (payload: unknown) => void;
 type StatusListener = (status: MqttConnectionStatus) => void;
 
+// This service handles the full MQTT connection in one place.
+// Other files use this instead of talking to the MQTT client directly.
 class MQTTService {
   private client: mqtt.MqttClient | null = null;
   private messageListeners = new Set<MessageListener>();
   private statusListeners = new Set<StatusListener>();
   private status: MqttConnectionStatus = "idle";
 
+  // Send the latest scanned message to every file that is listening.
   private emitMessage(payload: unknown) {
     appLogger.info("MQTT", "Broadcasting MQTT message to listeners.", {
       listenerCount: this.messageListeners.size,
@@ -31,6 +35,7 @@ class MQTTService {
     this.messageListeners.forEach((listener) => listener(payload));
   }
 
+  // Update the current connection status and tell all listeners about it.
   private emitStatus(status: MqttConnectionStatus) {
     this.status = status;
     appLogger.info("MQTT", "Connection status changed.", {
@@ -42,6 +47,7 @@ class MQTTService {
     this.statusListeners.forEach((listener) => listener(status));
   }
 
+  // Add a listener that should receive incoming scan messages.
   public onMessage(listener: MessageListener) {
     this.messageListeners.add(listener);
     appLogger.info("MQTT", "Registered message listener.", {
@@ -49,6 +55,7 @@ class MQTTService {
     });
   }
 
+  // Remove a scan message listener when it is no longer needed.
   public offMessage(listener: MessageListener) {
     this.messageListeners.delete(listener);
     appLogger.info("MQTT", "Removed message listener.", {
@@ -56,6 +63,7 @@ class MQTTService {
     });
   }
 
+  // Add a listener that should receive connection status updates.
   public onStatus(listener: StatusListener) {
     this.statusListeners.add(listener);
     appLogger.info("MQTT", "Registered status listener.", {
@@ -65,6 +73,7 @@ class MQTTService {
     listener(this.status);
   }
 
+  // Remove a connection status listener when it is no longer needed.
   public offStatus(listener: StatusListener) {
     this.statusListeners.delete(listener);
     appLogger.info("MQTT", "Removed status listener.", {
@@ -72,6 +81,7 @@ class MQTTService {
     });
   }
 
+  // Open the MQTT connection if it is not already open.
   public connectMqtt(): void {
     if (this.client) {
       appLogger.info("MQTT", "Skipped connect because client already exists.", {
@@ -101,6 +111,7 @@ class MQTTService {
       });
       this.emitStatus("connected");
 
+      // Once connected, start listening to the configured topic.
       this.client?.subscribe(MQTT_TOPIC, (error) => {
         if (error) {
           appLogger.error("MQTT", "Failed to subscribe to MQTT topic.", {
@@ -126,12 +137,15 @@ class MQTTService {
       });
 
       try {
+        // If the message is JSON, convert it to an object before sharing it.
         this.emitMessage(JSON.parse(messageText));
       } catch {
+        // If it is plain text, share it as it is.
         this.emitMessage(messageText);
       }
     });
 
+    // If the connection drops, MQTT will try to connect again.
     this.client.on("reconnect", () => {
       appLogger.warn("MQTT", "Reconnecting to MQTT broker.", {
         broker: MQTT_BROKER,
@@ -140,6 +154,7 @@ class MQTTService {
       this.emitStatus("reconnecting");
     });
 
+    // When the connection closes, clear the client and update the status.
     this.client.on("close", () => {
       appLogger.warn("MQTT", "MQTT connection closed.", {
         broker: MQTT_BROKER,
@@ -149,6 +164,7 @@ class MQTTService {
       this.emitStatus("closed");
     });
 
+    // If MQTT reports an error, log it and tell listeners.
     this.client.on("error", (error) => {
       appLogger.error("MQTT", "MQTT client error.", {
         broker: MQTT_BROKER,
@@ -159,6 +175,7 @@ class MQTTService {
     });
   }
 
+  // Close the MQTT connection and move the service back to idle state.
   public disconnectMqtt(): void {
     if (this.client) {
       appLogger.info("MQTT", "Closing MQTT connection by request.", {
