@@ -1,4 +1,4 @@
-﻿import { InventoryBarcodeScanDetail } from "./inventory";
+import { InventoryBarcodeScanDetail } from "./inventory";
 
 export type AuditPhase =
   | "idle"
@@ -10,7 +10,13 @@ export type AuditPhase =
 export type AuditReportTone = "found" | "missing" | "extra";
 
 export type AuditSubmitRequest = {
-  TAG_IDs: string[];
+  StagingList: AssetWarehouseStagingItem[];
+};
+
+export type AssetWarehouseStagingItem = {
+  TagId: number;
+  ProductId: number;
+  WareHouseId: number;
 };
 
 export type AuditReportAsset = Partial<InventoryBarcodeScanDetail> & {
@@ -43,3 +49,4 @@ export type AuditSubmitResponse = {
   Location?: string;
   ObservedAt?: string;
 };
+

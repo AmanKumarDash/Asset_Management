@@ -1,4 +1,5 @@
-﻿import {
+import {
+  AssetWarehouseStagingItem,
   AuditPhase,
   AuditReportAsset,
   AuditReportTone,
@@ -6,6 +7,7 @@
 } from "@/features/audits/types/audit";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
+import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuditScanItem } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
@@ -17,6 +19,9 @@ type AuditSummary = {
   scanned: number;
 };
 
+type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId">;
+
+// Extracts a tag id from either plain strings or the nested payloads returned by the scanner stream.
 function getTagId(entry: unknown): string | null {
   if (typeof entry === "string") {
     const value = entry.trim();
@@ -46,6 +51,21 @@ function getTagId(entry: unknown): string | null {
     : null;
 }
 
+// Normalizes mixed API ids into numbers because the staging endpoint expects numeric ids.
+function parseNumericId(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+// Converts inventory lookup data into the reusable UI item shape shown in the audit results list.
 function mapInventoryToAuditItem(
   tagId: string,
   asset: InventoryBarcodeScanDetail | null
@@ -79,6 +99,44 @@ function mapInventoryToAuditItem(
   };
 }
 
+// Extracts the numeric tag and product ids needed by the warehouse staging API.
+// The inventory lookup returns the scanned RFID value as TagId for display, but
+// the staging endpoint expects the numeric tag record id, which comes back as ID.
+function mapInventoryToStagedLookup(
+  tagId: string,
+  asset: InventoryBarcodeScanDetail | null
+): StagedAssetLookup | null {
+  const resolvedTagId = parseNumericId(asset?.ID ?? asset?.TagId ?? tagId);
+  const productId = parseNumericId(asset?.ProductId);
+
+  if (resolvedTagId === null || productId === null) {
+    return null;
+  }
+
+  return {
+    TagId: resolvedTagId,
+    ProductId: productId,
+  };
+}
+
+// Stores scan lookup data under all relevant tag keys so submit can rebuild the payload reliably.
+function registerStagedLookup(
+  lookups: Map<string, StagedAssetLookup>,
+  lookup: StagedAssetLookup,
+  keys: (string | null | undefined)[]
+) {
+  keys.forEach((key) => {
+    if (!key?.trim()) {
+      return;
+    }
+
+    lookups.set(key.trim(), lookup);
+  });
+
+  lookups.set(String(lookup.TagId), lookup);
+}
+
+// Merges live MQTT items and manual entries into one deduplicated list for the screen.
 function mergeAuditItems(
   manualItems: AuditScanItem[],
   mqttItems: AuditScanItem[]
@@ -95,6 +153,7 @@ function mergeAuditItems(
   });
 }
 
+// Freezes the current list of scanned tags at submit time so later UI changes cannot affect the report request.
 function buildSnapshotItems(
   tagIds: string[],
   liveItems: AuditScanItem[]
@@ -109,6 +168,7 @@ function buildSnapshotItems(
   );
 }
 
+// Builds the count cards shown in the audit progress panel from a list of UI items.
 function getSummaryFromItems(
   items: AuditScanItem[],
   scannedOverride?: number
@@ -125,6 +185,7 @@ function getSummaryFromItems(
   };
 }
 
+// Reads the first useful string from backend report objects because those payloads can vary by key name.
 function pickString(
   record: Record<string, unknown>,
   keys: string[]
@@ -140,6 +201,7 @@ function pickString(
   return null;
 }
 
+// Chooses the most reliable tag id field from a backend report asset and falls back when necessary.
 function getReportAssetTagId(
   asset: AuditReportAsset,
   fallbackTagId?: string
@@ -153,6 +215,7 @@ function getReportAssetTagId(
   );
 }
 
+// Generates a display title for report rows while supporting partial backend payloads.
 function getReportAssetTitle(
   asset: AuditReportAsset,
   tone: AuditReportTone,
@@ -170,6 +233,7 @@ function getReportAssetTitle(
   );
 }
 
+// Generates a readable subtitle so missing and extra rows still make sense even with incomplete report data.
 function getReportAssetSubtitle(
   asset: AuditReportAsset,
   tone: AuditReportTone,
@@ -208,6 +272,7 @@ function getReportAssetSubtitle(
   return `${tagId} - Present in audit`;
 }
 
+// Converts a backend report asset into the same UI row shape used during live scanning.
 function mapReportAssetToAuditItem(
   tone: AuditReportTone,
   asset: AuditReportAsset,
@@ -229,6 +294,7 @@ function mapReportAssetToAuditItem(
   };
 }
 
+// Finds the first matching array field from a flexible report payload.
 function pickAssetArray(
   response: AuditSubmitResponse,
   keys: string[]
@@ -249,6 +315,7 @@ function pickAssetArray(
   return [];
 }
 
+// Reads numeric summary counts from the backend report when those counts are explicitly returned.
 function pickNumber(
   response: AuditSubmitResponse,
   keys: string[]
@@ -266,6 +333,7 @@ function pickNumber(
   return null;
 }
 
+// Normalizes the backend audit response into one list and one summary so the UI can render it consistently.
 function normalizeAuditSubmitResponse(
   response: AuditSubmitResponse,
   frozenItems: AuditScanItem[],
@@ -350,6 +418,7 @@ function normalizeAuditSubmitResponse(
   };
 }
 
+// Central audit hook that manages the full client-side scan lifecycle from start, to submit, to report view.
 export function useAuditScanState() {
   const [manualAssetId, setManualAssetId] = useState("");
   const [auditPhase, setAuditPhase] = useState<AuditPhase>("idle");
@@ -358,6 +427,9 @@ export function useAuditScanState() {
   const [frozenItems, setFrozenItems] = useState<AuditScanItem[]>([]);
   const [reportItems, setReportItems] = useState<AuditScanItem[]>([]);
   const [submittedTagIds, setSubmittedTagIds] = useState<string[]>([]);
+  const [submittedStagingList, setSubmittedStagingList] = useState<
+    AssetWarehouseStagingItem[]
+  >([]);
   const [reportSummary, setReportSummary] = useState<AuditSummary>({
     found: 0,
     missing: 0,
@@ -370,14 +442,17 @@ export function useAuditScanState() {
   const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
+  const stagedLookupsRef = useRef(new Map<string, StagedAssetLookup>());
   const scannedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
   const scanSessionRef = useRef(0);
 
+  // Keeps async callbacks synced with the latest phase without forcing every subscription to re-register.
   useEffect(() => {
     auditPhaseRef.current = auditPhase;
   }, [auditPhase]);
 
+  // Resolves one scanned tag into a UI item and caches the result to avoid duplicate lookup calls.
   const resolveAuditItem = useCallback(async (tagId: string) => {
     const cachedItem = itemCacheRef.current.get(tagId);
 
@@ -393,7 +468,21 @@ export function useAuditScanState() {
 
     const lookupPromise = apiService
       .searchInventoryBarcodeScanMode(tagId)
-      .then((results) => mapInventoryToAuditItem(tagId, results[0] ?? null))
+      .then((results) => {
+        const asset = results[0] ?? null;
+        const item = mapInventoryToAuditItem(tagId, asset);
+        const stagedLookup = mapInventoryToStagedLookup(tagId, asset);
+
+        if (stagedLookup) {
+          registerStagedLookup(stagedLookupsRef.current, stagedLookup, [
+            tagId,
+            asset?.TagId,
+            item.id,
+          ]);
+        }
+
+        return item;
+      })
       .catch(() => mapInventoryToAuditItem(tagId, null))
       .then((item) => {
         itemCacheRef.current.set(tagId, item);
@@ -405,6 +494,7 @@ export function useAuditScanState() {
     return lookupPromise;
   }, []);
 
+  // Handles live MQTT payloads, extracts unique tags, and updates the on-screen scan list.
   const handleMqttMessage = useCallback(
     (payload: unknown) => {
       if (auditPhaseRef.current !== "scanning") {
@@ -462,6 +552,7 @@ export function useAuditScanState() {
     [resolveAuditItem]
   );
 
+  // Starts and stops the MQTT subscription with the scanning phase so idle screens do not keep listening.
   useEffect(() => {
     if (auditPhase !== "scanning") {
       return;
@@ -479,11 +570,13 @@ export function useAuditScanState() {
     };
   }, [auditPhase, handleMqttMessage]);
 
+  // Combines manual and live scanner entries into the list used while the audit is still active.
   const liveItems = useMemo(
     () => mergeAuditItems(manualItems, mqttItems),
     [manualItems, mqttItems]
   );
 
+  // Chooses which item list the UI should render based on whether we are scanning, submitting, or showing the report.
   const items = useMemo(() => {
     if (auditPhase === "submitted") {
       return reportItems.length > 0 ? reportItems : frozenItems;
@@ -496,6 +589,7 @@ export function useAuditScanState() {
     return liveItems;
   }, [auditPhase, frozenItems, liveItems, reportItems]);
 
+  // Chooses the correct summary source so progress cards stay stable after submit or retry states.
   const summary = useMemo(() => {
     if (auditPhase === "idle") {
       return { found: 0, missing: 0, extra: 0, scanned: 0 };
@@ -515,11 +609,13 @@ export function useAuditScanState() {
     return getSummaryFromItems(liveItems);
   }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds]);
 
+  // Returns the hook to a clean pre-scan state when the user changes warehouse or leaves the audit screen.
   const resetAudit = useCallback(() => {
     scanSessionRef.current += 1;
     mqttService.disconnectMqtt();
     itemCacheRef.current.clear();
     pendingLookupsRef.current.clear();
+    stagedLookupsRef.current.clear();
     scannedTagIdsRef.current = new Set<string>();
     setManualAssetId("");
     setMqttItems([]);
@@ -527,6 +623,7 @@ export function useAuditScanState() {
     setFrozenItems([]);
     setReportItems([]);
     setSubmittedTagIds([]);
+    setSubmittedStagingList([]);
     setReportSummary({ found: 0, missing: 0, extra: 0, scanned: 0 });
     setSubmitError(null);
     setConnectionStatus("idle");
@@ -534,6 +631,7 @@ export function useAuditScanState() {
     setAuditPhase("idle");
   }, []);
 
+  // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
   const startAudit = useCallback((warehouseId?: string) => {
     if (!warehouseId) {
       return;
@@ -544,6 +642,7 @@ export function useAuditScanState() {
     setAuditPhase("scanning");
   }, [resetAudit]);
 
+  // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
   const addManualAsset = useCallback(() => {
     const value = manualAssetId.trim();
 
@@ -576,19 +675,79 @@ export function useAuditScanState() {
     setManualAssetId("");
   }, [auditPhase, manualAssetId, mqttItems]);
 
+  // Freezes the current scan set, disconnects MQTT, and submits the final staging payload for the selected warehouse.
   const submitAudit = useCallback(async () => {
     const canRetry = auditPhase === "submitError" && submittedTagIds.length > 0;
     const canSubmitLive = auditPhase === "scanning" && liveItems.length > 0;
 
     if (!canRetry && !canSubmitLive) {
+      appLogger.warn("AuditScan", "Submit ignored because the audit is not in a submittable state.", {
+        auditPhase,
+        liveItemCount: liveItems.length,
+        submittedTagCount: submittedTagIds.length,
+      });
       return;
     }
 
     const tagIds = canRetry
       ? submittedTagIds
-      : Array.from(scannedTagIdsRef.current.values());
+      : Array.from(new Set(liveItems.map((item) => item.id)));
 
     if (tagIds.length === 0) {
+      setSubmitError("No scanned tags are available to submit yet.");
+      appLogger.warn("AuditScan", "Submit blocked because no scanned tags were captured for the staging payload.");
+      return;
+    }
+
+    const warehouseId = parseNumericId(auditWarehouseId);
+
+    if (warehouseId === null) {
+      setSubmitError("Select a warehouse before submitting the scanned assets.");
+      appLogger.warn("AuditScan", "Submit blocked because the selected warehouse id is not numeric.", {
+        auditWarehouseId,
+      });
+      return;
+    }
+
+    const pendingLookups = canRetry
+      ? []
+      : tagIds.flatMap((tagId) => {
+          const pendingLookup = pendingLookupsRef.current.get(tagId);
+          return pendingLookup ? [pendingLookup] : [];
+        });
+
+    if (pendingLookups.length > 0) {
+      await Promise.all(pendingLookups);
+    }
+
+    const stagingList = canRetry
+      ? submittedStagingList
+      : tagIds.flatMap((tagId) => {
+          const stagedLookup = stagedLookupsRef.current.get(tagId);
+
+          return stagedLookup
+            ? [
+                {
+                  ...stagedLookup,
+                  WareHouseId: warehouseId,
+                },
+              ]
+            : [];
+        });
+
+    if (stagingList.length !== tagIds.length) {
+      const missingTagIds = tagIds.filter(
+        (tagId) => !stagedLookupsRef.current.has(tagId)
+      );
+      const message = `Some scanned tags could not be matched to a product for submission: ${missingTagIds.join(", ")}`;
+
+      setSubmitError(message);
+      appLogger.warn("AuditScan", "Submit blocked because some visible tags never resolved into staging lookup data.", {
+        warehouseId,
+        tagIds,
+        missingTagIds,
+        stagedLookupKeys: Array.from(stagedLookupsRef.current.keys()),
+      });
       return;
     }
 
@@ -599,6 +758,7 @@ export function useAuditScanState() {
     scanSessionRef.current += 1;
     setSubmitError(null);
     setSubmittedTagIds(tagIds);
+    setSubmittedStagingList(stagingList);
     setFrozenItems(snapshotItems);
     setReportItems([]);
     setReportSummary(getSummaryFromItems(snapshotItems, tagIds.length));
@@ -606,8 +766,14 @@ export function useAuditScanState() {
     setAuditPhase("submitting");
     mqttService.disconnectMqtt();
 
+    appLogger.info("AuditScan", "Submitting warehouse staging payload.", {
+      warehouseId,
+      tagIds,
+      stagingList,
+    });
+
     try {
-      const response = await apiService.submitScannedAuditTags(tagIds);
+      const response = await apiService.submitScannedAuditTags(stagingList);
       const normalizedReport = normalizeAuditSubmitResponse(
         response,
         snapshotItems,
@@ -617,13 +783,26 @@ export function useAuditScanState() {
       setReportItems(normalizedReport.items);
       setReportSummary(normalizedReport.summary);
       setAuditPhase("submitted");
-    } catch {
+    } catch (error) {
+      appLogger.error("AuditScan", "Warehouse staging API request failed.", {
+        warehouseId,
+        tagIds,
+        stagingList,
+        error,
+      });
       setAuditPhase("submitError");
       setSubmitError(
-        "MQTT has been disconnected and the scanned TAG_ID list is frozen, but the audit API request failed. Retry submit after the backend endpoint is ready."
+        "MQTT has been disconnected and the scan snapshot is frozen, but the warehouse staging API request failed. Retry submit after the backend endpoint is ready."
       );
     }
-  }, [auditPhase, frozenItems, liveItems, submittedTagIds]);
+  }, [
+    auditPhase,
+    auditWarehouseId,
+    frozenItems,
+    liveItems,
+    submittedStagingList,
+    submittedTagIds,
+  ]);
 
   const isScanning = auditPhase === "scanning";
   const canSubmit =
@@ -647,6 +826,9 @@ export function useAuditScanState() {
     auditWarehouseId,
   };
 }
+
+
+
 
 
 

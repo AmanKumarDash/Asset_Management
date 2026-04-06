@@ -121,6 +121,10 @@ function getScanPanelDescription(
     );
   }
 
+  if (submitError) {
+    return submitError;
+  }
+
   if (connectionStatus === "connected") {
     return "Hold the RFID reader near an asset tag. Live tag IDs will appear below as they are scanned.";
   }
@@ -1027,4 +1031,5 @@ export default function AuditScanScreen() {
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }
+
 

@@ -1,4 +1,5 @@
-﻿import {
+import {
+  AssetWarehouseStagingItem,
   AuditSubmitRequest,
   AuditSubmitResponse,
 } from "@/features/audits/types/audit";
@@ -29,6 +30,7 @@ class ApiService {
     this.api = axiosInstance;
   }
 
+  // Authenticates the user and returns the normalized login payload used to build app session state.
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
     assertApiBaseUrlConfigured();
 
@@ -40,6 +42,7 @@ class ApiService {
     return extractResponseData<LoginResponse>(response.data);
   }
 
+  // Loads organization details for the currently authenticated user after the bearer token is attached.
   async getOrganizationDetails(): Promise<OrganizationDetails> {
     assertApiBaseUrlConfigured();
 
@@ -50,6 +53,7 @@ class ApiService {
     return extractResponseData<OrganizationDetails>(response.data);
   }
 
+  // Fetches all warehouses visible to the logged-in organization for the audit setup screen.
   async getWarehouses(
     pageNo = 1,
     rowCount = 50
@@ -63,31 +67,38 @@ class ApiService {
     return extractResponseCollection<WarehouseApiRecord>(response.data);
   }
 
+  // Resolves a scanned RFID/barcode tag into product details so the audit UI can show readable item data.
   async searchInventoryBarcodeScanMode(
     searchText: string
   ): Promise<InventoryBarcodeScanDetail[]> {
     assertApiBaseUrlConfigured();
 
     const response = await this.api.get<
-      ApiEnvelope<InventoryBarcodeScanDetail[]> | InventoryBarcodeScanDetail[]
+      | ApiCollectionEnvelope<InventoryBarcodeScanDetail>
+      | ApiEnvelope<InventoryBarcodeScanDetail[]>
+      | InventoryBarcodeScanDetail[]
     >(ENDPOINTS.INVENTORY.SEARCH_BARCODE_SCAN_MODE(searchText));
 
-    return extractResponseData<InventoryBarcodeScanDetail[]>(response.data);
+    return extractResponseCollection<InventoryBarcodeScanDetail>(response.data);
   }
 
-  async submitScannedAuditTags(tagIds: string[]): Promise<AuditSubmitResponse> {
+  // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.
+  async submitScannedAuditTags(
+    stagingList: AssetWarehouseStagingItem[]
+  ): Promise<AuditSubmitResponse> {
     assertApiBaseUrlConfigured();
 
     const payload: AuditSubmitRequest = {
-      TAG_IDs: tagIds,
+      StagingList: stagingList,
     };
 
     const response = await this.api.post<
       ApiEnvelope<AuditSubmitResponse> | AuditSubmitResponse
-    >(ENDPOINTS.AUDIT.SUBMIT_SCANNED_TAGS, payload);
+    >(ENDPOINTS.WAREHOUSE.ASSET_WAREHOUSE_STAGING, payload);
 
-    return extractResponseData<AuditSubmitResponse>(response.data);
+    return extractResponseData<AuditSubmitResponse>(response.data) ?? {};
   }
 }
 
 export const apiService = new ApiService();
+
