@@ -26,6 +26,7 @@ import {
 import { useAuditScanState } from "../hooks/useAuditScanState";
 import EmployeeAuditScanScreen from "./EmployeeAuditScanScreen";
 
+// Returns the color and icon styling for a scan list row based on its tone.
 function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
     case "found":
@@ -55,6 +56,7 @@ function getToneStyles(tone: AuditItemTone) {
   }
 }
 
+// Chooses the small status icon for a scan list row depending on the result tone.
 function getStatusIconName(tone: AuditItemTone): "check" | "x" | "plus" {
   switch (tone) {
     case "found":
@@ -66,6 +68,7 @@ function getStatusIconName(tone: AuditItemTone): "check" | "x" | "plus" {
   }
 }
 
+// Generates the main heading shown in the scan panel for the current audit phase.
 function getScanPanelHeading(
   phase: AuditPhase,
   connectionStatus: MqttConnectionStatus
@@ -97,6 +100,7 @@ function getScanPanelHeading(
   return "Connecting to scanner...";
 }
 
+// Builds the descriptive text beneath the scan panel heading, including errors and connection guidance.
 function getScanPanelDescription(
   phase: AuditPhase,
   connectionStatus: MqttConnectionStatus,
@@ -136,6 +140,7 @@ function getScanPanelDescription(
   return "Opening the live MQTT scanner connection for this audit.";
 }
 
+// Chooses the text shown on the submit button depending on the audit state.
 function getSubmitButtonLabel(phase: AuditPhase) {
   if (phase === "submitting") {
     return "Submitting...";
@@ -152,6 +157,7 @@ function getSubmitButtonLabel(phase: AuditPhase) {
   return "Proceed to Submit";
 }
 
+// Chooses the heading text for the scan result list based on the current phase.
 function getListHeading(phase: AuditPhase) {
   if (phase === "submitted") {
     return "Audit report";
@@ -168,6 +174,7 @@ function getListHeading(phase: AuditPhase) {
   return "Scanned so far";
 }
 
+// Returns the empty-state message shown when there are no scan items to display.
 function getEmptyStateDescription(phase: AuditPhase) {
   if (phase === "submitted") {
     return "The audit report is ready, but no items were returned for display.";
@@ -180,6 +187,7 @@ function getEmptyStateDescription(phase: AuditPhase) {
   return "Start the audit to activate scanning and populate asset results.";
 }
 
+// Renders the small legend explaining the audit item tones shown in the list.
 function LegendRow() {
   const items = [
     { label: "Found", tone: "found" as const },
@@ -208,6 +216,7 @@ function LegendRow() {
   );
 }
 
+// Renders the animated scanner indicator circle, active when scanning is live.
 function ScanningIndicator({ isActive }: { isActive: boolean }) {
   const pulse = useRef(new Animated.Value(1)).current;
   const ripple = useRef(new Animated.Value(0)).current;
@@ -298,6 +307,7 @@ function ScanningIndicator({ isActive }: { isActive: boolean }) {
   );
 }
 
+// Shows the main scan control panel with status text and the start-audit action.
 function ScanPanel({
   phase,
   connectionStatus,
@@ -350,6 +360,7 @@ function ScanPanel({
   );
 }
 
+// Renders the manual asset entry row so users can type in a tag or ID when scanning is active.
 function ManualEntryRow({
   value,
   onChange,
@@ -413,6 +424,7 @@ function ManualEntryRow({
   );
 }
 
+// Displays the list of scanned audit items, including found, missing, and extra rows.
 function AuditScanList({ items }: { items: AuditScanItem[] }) {
   return (
     <View>
@@ -469,6 +481,7 @@ function AuditScanList({ items }: { items: AuditScanItem[] }) {
   );
 }
 
+// Renders the submit action button and disables it when submission is not allowed.
 function SubmitActionButton({
   phase,
   canSubmit,
@@ -504,6 +517,7 @@ function SubmitActionButton({
   );
 }
 
+// Renders the desktop-only progress summary card with scan counts and a submit button.
 function DesktopProgressCard({
   phase,
   scanned,
@@ -511,6 +525,7 @@ function DesktopProgressCard({
   missing,
   extra,
   canSubmit,
+  totalAssets,
   onSubmitAudit,
 }: {
   phase: AuditPhase;
@@ -519,9 +534,10 @@ function DesktopProgressCard({
   missing: number;
   extra: number;
   canSubmit: boolean;
+  totalAssets: number;
   onSubmitAudit: () => void;
 }) {
-  const progress = Math.min(scanned / auditScanOverview.totalAssets, 1);
+  const progress = totalAssets > 0 ? Math.min(scanned / totalAssets, 1) : 0;
 
   const cards = [
     { label: "Found", value: found, bg: "#EAF5DB", text: "#5D8B1F" },
@@ -549,7 +565,7 @@ function DesktopProgressCard({
           className="text-[18px] font-semibold"
           style={{ color: adminTheme.slate }}
         >
-          {scanned} / {auditScanOverview.totalAssets}
+          {scanned} / {totalAssets}
         </Text>
       </View>
 
@@ -597,6 +613,7 @@ function DesktopProgressCard({
   );
 }
 
+// Shows a boxed notice describing current warehouse selection status and back navigation.
 function WarehouseSelectionNotice({
   warehouseName,
   onBack,
@@ -650,6 +667,7 @@ function WarehouseSelectionNotice({
   );
 }
 
+// Mobile-specific audit screen layout that uses the scan hook and setup hook together.
 function MobileAuditScan() {
   const {
     items,
@@ -660,12 +678,15 @@ function MobileAuditScan() {
     connectionStatus,
     manualAssetId,
     setManualAssetId,
+    prepareWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
     resetAudit,
     summary,
     auditWarehouseId,
+    expectedAssetCount,
+    isPreparingWarehouse,
   } = useAuditScanState();
   const {
     organization,
@@ -678,9 +699,17 @@ function MobileAuditScan() {
     refreshSetup,
   } = useAuditSetup();
   const selectionLocked =
-    auditPhase === "scanning" || auditPhase === "submitting";
+    auditPhase === "scanning" ||
+    auditPhase === "submitting" ||
+    isPreparingWarehouse;
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
+  const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+
+  const handleSelectWarehouse = (warehouseId: string) => {
+    setSelectedWarehouseId(warehouseId);
+    void prepareWarehouseAudit(warehouseId);
+  };
 
   const goBackToWarehouseSelection = () => {
     resetAudit();
@@ -749,7 +778,7 @@ function MobileAuditScan() {
               organization={organization}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId}
-              onSelectWarehouse={setSelectedWarehouseId}
+              onSelectWarehouse={handleSelectWarehouse}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
@@ -809,7 +838,7 @@ function MobileAuditScan() {
                   className="text-sm font-medium"
                   style={{ color: adminTheme.primary }}
                 >
-                  {summary.scanned} / {auditScanOverview.totalAssets}
+                  {summary.scanned} / {totalAssets}
                 </Text>
               </View>
             </View>
@@ -854,6 +883,7 @@ function MobileAuditScan() {
   );
 }
 
+// Desktop-specific audit screen layout that uses wider page space for progress and scan panels.
 function DesktopAuditScan({ width }: { width: number }) {
   const {
     items,
@@ -864,12 +894,15 @@ function DesktopAuditScan({ width }: { width: number }) {
     connectionStatus,
     manualAssetId,
     setManualAssetId,
+    prepareWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
     resetAudit,
     summary,
     auditWarehouseId,
+    expectedAssetCount,
+    isPreparingWarehouse,
   } = useAuditScanState();
   const {
     organization,
@@ -883,9 +916,17 @@ function DesktopAuditScan({ width }: { width: number }) {
   } = useAuditSetup();
   const twoColumn = width >= 1340;
   const selectionLocked =
-    auditPhase === "scanning" || auditPhase === "submitting";
+    auditPhase === "scanning" ||
+    auditPhase === "submitting" ||
+    isPreparingWarehouse;
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
+  const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+
+  const handleSelectWarehouse = (warehouseId: string) => {
+    setSelectedWarehouseId(warehouseId);
+    void prepareWarehouseAudit(warehouseId);
+  };
 
   const goBackToWarehouseSelection = () => {
     resetAudit();
@@ -915,7 +956,7 @@ function DesktopAuditScan({ width }: { width: number }) {
           </Text>
         </View>
         <Text className="text-[16px]" style={{ color: adminTheme.slateSoft }}>
-          {summary.scanned} / {auditScanOverview.totalAssets} scanned
+          {summary.scanned} / {totalAssets} scanned
         </Text>
       </View>
 
@@ -926,7 +967,7 @@ function DesktopAuditScan({ width }: { width: number }) {
               organization={organization}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId}
-              onSelectWarehouse={setSelectedWarehouseId}
+              onSelectWarehouse={handleSelectWarehouse}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
@@ -969,6 +1010,7 @@ function DesktopAuditScan({ width }: { width: number }) {
                 missing={summary.missing}
                 extra={summary.extra}
                 canSubmit={canSubmit}
+                totalAssets={totalAssets}
                 onSubmitAudit={submitAudit}
               />
             </View>
@@ -1016,6 +1058,7 @@ function DesktopAuditScan({ width }: { width: number }) {
   );
 }
 
+// Main audit screen entry component that chooses between mobile, desktop, or employee audit views.
 export default function AuditScanScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
@@ -1031,5 +1074,9 @@ export default function AuditScanScreen() {
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }
+
+
+
+
 
 

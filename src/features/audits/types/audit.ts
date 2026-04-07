@@ -19,6 +19,14 @@ export type AssetWarehouseStagingItem = {
   WareHouseId: number;
 };
 
+export type WarehouseTagBaselineItem = {
+  ProductName?: string;
+  ProductId: number;
+  TagId: number;
+  ProductCode?: string;
+  WarehouseId: number;
+};
+
 export type AuditReportAsset = Partial<InventoryBarcodeScanDetail> & {
   TAG_ID?: string;
   TagID?: string;
@@ -49,4 +57,5 @@ export type AuditSubmitResponse = {
   Location?: string;
   ObservedAt?: string;
 };
+
 

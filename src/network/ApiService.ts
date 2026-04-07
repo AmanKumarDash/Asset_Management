@@ -2,6 +2,7 @@ import {
   AssetWarehouseStagingItem,
   AuditSubmitRequest,
   AuditSubmitResponse,
+  WarehouseTagBaselineItem,
 } from "@/features/audits/types/audit";
 import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
 import { LoginResponse } from "@/features/auth/types/authApi";
@@ -82,6 +83,19 @@ class ApiService {
     return extractResponseCollection<InventoryBarcodeScanDetail>(response.data);
   }
 
+  // Loads the warehouse baseline tag list so the audit can compare expected vs scanned assets.
+  async getWarehouseTagBaseline(
+    warehouseId: number | string
+  ): Promise<WarehouseTagBaselineItem[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiCollectionEnvelope<WarehouseTagBaselineItem> | WarehouseTagBaselineItem[]
+    >(ENDPOINTS.WAREHOUSE.GET_TAGS_BY_WAREHOUSE(warehouseId));
+
+    return extractResponseCollection<WarehouseTagBaselineItem>(response.data);
+  }
+
   // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.
   async submitScannedAuditTags(
     stagingList: AssetWarehouseStagingItem[]
@@ -101,4 +115,5 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+
 

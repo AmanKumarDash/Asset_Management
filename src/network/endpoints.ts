@@ -9,6 +9,8 @@ export const ENDPOINTS = {
   WAREHOUSE: {
     GET_BY_ORG: (pageNo = 1, rowCount = 50) =>
       `/api/warehouse/getwarehousebyOrg?pageNo=${pageNo}&rowCount=${rowCount}`,
+    GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>
+      `/api/warehouse/GetWareHousetagno?WarehouseId=${encodeURIComponent(String(warehouseId))}`,
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
   },
   INVENTORY: {
@@ -18,3 +20,4 @@ export const ENDPOINTS = {
       )}&isTaxable=true&isGSTtype=true&IsRestrict=false&IsProforma=false&IsTagWise=true`,
   },
 } as const;
+

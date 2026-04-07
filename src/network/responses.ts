@@ -54,22 +54,37 @@ export function extractResponseCollection<T>(
   return collection ?? [];
 }
 
+function sanitizeApiMessage(message: string) {
+  const trimmedMessage = message.trim();
+
+  if (!trimmedMessage) {
+    return "";
+  }
+
+  const firstLine = trimmedMessage.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const withoutStackTrace = firstLine.split("----", 1)[0]?.trim() ?? firstLine;
+
+  return withoutStackTrace || trimmedMessage;
+}
+
 // Converts unknown axios and runtime errors into a safe user-facing message for forms and screens.
 export function getApiErrorMessage(
   error: unknown,
   fallbackMessage = "Something went wrong. Please try again."
 ) {
   if (isAxiosError<{ message?: string; Message?: string }>(error)) {
+    const responseMessage =
+      error.response?.data?.message || error.response?.data?.Message;
+
     return (
-      error.response?.data?.message ||
-      error.response?.data?.Message ||
-      error.message ||
+      (responseMessage ? sanitizeApiMessage(responseMessage) : null) ||
+      sanitizeApiMessage(error.message) ||
       fallbackMessage
     );
   }
 
   if (error instanceof Error) {
-    return error.message;
+    return sanitizeApiMessage(error.message) || fallbackMessage;
   }
 
   return fallbackMessage;

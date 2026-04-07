@@ -4,6 +4,7 @@ import {
   AuditReportAsset,
   AuditReportTone,
   AuditSubmitResponse,
+  WarehouseTagBaselineItem,
 } from "@/features/audits/types/audit";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
@@ -73,12 +74,16 @@ function mapInventoryToAuditItem(
   if (!asset) {
     return {
       id: tagId,
-      title: "RFID Asset Detected",
-      subtitle: `${tagId} - Details unavailable`,
-      tone: "found",
-      icon: "plus-square",
+      title: "Unmatched RFID Asset",
+      subtitle: `${tagId} - No product association found`,
+      tone: "extra",
+      icon: "plus-circle",
     };
   }
+
+  const resolvedTagId = parseNumericId(asset?.ID ?? asset?.TagId ?? tagId);
+  const productId = parseNumericId(asset?.ProductId);
+  const isStagingReady = resolvedTagId !== null && productId !== null;
 
   const productCode = asset.ProductCode?.trim();
   const manufacturer = asset.ManufecturName?.trim();
@@ -89,11 +94,24 @@ function mapInventoryToAuditItem(
     manufacturer,
     modelNo,
   ].filter(Boolean);
+  const baseSubtitle = subtitleParts.join(" - ");
+
+  if (!isStagingReady) {
+    return {
+      id: asset.TagId?.trim() || tagId,
+      title: asset.ProductName?.trim() || "Unmatched RFID Asset",
+      subtitle: baseSubtitle
+        ? `${baseSubtitle} - No product match for submission`
+        : `${asset.TagId?.trim() || tagId} - No product match for submission`,
+      tone: "extra",
+      icon: "plus-circle",
+    };
+  }
 
   return {
     id: asset.TagId?.trim() || tagId,
     title: asset.ProductName?.trim() || "RFID Asset Detected",
-    subtitle: subtitleParts.join(" - "),
+    subtitle: baseSubtitle,
     tone: "found",
     icon: "plus-square",
   };
@@ -134,6 +152,185 @@ function registerStagedLookup(
   });
 
   lookups.set(String(lookup.TagId), lookup);
+}
+
+function normalizeWarehouseTagBaseline(
+  assets: WarehouseTagBaselineItem[]
+): WarehouseTagBaselineItem[] {
+  const seen = new Set<number>();
+
+  return assets.filter((asset) => {
+    if (!Number.isFinite(asset.TagId) || seen.has(asset.TagId)) {
+      return false;
+    }
+
+    seen.add(asset.TagId);
+    return true;
+  });
+}
+
+function mapWarehouseBaselineToAuditItem(
+  asset: WarehouseTagBaselineItem,
+  tone: AuditReportTone,
+  visibleTagId?: string,
+  scannedItem?: AuditScanItem
+): AuditScanItem {
+  if (scannedItem && tone === "found") {
+    return {
+      ...scannedItem,
+      tone: "found",
+      icon: "plus-square",
+    };
+  }
+
+  if (scannedItem && tone === "extra") {
+    return {
+      ...scannedItem,
+      tone: "extra",
+      icon: "plus-circle",
+    };
+  }
+
+  const subtitleParts = [
+    visibleTagId ?? `Warehouse Tag ${asset.TagId}` ,
+    asset.ProductCode?.trim(),
+    tone === "missing"
+      ? "Expected in selected warehouse"
+      : tone === "extra"
+        ? "Scanned but not expected in selected warehouse"
+        : "Matched with selected warehouse",
+  ].filter(Boolean);
+
+  return {
+    id: visibleTagId ?? String(asset.TagId),
+    title: asset.ProductName?.trim() || "Warehouse Asset",
+    subtitle: subtitleParts.join(" - "),
+    tone,
+    icon:
+      tone === "missing"
+        ? "briefcase"
+        : tone === "extra"
+          ? "plus-circle"
+          : "plus-square",
+  };
+}
+
+function buildLocalAuditComparison(
+  expectedAssets: WarehouseTagBaselineItem[],
+  snapshotItems: AuditScanItem[],
+  visibleTagIds: string[],
+  stagingList: AssetWarehouseStagingItem[],
+  unmatchedTagIds: string[]
+): {
+  items: AuditScanItem[];
+  summary: AuditSummary;
+} {
+  const snapshotMap = new Map(snapshotItems.map((item) => [item.id, item]));
+  const resolvedScans = stagingList.map((stagingItem, index) => ({
+    stagingItem,
+    visibleTagId: visibleTagIds[index] ?? String(stagingItem.TagId),
+    snapshotItem:
+      snapshotMap.get(visibleTagIds[index] ?? "") ??
+      snapshotMap.get(String(stagingItem.TagId)) ??
+      null,
+  }));
+  const resolvedScanByWarehouseTag = new Map(
+    resolvedScans.map((entry) => [entry.stagingItem.TagId, entry])
+  );
+  const expectedByWarehouseTag = new Map(
+    expectedAssets.map((asset) => [asset.TagId, asset])
+  );
+
+  const foundItems = expectedAssets
+    .filter((asset) => resolvedScanByWarehouseTag.has(asset.TagId))
+    .map((asset) => {
+      const resolvedScan = resolvedScanByWarehouseTag.get(asset.TagId);
+
+      return mapWarehouseBaselineToAuditItem(
+        asset,
+        "found",
+        resolvedScan?.visibleTagId,
+        resolvedScan?.snapshotItem ?? undefined
+      );
+    });
+
+  const missingItems = expectedAssets
+    .filter((asset) => !resolvedScanByWarehouseTag.has(asset.TagId))
+    .map((asset) => mapWarehouseBaselineToAuditItem(asset, "missing"));
+
+  const extraItems = resolvedScans
+    .filter((entry) => !expectedByWarehouseTag.has(entry.stagingItem.TagId))
+    .map((entry) => {
+      const fallbackAsset: WarehouseTagBaselineItem = {
+        ProductId: entry.stagingItem.ProductId,
+        TagId: entry.stagingItem.TagId,
+        WarehouseId: entry.stagingItem.WareHouseId,
+        ProductName: entry.snapshotItem?.title,
+      };
+
+      return mapWarehouseBaselineToAuditItem(
+        fallbackAsset,
+        "extra",
+        entry.visibleTagId,
+        entry.snapshotItem ?? undefined
+      );
+    });
+
+  const expectedTagStrings = new Set(
+    expectedAssets.map((asset) => String(asset.TagId))
+  );
+
+  const unmatchedExtraItems = snapshotItems
+    .filter((item) => unmatchedTagIds.includes(item.id))
+    .filter((item) => {
+      const normalizedId = String(parseNumericId(item.id) ?? item.id);
+      return !expectedTagStrings.has(normalizedId);
+    })
+    .map((item) => ({
+      ...item,
+      tone: "extra" as const,
+      icon: "plus-circle" as const,
+    }));
+
+  const allExtraItems = [...extraItems, ...unmatchedExtraItems];
+
+  return {
+    items: [...foundItems, ...missingItems, ...allExtraItems],
+    summary: {
+      found: foundItems.length,
+      missing: missingItems.length,
+      extra: allExtraItems.length,
+      scanned: visibleTagIds.length,
+    },
+  };
+}
+
+function hasAuditReportData(response: AuditSubmitResponse): boolean {
+  const responseRecord = response as Record<string, unknown>;
+  const arrayKeys = [
+    "FoundAssets",
+    "FoundItems",
+    "Found",
+    "MissingAssets",
+    "MissingItems",
+    "Missing",
+    "ExtraAssets",
+    "ExtraItems",
+    "Extra",
+  ];
+  const countKeys = [
+    "FoundCount",
+    "MissingCount",
+    "ExtraCount",
+    "foundCount",
+    "missingCount",
+    "extraCount",
+  ];
+
+  return (
+    arrayKeys.some((key) => Array.isArray(responseRecord[key])) ||
+    countKeys.some((key) => typeof responseRecord[key] === "number")
+  );
 }
 
 // Merges live MQTT items and manual entries into one deduplicated list for the screen.
@@ -337,7 +534,8 @@ function pickNumber(
 function normalizeAuditSubmitResponse(
   response: AuditSubmitResponse,
   frozenItems: AuditScanItem[],
-  submittedTagIds: string[]
+  submittedTagIds: string[],
+  unmatchedTagIds: string[] = []
 ): {
   items: AuditScanItem[];
   summary: AuditSummary;
@@ -401,18 +599,31 @@ function normalizeAuditSubmitResponse(
             return mapReportAssetToAuditItem("found", { tagId }, tagId);
           });
 
-  const items = [...foundItems, ...missingItems, ...extraItems];
+  const baseItems = [...foundItems, ...missingItems, ...extraItems];
+  const reportItemIds = new Set(baseItems.map((item) => item.id));
+  const unmatchedItems = frozenItems
+    .filter((item) => unmatchedTagIds.includes(item.id))
+    .filter((item) => !reportItemIds.has(item.id))
+    .map((item) => ({
+      ...item,
+      tone: "extra" as const,
+      icon: "plus-circle" as const,
+    }));
+
+  const allItems = [...baseItems, ...unmatchedItems];
+  const extraCount =
+    (pickNumber(response, ["ExtraCount", "extraCount"]) ?? extraItems.length) +
+    unmatchedItems.length;
 
   return {
-    items,
+    items: allItems,
     summary: {
       found:
         pickNumber(response, ["FoundCount", "foundCount"]) ?? foundItems.length,
       missing:
         pickNumber(response, ["MissingCount", "missingCount"]) ??
         missingItems.length,
-      extra:
-        pickNumber(response, ["ExtraCount", "extraCount"]) ?? extraItems.length,
+      extra: extraCount,
       scanned: submittedTagIds.length,
     },
   };
@@ -440,12 +651,17 @@ export function useAuditScanState() {
   const [connectionStatus, setConnectionStatus] =
     useState<MqttConnectionStatus>("idle");
   const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
+  const [expectedWarehouseAssets, setExpectedWarehouseAssets] = useState<
+    WarehouseTagBaselineItem[]
+  >([]);
+  const [isPreparingWarehouse, setIsPreparingWarehouse] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
   const stagedLookupsRef = useRef(new Map<string, StagedAssetLookup>());
   const scannedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
   const scanSessionRef = useRef(0);
+  const warehouseLoadRequestRef = useRef(0);
 
   // Keeps async callbacks synced with the latest phase without forcing every subscription to re-register.
   useEffect(() => {
@@ -609,8 +825,7 @@ export function useAuditScanState() {
     return getSummaryFromItems(liveItems);
   }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds]);
 
-  // Returns the hook to a clean pre-scan state when the user changes warehouse or leaves the audit screen.
-  const resetAudit = useCallback(() => {
+  const clearScanSession = useCallback((nextPhase: AuditPhase = "idle") => {
     scanSessionRef.current += 1;
     mqttService.disconnectMqtt();
     itemCacheRef.current.clear();
@@ -627,20 +842,88 @@ export function useAuditScanState() {
     setReportSummary({ found: 0, missing: 0, extra: 0, scanned: 0 });
     setSubmitError(null);
     setConnectionStatus("idle");
-    setAuditWarehouseId(null);
-    setAuditPhase("idle");
+    setAuditPhase(nextPhase);
   }, []);
 
-  // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
-  const startAudit = useCallback((warehouseId?: string) => {
+  // Loads the selected warehouse baseline so the audit can compare expected vs scanned items on submit.
+  const prepareWarehouseAudit = useCallback(async (warehouseId?: string | null) => {
+    warehouseLoadRequestRef.current += 1;
+    const requestId = warehouseLoadRequestRef.current;
+
+    clearScanSession("idle");
+
     if (!warehouseId) {
+      setAuditWarehouseId(null);
+      setExpectedWarehouseAssets([]);
+      setIsPreparingWarehouse(false);
       return;
     }
 
-    resetAudit();
+    const normalizedWarehouseId = warehouseId.trim();
+    const numericWarehouseId = parseNumericId(normalizedWarehouseId);
+
+    setAuditWarehouseId(normalizedWarehouseId);
+    setIsPreparingWarehouse(true);
+
+    if (numericWarehouseId === null) {
+      setExpectedWarehouseAssets([]);
+      setIsPreparingWarehouse(false);
+      setSubmitError("The selected warehouse id is invalid for audit comparison.");
+      return;
+    }
+
+    try {
+      const baselineAssets = normalizeWarehouseTagBaseline(
+        await apiService.getWarehouseTagBaseline(numericWarehouseId)
+      );
+
+      if (requestId !== warehouseLoadRequestRef.current) {
+        return;
+      }
+
+      setExpectedWarehouseAssets(baselineAssets);
+      appLogger.info("AuditScan", "Loaded warehouse baseline for audit comparison.", {
+        warehouseId: numericWarehouseId,
+        expectedCount: baselineAssets.length,
+      });
+    } catch (error) {
+      if (requestId !== warehouseLoadRequestRef.current) {
+        return;
+      }
+
+      setExpectedWarehouseAssets([]);
+      setSubmitError(
+        "Unable to load the selected warehouse tag list for audit comparison."
+      );
+      appLogger.warn("AuditScan", "Failed to load warehouse baseline for audit comparison.", {
+        warehouseId: numericWarehouseId,
+        error,
+      });
+    } finally {
+      if (requestId === warehouseLoadRequestRef.current) {
+        setIsPreparingWarehouse(false);
+      }
+    }
+  }, [clearScanSession]);
+
+  // Returns the hook to a clean pre-scan state when the user changes warehouse or leaves the audit screen.
+  const resetAudit = useCallback(() => {
+    warehouseLoadRequestRef.current += 1;
+    clearScanSession("idle");
+    setAuditWarehouseId(null);
+    setExpectedWarehouseAssets([]);
+    setIsPreparingWarehouse(false);
+  }, [clearScanSession]);
+
+  // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
+  const startAudit = useCallback((warehouseId?: string) => {
+    if (!warehouseId || isPreparingWarehouse) {
+      return;
+    }
+
+    clearScanSession("scanning");
     setAuditWarehouseId(warehouseId);
-    setAuditPhase("scanning");
-  }, [resetAudit]);
+  }, [clearScanSession, isPreparingWarehouse]);
 
   // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
   const addManualAsset = useCallback(() => {
@@ -720,40 +1003,64 @@ export function useAuditScanState() {
       await Promise.all(pendingLookups);
     }
 
+    const matchedTagIds = tagIds.filter((tagId) =>
+      stagedLookupsRef.current.has(tagId)
+    );
+    const unmatchedTagIds = tagIds.filter(
+      (tagId) => !stagedLookupsRef.current.has(tagId)
+    );
+
     const stagingList = canRetry
       ? submittedStagingList
-      : tagIds.flatMap((tagId) => {
+      : matchedTagIds.map((tagId) => {
           const stagedLookup = stagedLookupsRef.current.get(tagId);
 
-          return stagedLookup
-            ? [
-                {
-                  ...stagedLookup,
-                  WareHouseId: warehouseId,
-                },
-              ]
-            : [];
+          return {
+            ...stagedLookup!,
+            WareHouseId: warehouseId,
+          };
         });
 
-    if (stagingList.length !== tagIds.length) {
-      const missingTagIds = tagIds.filter(
-        (tagId) => !stagedLookupsRef.current.has(tagId)
-      );
-      const message = `Some scanned tags could not be matched to a product for submission: ${missingTagIds.join(", ")}`;
+    if (stagingList.length === 0) {
+      const message =
+        unmatchedTagIds.length > 0
+          ? `No scanned tags could be matched to a product for submission. Remove unmatched tags or resolve them before retrying.`
+          : "No matched scanned tags are available to submit.";
 
       setSubmitError(message);
-      appLogger.warn("AuditScan", "Submit blocked because some visible tags never resolved into staging lookup data.", {
-        warehouseId,
-        tagIds,
-        missingTagIds,
-        stagedLookupKeys: Array.from(stagedLookupsRef.current.keys()),
-      });
+      appLogger.warn(
+        "AuditScan",
+        "Submit blocked because no valid staging entries were available.",
+        {
+          warehouseId,
+          tagIds,
+          unmatchedTagIds,
+          stagedLookupKeys: Array.from(
+            stagedLookupsRef.current.keys()
+          ),
+        }
+      );
       return;
+    }
+
+    if (unmatchedTagIds.length > 0) {
+      setSubmitError(
+        `Some scanned tags were excluded from submission because they could not be matched to a product: ${unmatchedTagIds.join(", ")}`
+      );
+    } else {
+      setSubmitError(null);
     }
 
     const snapshotItems = canRetry
       ? frozenItems
       : buildSnapshotItems(tagIds, liveItems);
+    const localComparisonReport = buildLocalAuditComparison(
+      expectedWarehouseAssets,
+      snapshotItems,
+      tagIds,
+      stagingList,
+      unmatchedTagIds
+    );
 
     scanSessionRef.current += 1;
     setSubmitError(null);
@@ -761,7 +1068,7 @@ export function useAuditScanState() {
     setSubmittedStagingList(stagingList);
     setFrozenItems(snapshotItems);
     setReportItems([]);
-    setReportSummary(getSummaryFromItems(snapshotItems, tagIds.length));
+    setReportSummary(localComparisonReport.summary);
     setConnectionStatus("idle");
     setAuditPhase("submitting");
     mqttService.disconnectMqtt();
@@ -770,15 +1077,19 @@ export function useAuditScanState() {
       warehouseId,
       tagIds,
       stagingList,
+      expectedWarehouseCount: expectedWarehouseAssets.length,
     });
 
     try {
       const response = await apiService.submitScannedAuditTags(stagingList);
-      const normalizedReport = normalizeAuditSubmitResponse(
-        response,
-        snapshotItems,
-        tagIds
-      );
+      const normalizedReport = hasAuditReportData(response)
+        ? normalizeAuditSubmitResponse(
+            response,
+            snapshotItems,
+            tagIds,
+            unmatchedTagIds
+          )
+        : localComparisonReport;
 
       setReportItems(normalizedReport.items);
       setReportSummary(normalizedReport.summary);
@@ -798,6 +1109,7 @@ export function useAuditScanState() {
   }, [
     auditPhase,
     auditWarehouseId,
+    expectedWarehouseAssets,
     frozenItems,
     liveItems,
     submittedStagingList,
@@ -818,14 +1130,21 @@ export function useAuditScanState() {
     connectionStatus,
     manualAssetId,
     setManualAssetId,
+    prepareWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
     resetAudit,
     summary,
     auditWarehouseId,
+    expectedAssetCount: expectedWarehouseAssets.length,
+    isPreparingWarehouse,
   };
 }
+
+
+
+
 
 
 
