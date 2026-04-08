@@ -66,6 +66,18 @@ function parseNumericId(value: unknown): number | null {
   return null;
 }
 
+function getTagKey(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
 // Converts inventory lookup data into the reusable UI item shape shown in the audit results list.
 function mapInventoryToAuditItem(
   tagId: string,
@@ -81,7 +93,7 @@ function mapInventoryToAuditItem(
     };
   }
 
-  const resolvedTagId = parseNumericId(asset?.ID ?? asset?.TagId ?? tagId);
+  const resolvedTagId = getTagKey(asset?.ID ?? asset?.TagId ?? tagId);
   const productId = parseNumericId(asset?.ProductId);
   const isStagingReady = resolvedTagId !== null && productId !== null;
 
@@ -124,7 +136,7 @@ function mapInventoryToStagedLookup(
   tagId: string,
   asset: InventoryBarcodeScanDetail | null
 ): StagedAssetLookup | null {
-  const resolvedTagId = parseNumericId(asset?.ID ?? asset?.TagId ?? tagId);
+  const resolvedTagId = getTagKey(asset?.ID ?? asset?.TagId ?? tagId);
   const productId = parseNumericId(asset?.ProductId);
 
   if (resolvedTagId === null || productId === null) {
@@ -157,14 +169,16 @@ function registerStagedLookup(
 function normalizeWarehouseTagBaseline(
   assets: WarehouseTagBaselineItem[]
 ): WarehouseTagBaselineItem[] {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
 
   return assets.filter((asset) => {
-    if (!Number.isFinite(asset.TagId) || seen.has(asset.TagId)) {
+    const tagKey = getTagKey(asset.TagId);
+
+    if (!tagKey || seen.has(tagKey)) {
       return false;
     }
 
-    seen.add(asset.TagId);
+    seen.add(tagKey);
     return true;
   });
 }
@@ -235,16 +249,18 @@ function buildLocalAuditComparison(
       null,
   }));
   const resolvedScanByWarehouseTag = new Map(
-    resolvedScans.map((entry) => [entry.stagingItem.TagId, entry])
+    resolvedScans.map((entry) => [String(entry.visibleTagId), entry])
   );
   const expectedByWarehouseTag = new Map(
-    expectedAssets.map((asset) => [asset.TagId, asset])
+    expectedAssets.map((asset) => [String(asset.TagId), asset])
   );
 
   const foundItems = expectedAssets
-    .filter((asset) => resolvedScanByWarehouseTag.has(asset.TagId))
+    .filter((asset) =>
+      resolvedScanByWarehouseTag.has(String(asset.TagId))
+    )
     .map((asset) => {
-      const resolvedScan = resolvedScanByWarehouseTag.get(asset.TagId);
+      const resolvedScan = resolvedScanByWarehouseTag.get(String(asset.TagId));
 
       return mapWarehouseBaselineToAuditItem(
         asset,
@@ -255,11 +271,13 @@ function buildLocalAuditComparison(
     });
 
   const missingItems = expectedAssets
-    .filter((asset) => !resolvedScanByWarehouseTag.has(asset.TagId))
+    .filter((asset) => !resolvedScanByWarehouseTag.has(String(asset.TagId)))
     .map((asset) => mapWarehouseBaselineToAuditItem(asset, "missing"));
 
   const extraItems = resolvedScans
-    .filter((entry) => !expectedByWarehouseTag.has(entry.stagingItem.TagId))
+    .filter((entry) =>
+      !expectedByWarehouseTag.has(String(entry.visibleTagId))
+    )
     .map((entry) => {
       const fallbackAsset: WarehouseTagBaselineItem = {
         ProductId: entry.stagingItem.ProductId,
@@ -307,30 +325,38 @@ function buildLocalAuditComparison(
 
 function hasAuditReportData(response: AuditSubmitResponse): boolean {
   const responseRecord = response as Record<string, unknown>;
-  const arrayKeys = [
-    "FoundAssets",
-    "FoundItems",
-    "Found",
-    "MissingAssets",
-    "MissingItems",
-    "Missing",
-    "ExtraAssets",
-    "ExtraItems",
-    "Extra",
-  ];
-  const countKeys = [
-    "FoundCount",
-    "MissingCount",
-    "ExtraCount",
-    "foundCount",
-    "missingCount",
-    "extraCount",
-  ];
 
-  return (
-    arrayKeys.some((key) => Array.isArray(responseRecord[key])) ||
-    countKeys.some((key) => typeof responseRecord[key] === "number")
-  );
+  const hasFound =
+    Array.isArray(responseRecord.FoundAssets) ||
+    Array.isArray(responseRecord.FoundItems) ||
+    Array.isArray(responseRecord.Found) ||
+    Array.isArray(responseRecord.foundAssets) ||
+    Array.isArray(responseRecord.foundItems) ||
+    Array.isArray(responseRecord.found) ||
+    typeof responseRecord.FoundCount === "number" ||
+    typeof responseRecord.foundCount === "number";
+
+  const hasMissing =
+    Array.isArray(responseRecord.MissingAssets) ||
+    Array.isArray(responseRecord.MissingItems) ||
+    Array.isArray(responseRecord.Missing) ||
+    Array.isArray(responseRecord.missingAssets) ||
+    Array.isArray(responseRecord.missingItems) ||
+    Array.isArray(responseRecord.missing) ||
+    typeof responseRecord.MissingCount === "number" ||
+    typeof responseRecord.missingCount === "number";
+
+  const hasExtra =
+    Array.isArray(responseRecord.ExtraAssets) ||
+    Array.isArray(responseRecord.ExtraItems) ||
+    Array.isArray(responseRecord.Extra) ||
+    Array.isArray(responseRecord.extraAssets) ||
+    Array.isArray(responseRecord.extraItems) ||
+    Array.isArray(responseRecord.extra) ||
+    typeof responseRecord.ExtraCount === "number" ||
+    typeof responseRecord.extraCount === "number";
+
+  return hasFound && hasMissing && hasExtra;
 }
 
 // Merges live MQTT items and manual entries into one deduplicated list for the screen.
@@ -363,6 +389,55 @@ function buildSnapshotItems(
   return orderedIds.map(
     (tagId) => liveItemMap.get(tagId) ?? mapInventoryToAuditItem(tagId, null)
   );
+}
+
+// Calculates live scanning summary by comparing scanned items to warehouse baseline.
+function getLiveScanSummary(
+  liveItems: AuditScanItem[],
+  expectedWarehouseAssets: WarehouseTagBaselineItem[],
+  stagedLookupsRef: React.MutableRefObject<Map<string, StagedAssetLookup>>
+): AuditSummary {
+  if (expectedWarehouseAssets.length === 0) {
+    // No baseline to compare against, use simple count
+    return getSummaryFromItems(liveItems);
+  }
+
+  const expectedTagKeys = new Set(
+    expectedWarehouseAssets.map((asset) => String(asset.TagId))
+  );
+
+  const scannedTagKeys = new Set<string>();
+  const matchedCount = liveItems.reduce((count, item) => {
+    const itemKey = String(item.id);
+    scannedTagKeys.add(itemKey);
+
+    // Item is in staging lookups (matched to product)
+    if (stagedLookupsRef.current.has(itemKey)) {
+      // Check if it's in the expected warehouse assets
+      if (expectedTagKeys.has(itemKey)) {
+        return count + 1; // found
+      }
+    }
+
+    return count;
+  }, 0);
+
+  const extraCount = liveItems.filter((item) => {
+    const itemKey = String(item.id);
+    return !expectedTagKeys.has(itemKey) || item.tone === "extra";
+  }).length;
+
+  const missingCount = expectedWarehouseAssets.filter((asset) => {
+    const assetKey = String(asset.TagId);
+    return !scannedTagKeys.has(assetKey);
+  }).length;
+
+  return {
+    found: matchedCount,
+    missing: missingCount,
+    extra: extraCount,
+    scanned: liveItems.length,
+  };
 }
 
 // Builds the count cards shown in the audit progress panel from a list of UI items.
@@ -535,7 +610,11 @@ function normalizeAuditSubmitResponse(
   response: AuditSubmitResponse,
   frozenItems: AuditScanItem[],
   submittedTagIds: string[],
-  unmatchedTagIds: string[] = []
+  unmatchedTagIds: string[] = [],
+  fallbackReport?: {
+    items: AuditScanItem[];
+    summary: AuditSummary;
+  }
 ): {
   items: AuditScanItem[];
   summary: AuditSummary;
@@ -565,12 +644,20 @@ function normalizeAuditSubmitResponse(
     "extra",
   ]);
 
-  const missingItems = missingAssets.map((asset, index) =>
-    mapReportAssetToAuditItem("missing", asset, `MISSING-${index + 1}`)
-  );
-  const extraItems = extraAssets.map((asset, index) =>
-    mapReportAssetToAuditItem("extra", asset, `EXTRA-${index + 1}`)
-  );
+  const missingItems =
+    missingAssets.length > 0
+      ? missingAssets.map((asset, index) =>
+          mapReportAssetToAuditItem("missing", asset, `MISSING-${index + 1}`)
+        )
+      : fallbackReport?.items.filter((item) => item.tone === "missing") ?? [];
+
+  const extraItems =
+    extraAssets.length > 0
+      ? extraAssets.map((asset, index) =>
+          mapReportAssetToAuditItem("extra", asset, `EXTRA-${index + 1}`)
+        )
+      : fallbackReport?.items.filter((item) => item.tone === "extra") ?? [];
+
   const extraTagIds = new Set(extraItems.map((item) => item.id));
   const frozenItemMap = new Map(frozenItems.map((item) => [item.id, item]));
 
@@ -583,7 +670,8 @@ function normalizeAuditSubmitResponse(
             submittedTagIds[index] ?? `FOUND-${index + 1}`
           )
         )
-      : submittedTagIds
+      : fallbackReport?.items.filter((item) => item.tone === "found") ??
+        submittedTagIds
           .filter((tagId) => !extraTagIds.has(tagId))
           .map((tagId) => {
             const frozenItem = frozenItemMap.get(tagId);
@@ -822,8 +910,8 @@ export function useAuditScanState() {
       );
     }
 
-    return getSummaryFromItems(liveItems);
-  }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds]);
+    return getLiveScanSummary(liveItems, expectedWarehouseAssets, stagedLookupsRef);
+  }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds, expectedWarehouseAssets]);
 
   const clearScanSession = useCallback((nextPhase: AuditPhase = "idle") => {
     scanSessionRef.current += 1;
@@ -1087,7 +1175,8 @@ export function useAuditScanState() {
             response,
             snapshotItems,
             tagIds,
-            unmatchedTagIds
+            unmatchedTagIds,
+            localComparisonReport
           )
         : localComparisonReport;
 

@@ -60,12 +60,13 @@ function normalizeWarehouse(record: WarehouseApiRecord, index: number): Warehous
     `warehouse-${index + 1}`;
   const name =
     pickString(record, [
-      "Name",
+      "WareHouseName",
       "WarehouseName",
+      "Name",
       "Title",
       "ShortName",
       "warehouseName",
-    ]) ?? `Warehouse ${index + 1}`;
+    ]) ?? "";
   const code = pickString(record, [
     "Code",
     "WarehouseCode",

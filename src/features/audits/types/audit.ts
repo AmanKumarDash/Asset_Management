@@ -14,7 +14,7 @@ export type AuditSubmitRequest = {
 };
 
 export type AssetWarehouseStagingItem = {
-  TagId: number;
+  TagId: number | string;
   ProductId: number;
   WareHouseId: number;
 };
@@ -22,7 +22,7 @@ export type AssetWarehouseStagingItem = {
 export type WarehouseTagBaselineItem = {
   ProductName?: string;
   ProductId: number;
-  TagId: number;
+  TagId: number | string;
   ProductCode?: string;
   WarehouseId: number;
 };
