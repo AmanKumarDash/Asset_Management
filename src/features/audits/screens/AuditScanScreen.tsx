@@ -7,7 +7,7 @@ import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -172,6 +172,29 @@ function getListHeading(phase: AuditPhase) {
   }
 
   return "Scanned so far";
+}
+
+type StatusFilter = "all" | AuditItemTone;
+
+function filterAuditItems(
+  items: AuditScanItem[],
+  searchTerm: string,
+  statusFilter: StatusFilter
+): AuditScanItem[] {
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+
+  return items.filter((item) => {
+    const matchesStatus =
+      statusFilter === "all" || item.tone === statusFilter;
+
+    const matchesSearch =
+      normalizedQuery.length === 0 ||
+      item.id.toLowerCase().includes(normalizedQuery) ||
+      item.title.toLowerCase().includes(normalizedQuery) ||
+      item.subtitle.toLowerCase().includes(normalizedQuery);
+
+    return matchesStatus && matchesSearch;
+  });
 }
 
 // Returns the empty-state message shown when there are no scan items to display.
@@ -705,6 +728,14 @@ function MobileAuditScan() {
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
   const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+
+  const filteredItems = useMemo(
+    () => filterAuditItems(items, searchTerm, statusFilter),
+    [items, searchTerm, statusFilter]
+  );
 
   const handleSelectWarehouse = (warehouseId: string) => {
     setSelectedWarehouseId(warehouseId);
@@ -843,8 +874,102 @@ function MobileAuditScan() {
               </View>
             </View>
 
+            <View className="mb-4">
+              <View className="flex-row items-center" style={{ gap: 10 }}>
+                <View
+                  className="flex-1 rounded-[14px] border px-3 py-2"
+                  style={{
+                    borderColor: adminTheme.border,
+                    backgroundColor: adminTheme.surface,
+                  }}
+                >
+                  <TextInput
+                    value={searchTerm}
+                    onChangeText={setSearchTerm}
+                    placeholder="Search products, tags, or details"
+                    placeholderTextColor="#94A3B8"
+                    className="text-base"
+                    style={{ color: adminTheme.slate }}
+                  />
+                </View>
+
+                <View className="relative">
+                  <Pressable
+                    onPress={() => setStatusMenuOpen((current) => !current)}
+                    className="flex-row items-center rounded-[14px] border px-3 py-2"
+                    style={{
+                      borderColor: adminTheme.border,
+                      backgroundColor: adminTheme.surface,
+                    }}
+                  >
+                    <Text className="text-base" style={{ color: adminTheme.slate }}>
+                      {statusFilter === "all"
+                        ? "All statuses"
+                        : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                    </Text>
+                    <Feather
+                      name="chevron-down"
+                      size={18}
+                      color={adminTheme.slateSoft}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </Pressable>
+
+                  {statusMenuOpen ? (
+                    <View
+                      className="absolute right-0 mt-2 w-44 rounded-[16px] border bg-white shadow"
+                      style={{ borderColor: adminTheme.border }}
+                    >
+                      {(["all", "found", "missing", "extra"] as StatusFilter[]).map(
+                        (option) => (
+                          <Pressable
+                            key={option}
+                            onPress={() => {
+                              setStatusFilter(option);
+                              setStatusMenuOpen(false);
+                            }}
+                            className="px-4 py-3"
+                          >
+                            <Text
+                              style={{
+                                color:
+                                  statusFilter === option
+                                    ? adminTheme.primary
+                                    : adminTheme.slate,
+                              }}
+                            >
+                              {option === "all"
+                                ? "All"
+                                : option.charAt(0).toUpperCase() + option.slice(1)}
+                            </Text>
+                          </Pressable>
+                        )
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+              <Text className="mt-2 text-sm" style={{ color: adminTheme.slateSoft }}>
+                Showing {filteredItems.length} of {items.length} results
+              </Text>
+            </View>
+
             {auditPhase !== "idle" && items.length > 0 ? (
-              <AuditScanList items={items} />
+              filteredItems.length > 0 ? (
+                <AuditScanList items={filteredItems} />
+              ) : (
+                <View
+                  className="rounded-[18px] border px-4 py-5"
+                  style={{
+                    borderColor: adminTheme.border,
+                    backgroundColor: adminTheme.surface,
+                  }}
+                >
+                  <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
+                    No audit items match the current search or status filter.
+                  </Text>
+                </View>
+              )
             ) : (
               <View
                 className="rounded-[18px] border px-4 py-5"
@@ -922,6 +1047,14 @@ function DesktopAuditScan({ width }: { width: number }) {
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
   const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+
+  const filteredItems = useMemo(
+    () => filterAuditItems(items, searchTerm, statusFilter),
+    [items, searchTerm, statusFilter]
+  );
 
   const handleSelectWarehouse = (warehouseId: string) => {
     setSelectedWarehouseId(warehouseId);
@@ -1031,13 +1164,123 @@ function DesktopAuditScan({ width }: { width: number }) {
 
           {auditPhase !== "idle" && items.length > 0 ? (
             <>
-              <Text
-                className="mb-3 text-[18px] font-semibold"
-                style={{ color: adminTheme.slate }}
-              >
-                {getListHeading(auditPhase)}
-              </Text>
-              <AuditScanList items={items} />
+              <View className="mb-3">
+                <View className="mb-3 flex-row items-center justify-between">
+                  <Text
+                    className="text-[18px] font-semibold"
+                    style={{ color: adminTheme.slate }}
+                  >
+                    {getListHeading(auditPhase)}
+                  </Text>
+                  <View
+                    className="rounded-full px-3 py-1"
+                    style={{ backgroundColor: adminTheme.infoBg }}
+                  >
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: adminTheme.primary }}
+                    >
+                      {summary.scanned} / {totalAssets}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="mb-4">
+                  <View className="flex-row items-center" style={{ gap: 10 }}>
+                    <View
+                      className="flex-1 rounded-[14px] border px-3 py-2"
+                      style={{
+                        borderColor: adminTheme.border,
+                        backgroundColor: adminTheme.surface,
+                      }}
+                    >
+                      <TextInput
+                        value={searchTerm}
+                        onChangeText={setSearchTerm}
+                        placeholder="Search products, tags, or details"
+                        placeholderTextColor="#94A3B8"
+                        className="text-base"
+                        style={{ color: adminTheme.slate }}
+                      />
+                    </View>
+
+                    <View className="relative">
+                      <Pressable
+                        onPress={() => setStatusMenuOpen((current) => !current)}
+                        className="flex-row items-center rounded-[14px] border px-3 py-2"
+                        style={{
+                          borderColor: adminTheme.border,
+                          backgroundColor: adminTheme.surface,
+                        }}
+                      >
+                        <Text className="text-base" style={{ color: adminTheme.slate }}>
+                          {statusFilter === "all"
+                            ? "All statuses"
+                            : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                        </Text>
+                        <Feather
+                          name="chevron-down"
+                          size={18}
+                          color={adminTheme.slateSoft}
+                          style={{ marginLeft: 8 }}
+                        />
+                      </Pressable>
+
+                      {statusMenuOpen ? (
+                        <View
+                          className="absolute right-0 mt-2 w-44 rounded-[16px] border bg-white shadow"
+                          style={{ borderColor: adminTheme.border }}
+                        >
+                          {(["all", "found", "missing", "extra"] as StatusFilter[]).map(
+                            (option) => (
+                              <Pressable
+                                key={option}
+                                onPress={() => {
+                                  setStatusFilter(option);
+                                  setStatusMenuOpen(false);
+                                }}
+                                className="px-4 py-3"
+                              >
+                                <Text
+                                  style={{
+                                    color:
+                                      statusFilter === option
+                                        ? adminTheme.primary
+                                        : adminTheme.slate,
+                                  }}
+                                >
+                                  {option === "all"
+                                    ? "All"
+                                    : option.charAt(0).toUpperCase() + option.slice(1)}
+                                </Text>
+                              </Pressable>
+                            )
+                          )}
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                  <Text className="mt-2 text-sm" style={{ color: adminTheme.slateSoft }}>
+                    Showing {filteredItems.length} of {items.length} results
+                  </Text>
+                </View>
+              </View>
+
+              {filteredItems.length > 0 ? (
+                <AuditScanList items={filteredItems} />
+              ) : (
+                <View
+                  className="rounded-[20px] border px-5 py-5"
+                  style={{
+                    borderColor: adminTheme.border,
+                    backgroundColor: adminTheme.surface,
+                  }}
+                >
+                  <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+                    No audit items match the current search or status filter.
+                  </Text>
+                </View>
+              )}
             </>
           ) : (
             <View

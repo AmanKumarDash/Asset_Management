@@ -17,6 +17,7 @@ export type AssetWarehouseStagingItem = {
   TagId: number | string;
   ProductId: number;
   WareHouseId: number;
+  UserId: string;
 };
 
 export type WarehouseTagBaselineItem = {

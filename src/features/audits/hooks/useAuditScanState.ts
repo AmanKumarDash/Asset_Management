@@ -6,6 +6,7 @@ import {
   AuditSubmitResponse,
   WarehouseTagBaselineItem,
 } from "@/features/audits/types/audit";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
 import { appLogger } from "@/utils/appLogger";
@@ -20,7 +21,7 @@ type AuditSummary = {
   scanned: number;
 };
 
-type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId">;
+type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId" | "UserId">;
 
 // Extracts a tag id from either plain strings or the nested payloads returned by the scanner stream.
 function getTagId(entry: unknown): string | null {
@@ -719,6 +720,7 @@ function normalizeAuditSubmitResponse(
 
 // Central audit hook that manages the full client-side scan lifecycle from start, to submit, to report view.
 export function useAuditScanState() {
+  const { user } = useAuthSession();
   const [manualAssetId, setManualAssetId] = useState("");
   const [auditPhase, setAuditPhase] = useState<AuditPhase>("idle");
   const [mqttItems, setMqttItems] = useState<AuditScanItem[]>([]);
@@ -1106,6 +1108,7 @@ export function useAuditScanState() {
           return {
             ...stagedLookup!,
             WareHouseId: warehouseId,
+            UserId: user?.employeeId || "",
           };
         });
 
@@ -1203,6 +1206,7 @@ export function useAuditScanState() {
     liveItems,
     submittedStagingList,
     submittedTagIds,
+    user?.employeeId,
   ]);
 
   const isScanning = auditPhase === "scanning";
