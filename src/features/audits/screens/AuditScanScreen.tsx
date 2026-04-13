@@ -3,6 +3,7 @@ import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
 import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
 import { AuditPhase } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { WarehouseSummary } from "@/models/warehouse";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
@@ -195,6 +196,26 @@ function filterAuditItems(
 
     return matchesStatus && matchesSearch;
   });
+}
+
+function getSelectedWarehouseTotalAssets(
+  selectedWarehouse: WarehouseSummary | null,
+  fallbackCount: number
+) {
+  const rawCount = selectedWarehouse?.raw?.totalRowCount;
+
+  if (typeof rawCount === "number" && Number.isFinite(rawCount)) {
+    return rawCount;
+  }
+
+  if (typeof rawCount === "string" && rawCount.trim()) {
+    const parsed = Number(rawCount.trim());
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallbackCount;
 }
 
 // Returns the empty-state message shown when there are no scan items to display.
@@ -727,7 +748,9 @@ function MobileAuditScan() {
     isPreparingWarehouse;
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
-  const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+  const totalAssets = hasSelectedWarehouse
+    ? getSelectedWarehouseTotalAssets(selectedWarehouse, expectedAssetCount)
+    : auditScanOverview.totalAssets;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -1046,7 +1069,9 @@ function DesktopAuditScan({ width }: { width: number }) {
     isPreparingWarehouse;
   const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
-  const totalAssets = expectedAssetCount || auditScanOverview.totalAssets;
+  const totalAssets = hasSelectedWarehouse
+    ? getSelectedWarehouseTotalAssets(selectedWarehouse, expectedAssetCount)
+    : auditScanOverview.totalAssets;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);

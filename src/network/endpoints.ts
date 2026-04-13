@@ -12,6 +12,8 @@ export const ENDPOINTS = {
     GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>
       `/api/warehouse/GetWareHousetagno?WarehouseId=${encodeURIComponent(String(warehouseId))}`,
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
+    GET_AUDIT_DATA: (referenceId: string) =>
+      `/api/warehouse/GetWarehouseAuditData?referanceId=${encodeURIComponent(referenceId)}`,
   },
   INVENTORY: {
     SEARCH_BARCODE_SCAN_MODE: (searchText: string) =>

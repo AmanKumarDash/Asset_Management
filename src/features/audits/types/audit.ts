@@ -9,6 +9,14 @@ export type AuditPhase =
 
 export type AuditReportTone = "found" | "missing" | "extra";
 
+export type AuditSummary = {
+  found: number;
+  missing: number;
+  extra: number;
+  scanned: number;
+  expected?: number;
+};
+
 export type AuditSubmitRequest = {
   StagingList: AssetWarehouseStagingItem[];
 };
@@ -40,6 +48,20 @@ export type AuditReportAsset = Partial<InventoryBarcodeScanDetail> & {
   StatusText?: string;
 };
 
+export type AuditComparisonAsset = AuditReportAsset &
+  Partial<AssetWarehouseStagingItem> & {
+    ID?: number | string;
+    ProductID?: number;
+    productId?: number;
+    WarehouseId?: number | string;
+    warehouseId?: number | string;
+    ReferenceId?: string;
+    referenceId?: string;
+    referanceId?: string;
+  };
+
+export type AuditComparisonResponse = Record<string, unknown>;
+
 export type AuditSubmitResponse = {
   FoundAssets?: AuditReportAsset[];
   FoundItems?: AuditReportAsset[];
@@ -55,8 +77,11 @@ export type AuditSubmitResponse = {
   ExtraCount?: number;
   ExpectedCount?: number;
   Reference?: string;
+  reference?: string;
+  ReferenceId?: string;
+  referenceId?: string;
+  referanceId?: string;
   Location?: string;
   ObservedAt?: string;
 };
-
 

@@ -1,4 +1,5 @@
 import {
+  AuditComparisonResponse,
   AssetWarehouseStagingItem,
   AuditSubmitRequest,
   AuditSubmitResponse,
@@ -23,6 +24,33 @@ export type LoginCredentials = {
 };
 
 export type WarehouseApiRecord = Record<string, unknown>;
+
+function extractAuditReferenceId(
+  payload: AuditSubmitResponse | string | null | undefined
+): string {
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidates = [
+    record.Reference,
+    record.reference,
+    record.ReferenceId,
+    record.referenceId,
+    record.referanceId,
+  ];
+
+  const referenceId = candidates.find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  return referenceId?.trim() ?? "";
+}
 
 class ApiService {
   private api: AxiosInstance;
@@ -99,7 +127,7 @@ class ApiService {
   // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.
   async submitScannedAuditTags(
     stagingList: AssetWarehouseStagingItem[]
-  ): Promise<AuditSubmitResponse> {
+  ): Promise<string> {
     assertApiBaseUrlConfigured();
 
     const payload: AuditSubmitRequest = {
@@ -107,10 +135,27 @@ class ApiService {
     };
 
     const response = await this.api.post<
-      ApiEnvelope<AuditSubmitResponse> | AuditSubmitResponse
+      ApiEnvelope<AuditSubmitResponse | string> | AuditSubmitResponse | string
     >(ENDPOINTS.WAREHOUSE.ASSET_WAREHOUSE_STAGING, payload);
 
-    return extractResponseData<AuditSubmitResponse>(response.data) ?? {};
+    const responseData = extractResponseData<AuditSubmitResponse | string>(
+      response.data
+    );
+
+    return extractAuditReferenceId(responseData);
+  }
+
+  // Loads the warehouse audit comparison payload for a staged audit reference id.
+  async getWarehouseAuditData(
+    referenceId: string
+  ): Promise<AuditComparisonResponse> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiEnvelope<AuditComparisonResponse> | AuditComparisonResponse
+    >(ENDPOINTS.WAREHOUSE.GET_AUDIT_DATA(referenceId));
+
+    return extractResponseData<AuditComparisonResponse>(response.data) ?? {};
   }
 }
 

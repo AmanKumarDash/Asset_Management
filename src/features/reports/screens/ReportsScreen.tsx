@@ -1,24 +1,46 @@
+import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanData";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import {
+  LatestAuditReport,
+  useLatestAuditReport,
+} from "@/features/reports/state/latestAuditReportStore";
+import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useMemo, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
-import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   auditReportSummary,
   reportMismatches,
-  ReportMismatchItem,
-  ReportMismatchTone,
 } from "../data/reportData";
-import { adminTheme } from "@/theme/adminTheme";
 
-function getMismatchStyles(tone: ReportMismatchTone) {
+type StatusFilter = "all" | AuditItemTone;
+
+function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
+    case "found":
+      return {
+        iconBg: "#EAF5DB",
+        icon: "#78A22F",
+        badgeBg: "#EAF5DB",
+        badgeText: "#5D8B1F",
+        label: "Found",
+      };
     case "missing":
       return {
         iconBg: "#FCE8E8",
         icon: "#D64545",
         badgeBg: "#FFF0F0",
         badgeText: "#D64545",
+        label: "Missing",
       };
     default:
       return {
@@ -26,8 +48,57 @@ function getMismatchStyles(tone: ReportMismatchTone) {
         icon: "#B97818",
         badgeBg: "#FFF6E7",
         badgeText: "#B97818",
+        label: "Extra",
       };
   }
+}
+
+function filterAuditItems(
+  items: AuditScanItem[],
+  searchTerm: string,
+  statusFilter: StatusFilter
+) {
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+
+  return items.filter((item) => {
+    const matchesStatus =
+      statusFilter === "all" || item.tone === statusFilter;
+    const matchesSearch =
+      normalizedQuery.length === 0 ||
+      item.id.toLowerCase().includes(normalizedQuery) ||
+      item.title.toLowerCase().includes(normalizedQuery) ||
+      item.subtitle.toLowerCase().includes(normalizedQuery);
+
+    return matchesStatus && matchesSearch;
+  });
+}
+
+function getFallbackReport(): LatestAuditReport {
+  const items: AuditScanItem[] = reportMismatches.map((item) => ({
+    id: item.id,
+    title: item.title,
+    subtitle: item.subtitle,
+    tone: item.tone,
+    icon: item.tone === "missing" ? "briefcase" : "plus-circle",
+  }));
+
+  return {
+    title: auditReportSummary.title,
+    location: auditReportSummary.location,
+    mobileMeta: auditReportSummary.mobileMeta,
+    desktopMeta: auditReportSummary.desktopMeta,
+    status: auditReportSummary.status,
+    referenceId: null,
+    observedAt: null,
+    summary: {
+      found: auditReportSummary.found,
+      missing: auditReportSummary.missing,
+      extra: auditReportSummary.extra,
+      scanned: auditReportSummary.found + auditReportSummary.extra,
+      expected: auditReportSummary.expected,
+    },
+    items,
+  };
 }
 
 function SectionButton({
@@ -105,8 +176,8 @@ function DonutChart({
 
     return { angle, x, y, color };
   });
-
-  const matchPercent = Math.round((found / expected) * 100);
+  const matchPercent =
+    expected > 0 ? Math.round((found / expected) * 100) : 0;
 
   return (
     <View
@@ -169,7 +240,15 @@ function SummaryLegendRow({
   );
 }
 
-function SummaryCard({ mobile = false }: { mobile?: boolean }) {
+function SummaryCard({
+  report,
+  mobile = false,
+}: {
+  report: LatestAuditReport;
+  mobile?: boolean;
+}) {
+  const expected = report.summary.expected ?? report.summary.found + report.summary.missing;
+
   return (
     <View
       className="rounded-[20px] border px-5 py-5"
@@ -182,61 +261,53 @@ function SummaryCard({ mobile = false }: { mobile?: boolean }) {
         <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
           Audit summary
         </Text>
-        {mobile ? (
-          <View className="rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.successBg }}>
-            <Text className="text-xs font-medium" style={{ color: adminTheme.successText }}>
-              {auditReportSummary.status}
-            </Text>
-          </View>
-        ) : null}
+        <View className="rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.successBg }}>
+          <Text className="text-xs font-medium" style={{ color: adminTheme.successText }}>
+            {report.status}
+          </Text>
+        </View>
       </View>
+
+      {report.referenceId ? (
+        <Text className="mb-4 text-sm" style={{ color: adminTheme.slateSoft }}>
+          Reference: {report.referenceId}
+        </Text>
+      ) : null}
 
       <View className={`${mobile ? "flex-row items-center" : "items-center"}`}>
         <View className={mobile ? "mr-5" : ""}>
           <DonutChart
-            found={auditReportSummary.found}
-            missing={auditReportSummary.missing}
-            extra={auditReportSummary.extra}
-            expected={auditReportSummary.expected}
+            found={report.summary.found}
+            missing={report.summary.missing}
+            extra={report.summary.extra}
+            expected={expected}
             size={mobile ? 90 : 106}
           />
         </View>
 
         <View className={`${mobile ? "flex-1" : "mt-6 w-full"}`}>
-          <SummaryLegendRow label="Found" value={auditReportSummary.found} color="#467A13" />
-          <SummaryLegendRow label="Missing" value={auditReportSummary.missing} color="#E34D45" />
-          <SummaryLegendRow label="Extra" value={auditReportSummary.extra} color="#C47E17" />
-          <SummaryLegendRow label="Expected" value={auditReportSummary.expected} color="#D4D4D8" />
+          <SummaryLegendRow label="Found" value={report.summary.found} color="#467A13" />
+          <SummaryLegendRow label="Missing" value={report.summary.missing} color="#E34D45" />
+          <SummaryLegendRow label="Extra" value={report.summary.extra} color="#C47E17" />
+          <SummaryLegendRow label="Expected" value={expected} color="#D4D4D8" />
         </View>
       </View>
     </View>
   );
 }
 
-function MismatchBadge({ tone }: { tone: ReportMismatchTone }) {
-  const styles = getMismatchStyles(tone);
-
-  return (
-    <View className="rounded-full px-3 py-1" style={{ backgroundColor: styles.badgeBg }}>
-      <Text className="text-xs font-medium" style={{ color: styles.badgeText }}>
-        {tone === "missing" ? "Missing" : "Extra"}
-      </Text>
-    </View>
-  );
-}
-
-function MismatchListItem({
+function ReportResultItem({
   item,
   mobile = false,
 }: {
-  item: ReportMismatchItem;
+  item: AuditScanItem;
   mobile?: boolean;
 }) {
-  const styles = getMismatchStyles(item.tone);
+  const styles = getToneStyles(item.tone);
 
   return (
     <View
-      className={`flex-row rounded-[18px] border bg-white px-4 py-4 ${mobile ? "" : "items-center"}`}
+      className={`flex-row rounded-[18px] border px-4 py-4 ${mobile ? "" : "items-center"}`}
       style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
     >
       <View
@@ -251,7 +322,13 @@ function MismatchListItem({
           <Text className="text-[18px] font-semibold leading-6" style={{ color: adminTheme.slate }}>
             {item.title}
           </Text>
-          {!mobile ? <MismatchBadge tone={item.tone} /> : null}
+          {!mobile ? (
+            <View className="rounded-full px-3 py-1" style={{ backgroundColor: styles.badgeBg }}>
+              <Text className="text-xs font-medium" style={{ color: styles.badgeText }}>
+                {styles.label}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
           {item.subtitle}
@@ -259,15 +336,110 @@ function MismatchListItem({
       </View>
 
       {mobile ? (
-        <View className="ml-3">
-          <MismatchBadge tone={item.tone} />
+        <View className="ml-3 rounded-full px-3 py-1" style={{ backgroundColor: styles.badgeBg }}>
+          <Text className="text-xs font-medium" style={{ color: styles.badgeText }}>
+            {styles.label}
+          </Text>
         </View>
       ) : null}
     </View>
   );
 }
 
-function DesktopReports() {
+function FilterBar({
+  searchTerm,
+  onChangeSearchTerm,
+  statusFilter,
+  setStatusFilter,
+  filteredCount,
+  totalCount,
+}: {
+  searchTerm: string;
+  onChangeSearchTerm: (value: string) => void;
+  statusFilter: StatusFilter;
+  setStatusFilter: (value: StatusFilter) => void;
+  filteredCount: number;
+  totalCount: number;
+}) {
+  return (
+    <View className="mb-4">
+      <View className="flex-row flex-wrap items-center" style={{ gap: 10 }}>
+        <View
+          className="min-w-[220px] flex-1 rounded-[14px] border px-3 py-2"
+          style={{
+            borderColor: adminTheme.border,
+            backgroundColor: adminTheme.surface,
+          }}
+        >
+          <TextInput
+            value={searchTerm}
+            onChangeText={onChangeSearchTerm}
+            placeholder="Search products, tags, or details"
+            placeholderTextColor="#94A3B8"
+            className="text-base"
+            style={{ color: adminTheme.slate }}
+          />
+        </View>
+
+        <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+          {(["all", "found", "missing", "extra"] as StatusFilter[]).map((option) => {
+            const selected = statusFilter === option;
+
+            return (
+              <Pressable
+                key={option}
+                onPress={() => setStatusFilter(option)}
+                className="rounded-full border px-3 py-2"
+                style={{
+                  borderColor: selected ? adminTheme.primary : adminTheme.border,
+                  backgroundColor: selected ? adminTheme.infoBg : adminTheme.surface,
+                }}
+              >
+                <Text
+                  className="text-sm font-medium"
+                  style={{ color: selected ? adminTheme.primary : adminTheme.slate }}
+                >
+                  {option === "all"
+                    ? "All"
+                    : option.charAt(0).toUpperCase() + option.slice(1)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <Text className="mt-2 text-sm" style={{ color: adminTheme.slateSoft }}>
+        Showing {filteredCount} of {totalCount} results
+      </Text>
+    </View>
+  );
+}
+
+function EmptyResults() {
+  return (
+    <View
+      className="rounded-[20px] border px-5 py-5"
+      style={{
+        borderColor: adminTheme.border,
+        backgroundColor: adminTheme.surface,
+      }}
+    >
+      <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+        No report items match the current search or status filter.
+      </Text>
+    </View>
+  );
+}
+
+function DesktopReports({ report }: { report: LatestAuditReport }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const filteredItems = useMemo(
+    () => filterAuditItems(report.items, searchTerm, statusFilter),
+    [report.items, searchTerm, statusFilter]
+  );
+
   return (
     <ScrollView
       className="flex-1"
@@ -277,13 +449,10 @@ function DesktopReports() {
       <View className="mb-5 flex-row items-start justify-between">
         <View>
           <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-            {auditReportSummary.title}
+            {report.title}
           </Text>
           <Text className="mt-1 text-base" style={{ color: adminTheme.slateSoft }}>
-            {auditReportSummary.desktopMeta}{" "}
-            <Text style={{ color: adminTheme.successText, fontWeight: "600" }}>
-              {auditReportSummary.status}
-            </Text>
+            {report.desktopMeta}
           </Text>
         </View>
 
@@ -305,39 +474,59 @@ function DesktopReports() {
 
       <View className="flex-row" style={{ gap: 18, alignItems: "flex-start" }}>
         <View style={{ width: 300 }}>
-          <SummaryCard />
+          <SummaryCard report={report} />
         </View>
 
         <View className="flex-1">
           <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Mismatches ({reportMismatches.length})
+            Audit results ({report.items.length})
           </Text>
 
-          <View
-            className="overflow-hidden rounded-[20px] border bg-white"
-            style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-          >
-            {reportMismatches.map((item, index) => (
-              <View
-                key={item.id}
-                className={`${index < reportMismatches.length - 1 ? "border-b" : ""} px-4 py-3`}
-                style={
-                  index < reportMismatches.length - 1
-                    ? { borderColor: adminTheme.border }
-                    : undefined
-                }
-              >
-                <MismatchListItem item={item} />
-              </View>
-            ))}
-          </View>
+          <FilterBar
+            searchTerm={searchTerm}
+            onChangeSearchTerm={setSearchTerm}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            filteredCount={filteredItems.length}
+            totalCount={report.items.length}
+          />
+
+          {filteredItems.length > 0 ? (
+            <View
+              className="overflow-hidden rounded-[20px] border bg-white"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            >
+              {filteredItems.map((item, index) => (
+                <View
+                  key={`${item.id}-${index}`}
+                  className={`${index < filteredItems.length - 1 ? "border-b" : ""} px-4 py-3`}
+                  style={
+                    index < filteredItems.length - 1
+                      ? { borderColor: adminTheme.border }
+                      : undefined
+                  }
+                >
+                  <ReportResultItem item={item} />
+                </View>
+              ))}
+            </View>
+          ) : (
+            <EmptyResults />
+          )}
         </View>
       </View>
     </ScrollView>
   );
 }
 
-function MobileReports() {
+function MobileReports({ report }: { report: LatestAuditReport }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const filteredItems = useMemo(
+    () => filterAuditItems(report.items, searchTerm, statusFilter),
+    [report.items, searchTerm, statusFilter]
+  );
+
   return (
     <ScrollView
       className="flex-1"
@@ -365,29 +554,42 @@ function MobileReports() {
 
           <View className="flex-1">
             <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-              {auditReportSummary.title}
+              {report.title}
             </Text>
             <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-              {auditReportSummary.mobileMeta}
+              {report.mobileMeta}
             </Text>
           </View>
         </View>
       </View>
 
       <View className="px-4 pt-4">
-        <SummaryCard mobile />
+        <SummaryCard report={report} mobile />
       </View>
 
       <View className="px-4 pt-4">
         <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-          Mismatches ({reportMismatches.length})
+          Audit results ({report.items.length})
         </Text>
 
-        {reportMismatches.slice(0, 3).map((item, index) => (
-          <View key={item.id} className={index < 2 ? "mb-3" : ""}>
-            <MismatchListItem item={item} mobile />
-          </View>
-        ))}
+        <FilterBar
+          searchTerm={searchTerm}
+          onChangeSearchTerm={setSearchTerm}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          filteredCount={filteredItems.length}
+          totalCount={report.items.length}
+        />
+
+        {filteredItems.length > 0 ? (
+          filteredItems.map((item, index) => (
+            <View key={`${item.id}-${index}`} className={index < filteredItems.length - 1 ? "mb-3" : ""}>
+              <ReportResultItem item={item} mobile />
+            </View>
+          ))
+        ) : (
+          <EmptyResults />
+        )}
       </View>
 
       <View className="px-4 pt-4">
@@ -408,6 +610,8 @@ function MobileReports() {
 export default function ReportsScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
+  const latestReport = useLatestAuditReport();
+  const report = latestReport ?? getFallbackReport();
   const isMobile = width < 1024;
 
   if (!user) {
@@ -418,5 +622,5 @@ export default function ReportsScreen() {
     return <EmployeeReportsScreen />;
   }
 
-  return isMobile ? <MobileReports /> : <DesktopReports />;
+  return isMobile ? <MobileReports report={report} /> : <DesktopReports report={report} />;
 }
