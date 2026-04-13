@@ -713,13 +713,16 @@ export function useAuditScanState() {
       }
 
       const sessionId = scanSessionRef.current;
-      const tagIds = Array.isArray(payload)
+      const isArrayPayload = Array.isArray(payload);
+      const tagIds = isArrayPayload
         ? Array.from(
             new Set(payload.map((entry) => getTagId(entry)).filter(Boolean))
           )
         : [getTagId(payload)].filter(Boolean);
 
-      if (tagIds.length === 0) {
+      // For array payloads, always update UI even if empty (to reflect websocket state)
+      // For single payloads, only update if we have a tag
+      if (!isArrayPayload && tagIds.length === 0) {
         return;
       }
 
@@ -735,11 +738,13 @@ export function useAuditScanState() {
           return;
         }
 
-        if (Array.isArray(payload)) {
+        if (isArrayPayload) {
+          // Always replace entire list with websocket data (including empty arrays)
           setMqttItems(resolvedItems);
           return;
         }
 
+        // For single items, append to existing list
         setMqttItems((current) => {
           const nextItems = [...current];
 
