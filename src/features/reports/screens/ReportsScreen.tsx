@@ -16,11 +16,12 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import EmployeeReportsScreen from "./EmployeeReportsScreen";
 import {
   auditReportSummary,
   reportMismatches,
 } from "../data/reportData";
+import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
+import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
 type StatusFilter = "all" | AuditItemTone;
 
@@ -432,7 +433,15 @@ function EmptyResults() {
   );
 }
 
-function DesktopReports({ report }: { report: LatestAuditReport }) {
+function DesktopReports({ 
+  report, 
+  onExportPdf, 
+  isExporting 
+}: { 
+  report: LatestAuditReport; 
+  onExportPdf: () => void; 
+  isExporting: boolean;
+}) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const filteredItems = useMemo(
@@ -468,7 +477,12 @@ function DesktopReports({ report }: { report: LatestAuditReport }) {
               }
             }}
           />
-          <SectionButton title="Export PDF" icon="download" filled />
+          <SectionButton 
+            title={isExporting ? "Exporting..." : "Export PDF"}
+            icon="download" 
+            filled 
+            onPress={onExportPdf}
+          />
         </View>
       </View>
 
@@ -519,7 +533,15 @@ function DesktopReports({ report }: { report: LatestAuditReport }) {
   );
 }
 
-function MobileReports({ report }: { report: LatestAuditReport }) {
+function MobileReports({ 
+  report, 
+  onExportPdf, 
+  isExporting 
+}: { 
+  report: LatestAuditReport; 
+  onExportPdf: () => void; 
+  isExporting: boolean;
+}) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const filteredItems = useMemo(
@@ -594,12 +616,13 @@ function MobileReports({ report }: { report: LatestAuditReport }) {
 
       <View className="px-4 pt-4">
         <Pressable
+          onPress={onExportPdf}
           className="flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
         >
           <Feather name="download" size={18} color={adminTheme.slateSoft} />
           <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Export Report (PDF)
+            {isExporting ? "Exporting..." : "Export Report (PDF)"}
           </Text>
         </Pressable>
       </View>
@@ -612,7 +635,23 @@ export default function ReportsScreen() {
   const { width } = useWindowDimensions();
   const latestReport = useLatestAuditReport();
   const report = latestReport ?? getFallbackReport();
+  const [isExporting, setIsExporting] = useState(false);
   const isMobile = width < 1024;
+
+  async function handleExportPdf() {
+    if (!user) {
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      await exportAuditReportAsPdf(report, user.name);
+    } catch (error) {
+      console.warn("Failed to export PDF:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   if (!user) {
     return null;
@@ -622,5 +661,9 @@ export default function ReportsScreen() {
     return <EmployeeReportsScreen />;
   }
 
-  return isMobile ? <MobileReports report={report} /> : <DesktopReports report={report} />;
+  return isMobile ? (
+    <MobileReports report={report} onExportPdf={handleExportPdf} isExporting={isExporting} />
+  ) : (
+    <DesktopReports report={report} onExportPdf={handleExportPdf} isExporting={isExporting} />
+  );
 }
