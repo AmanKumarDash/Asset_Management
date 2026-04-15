@@ -337,7 +337,10 @@ function ReportResultItem({
       </View>
 
       {mobile ? (
-        <View className="ml-3 rounded-full px-3 py-1" style={{ backgroundColor: styles.badgeBg }}>
+        <View
+          className="ml-3 rounded-full px-3 py-1"
+          style={{ backgroundColor: styles.badgeBg, alignSelf: "flex-start" }}
+        >
           <Text className="text-xs font-medium" style={{ color: styles.badgeText }}>
             {styles.label}
           </Text>

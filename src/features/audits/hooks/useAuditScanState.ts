@@ -1,7 +1,7 @@
 import {
+  AssetWarehouseStagingItem,
   AuditComparisonAsset,
   AuditComparisonResponse,
-  AssetWarehouseStagingItem,
   AuditPhase,
   AuditReportAsset,
   AuditReportTone,
@@ -783,6 +783,7 @@ export function useAuditScanState() {
       mqttService.offStatus(setConnectionStatus);
       mqttService.disconnectMqtt();
       setConnectionStatus("idle");
+      // setMqttItems([]);
     };
   }, [auditPhase, handleMqttMessage]);
 
