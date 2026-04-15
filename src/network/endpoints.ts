@@ -1,4 +1,7 @@
 export const ENDPOINTS = {
+  ADMIN: {
+    CREATE_USER: "/api/Admin/createuser",
+  },
   AUTH: {
     LOGIN: "/api/Account/validatelogin",
     REFRESH: "/api/Account/RefreshToken",

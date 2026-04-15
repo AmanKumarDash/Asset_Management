@@ -1,6 +1,6 @@
 import {
-  AuditComparisonResponse,
   AssetWarehouseStagingItem,
+  AuditComparisonResponse,
   AuditSubmitRequest,
   AuditSubmitResponse,
   WarehouseTagBaselineItem,
@@ -21,6 +21,36 @@ import {
 export type LoginCredentials = {
   Username: string;
   Password: string;
+};
+
+export type CreateUserRequest = {
+  UserId?: string;
+  FirstName: string;
+  MiddleName?: string;
+  LastName: string;
+  UserType: number;
+  Address?: {
+    Id: number;
+    Address1: string;
+    Address2: string;
+    City: number;
+    CityName: string;
+    DistrictId: number;
+    DistrictName: string;
+    StateId: number;
+    StateName: string;
+    CountryId: number;
+    CountryName: string;
+    Pin: number;
+  };
+  EmailId?: string;
+  Mobile: string;
+  CompanyName?: string;
+  GSTNo?: string;
+  OpeningBalance?: number;
+  GSTTypeID?: number;
+  GSTType?: string; // 
+  Offline_Id?: string;
 };
 
 export type WarehouseApiRecord = Record<string, unknown>;
@@ -80,6 +110,18 @@ class ApiService {
     >(ENDPOINTS.ORG.GET_DETAILS);
 
     return extractResponseData<OrganizationDetails>(response.data);
+  }
+
+  // Creates an employee/admin user record for the current organization from the add-user screen.
+  async createUser(payload: CreateUserRequest): Promise<unknown> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.post<ApiEnvelope<unknown> | unknown>(
+      ENDPOINTS.ADMIN.CREATE_USER,
+      payload
+    );
+
+    return extractResponseData<unknown>(response.data);
   }
 
   // Fetches all warehouses visible to the logged-in organization for the audit setup screen.
