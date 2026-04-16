@@ -5,6 +5,16 @@ export const ENDPOINTS = {
   AUTH: {
     LOGIN: "/api/Account/validatelogin",
     REFRESH: "/api/Account/RefreshToken",
+  GET_USER_DETAILS: (
+    userId = "",
+    pageNo = 1,
+    rowCount = 10,
+    sortOrder = "ASC",
+    sortColumn = "UserTypeId"
+  ) =>
+    `/api/Account/GetUserDetails?UserId=${encodeURIComponent(
+      userId
+    )}&pageNo=${pageNo}&rowCount=${rowCount}&sortOrder=${sortOrder}&sortColumn=${sortColumn}`,
   },
   ORG: {
     GET_DETAILS: "/api/org/GetDetails",

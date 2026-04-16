@@ -23,6 +23,21 @@ export type LoginCredentials = {
   Password: string;
 };
 
+export type UserDetails = {
+  UserId: string;
+  FirstName: string;
+  MiddleName?: string;
+  LastName: string;
+  EmailId?: string;
+  Mobile: string;
+  UserType: number;
+  IsActive: boolean;
+  UserStatus: number;
+  Type?: string;
+  CompanyName?: string;
+  GSTNo?: string;
+};
+
 export type CreateUserRequest = {
   UserId?: string;
   FirstName: string;
@@ -100,6 +115,23 @@ class ApiService {
 
     return extractResponseData<LoginResponse>(response.data);
   }
+
+  async getUserDetails(
+  userId = "",
+  pageNo = 1,
+  rowCount = 10
+): Promise<UserDetails[]> {
+  assertApiBaseUrlConfigured();
+
+  const response = await this.api.get<
+    ApiCollectionEnvelope<UserDetails> | UserDetails[]
+  >(ENDPOINTS.AUTH.GET_USER_DETAILS(userId, pageNo, rowCount));
+
+  const data = extractResponseCollection<UserDetails>(response.data);
+
+  //  IMPORTANT: filter UserType = 3
+  return data.filter((user) => user.UserType === 3);
+}
 
   // Loads organization details for the currently authenticated user after the bearer token is attached.
   async getOrganizationDetails(): Promise<OrganizationDetails> {
