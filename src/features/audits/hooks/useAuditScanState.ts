@@ -933,14 +933,21 @@ export function useAuditScanState() {
   }, [clearScanSession]);
 
   // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
+  // We snapshot the current expectedAssetCount before clearScanSession wipes it to zero, then restore it
+  // immediately so the progress card denominator stays correct once MQTT scanning begins.
   const startAudit = useCallback((warehouseId?: string) => {
     if (!warehouseId || isPreparingWarehouse) {
       return;
     }
 
+    const currentExpectedCount = expectedAssetCount;
     clearScanSession("scanning");
     setAuditWarehouseId(warehouseId);
-  }, [clearScanSession, isPreparingWarehouse]);
+
+    if (currentExpectedCount > 0) {
+      setExpectedAssetCount(currentExpectedCount);
+    }
+  }, [clearScanSession, expectedAssetCount, isPreparingWarehouse]);
 
   // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
   const addManualAsset = useCallback(() => {

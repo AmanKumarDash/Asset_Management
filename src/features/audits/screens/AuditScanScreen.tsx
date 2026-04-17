@@ -202,6 +202,10 @@ function getSelectedWarehouseTotalAssets(
   selectedWarehouse: WarehouseSummary | null,
   fallbackCount: number
 ) {
+  if (typeof fallbackCount === "number" && Number.isFinite(fallbackCount) && fallbackCount > 0) {
+    return fallbackCount;
+  }
+
   const rawCount = selectedWarehouse?.raw?.totalRowCount;
 
   if (typeof rawCount === "number" && Number.isFinite(rawCount)) {

@@ -32,7 +32,7 @@ const stats = [
 
 const auditCards = [
   {
-    title: "Floor 3 - IT Assets",
+    title: "Conference Room ",
     meta: "Block A - 48 assets - Aman",
     status: "Submitted",
     statusTone: "info",
@@ -41,7 +41,7 @@ const auditCards = [
     footer: "20 Mar - 9:30 AM",
   },
   {
-    title: "Warehouse - Furniture",
+    title: "Warehouse",
     meta: "Block B - 112 assets - Naman",
     status: "In progress",
     statusTone: "warning",
@@ -50,7 +50,7 @@ const auditCards = [
     footer: "18% complete",
   },
   {
-    title: "Server Room - Equipment",
+    title: "Server Room",
     meta: "Block C - 28 assets - jatin",
     status: "Completed",
     statusTone: "success",
@@ -59,7 +59,7 @@ const auditCards = [
     footer: "19 Mar",
   },
   {
-    title: "Reception - Furniture",
+    title: "Meeting Room",
     meta: "Block D - 34 assets - Unassigned",
     status: "Not started",
     statusTone: "muted",
@@ -348,7 +348,7 @@ function MobileAuditCards() {
             {card.meta.split(" - ")[0]}
           </Text>
           <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
-            {card.title === "Floor 3 - IT Assets"
+            {card.title === "Conference Room "
               ? "by Aman - 20 Mar - 9:30 AM"
               : "assigned to Subhasmita"}
           </Text>
