@@ -231,6 +231,25 @@ class ApiService {
 
     return extractResponseData<AuditComparisonResponse>(response.data) ?? {};
   }
+
+    // Fetches audit scan records between a date range for a given organization.
+async getReportByDateWiseAsset(
+  startDate: string,
+  endDate: string
+): Promise<any[]> {
+  assertApiBaseUrlConfigured();
+
+  const response = await this.api.get<
+    ApiCollectionEnvelope<any> | any[]
+  >(
+    ENDPOINTS.WAREHOUSE.GET_REPORT_BY_DATE(
+      startDate,
+      endDate
+    )
+  );
+
+  return extractResponseCollection<any>(response.data);
+}
 }
 
 export const apiService = new ApiService();

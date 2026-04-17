@@ -2,13 +2,16 @@ import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanDa
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   LatestAuditReport,
+  setLatestAuditReport,
   useLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
+import { apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -16,6 +19,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import DatePicker from "react-native-date-picker";
 import {
   auditReportSummary,
   reportMismatches,
@@ -23,7 +27,99 @@ import {
 import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
+import { AuditSummary } from "@/features/audits/types/audit";
+
+interface DatewiseScanItem {
+  TagId: string;
+  ProductId: number;
+  ProductCode: string;
+  ReferenceId: string;
+  WarehouseAuditData: Array<{
+    WarehouseData: Array<{
+      ProductId: number;
+      TagId: string;
+      ProductName: string;
+      ProductCode: string;
+    }>;
+  }>;
+}
+
+function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
+  items: AuditScanItem[];
+  summary: AuditSummary;
+} {
+  if (!data.length || !data[0]?.WarehouseAuditData?.[0]?.WarehouseData) {
+    return { 
+      items: [], 
+      summary: { found: 0, missing: 0, extra: 0, scanned: 0 } 
+    };
+  }
+
+  const scannedSet = new Set(data.map(item => item.ProductId));
+  const scannedMap = new Map<number, { shortTag: string; refId: string; code?: string }>();
+
+
+  data.forEach(item => {
+    if (!scannedMap.has(item.ProductId)) {
+      scannedMap.set(item.ProductId, { shortTag: item.TagId, refId: item.ReferenceId, code: item.ProductCode });
+    }
+  });
+
+  const warehouseItems = data[0].WarehouseAuditData[0].WarehouseData;
+  const items: AuditScanItem[] = [];
+  const summary: AuditSummary = { found: 0, missing: 0, extra: 0, scanned: scannedSet.size };
+
+  // Found: warehouse + scanned
+  warehouseItems.forEach(whItem => {
+    const isScanned = scannedSet.has(whItem.ProductId);
+    if (isScanned) {
+      const scanInfo = scannedMap.get(whItem.ProductId)!;
+      items.push({
+        id: whItem.TagId, // full RFID
+        title: whItem.ProductName,
+        subtitle: `Short Tag ${scanInfo.shortTag} • ${scanInfo.refId}`,
+        tone: "found" as const,
+        icon: "plus-circle"
+      });
+      summary.found++;
+    } else {
+      // Missing
+      items.push({
+        id: whItem.TagId,
+        title: whItem.ProductName,
+        subtitle: `Expected but not scanned`,
+        tone: "missing" as const,
+        icon: "briefcase"
+      });
+      summary.missing++;
+    }
+  });
+
+  // Extra: scanned not in warehouse
+  scannedSet.forEach(pid => {
+    if (!warehouseItems.some(w => w.ProductId === pid)) {
+      const scanInfo = scannedMap.get(pid)!;
+      items.push({
+        id: scanInfo.shortTag,
+        title: scanInfo.code || "Unknown Product",
+        subtitle: scanInfo.refId,
+        tone: "extra" as const,
+        icon: "plus-circle"
+      });
+      summary.extra++;
+    }
+  });
+
+  summary.expected = summary.found + summary.missing;
+  return { items, summary };
+}
+
 type StatusFilter = "all" | AuditItemTone;
+function formatDateForApi(date: Date) {
+  return date.toISOString().replace("T", " ").replace("Z", "");
+}
+
+
 
 function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
@@ -444,13 +540,51 @@ function DesktopReports({
   report: LatestAuditReport; 
   onExportPdf: () => void; 
   isExporting: boolean;
-}) {
+}){
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const filteredItems = useMemo(
     () => filterAuditItems(report.items, searchTerm, statusFilter),
     [report.items, searchTerm, statusFilter]
   );
+  const [startDate, setStartDate] = useState<Date | null>(null);
+const [endDate, setEndDate] = useState<Date | null>(null);
+const [openStart, setOpenStart] = useState(false);
+const [openEnd, setOpenEnd] = useState(false);
+const [loadingReport, setLoadingReport] = useState(false);
+async function handleFetchReportByDate() {
+  if (!startDate || !endDate) {
+    alert("Select both dates");
+    return;
+  }
+
+  try {
+    setLoadingReport(true);
+
+    const rawData = await apiService.getReportByDateWiseAsset(
+      startDate.toISOString(),
+      endDate.toISOString(),
+    );
+
+    const { items, summary } = computeDatewiseAuditItems(rawData);
+
+    const newReport: LatestAuditReport = {
+      ...report,
+      items,
+      referenceId: rawData[0]?.ReferenceId ?? null,
+      observedAt: rawData[0]?.ScanningDate ?? null,
+      summary,
+    };
+
+    setLatestAuditReport(newReport);
+
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoadingReport(false);
+  }
+}
+
 
   return (
     <ScrollView
@@ -498,7 +632,104 @@ function DesktopReports({
           <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
             Audit results ({report.items.length})
           </Text>
+          <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
 
+  {/* ✅ MOBILE BUTTONS */}
+<View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+  {/* Mobile: Pressable + Modal DatePicker */}
+  {Platform.OS !== "web" && (
+    <>
+      <Pressable
+        onPress={() => setOpenStart(true)}
+        className="rounded-xl border px-3 py-2"
+        style={{ borderColor: adminTheme.border }}
+      >
+        <Text>
+          {startDate ? startDate.toDateString() : "Start Date"}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => setOpenEnd(true)}
+        className="rounded-xl border px-3 py-2"
+        style={{ borderColor: adminTheme.border }}
+      >
+        <Text>
+          {endDate ? endDate.toDateString() : "End Date"}
+        </Text>
+      </Pressable>
+    </>
+  )}
+
+  {/* Web: Native date inputs (no time) */}
+  {Platform.OS === "web" && (
+    <>
+      <input
+        type="date"
+        onChange={(e) => setStartDate(new Date(e.target.value))}
+        style={{
+          padding: '8px 12px',
+          borderRadius: '12px',
+          border: `1px solid ${adminTheme.border}`,
+          backgroundColor: adminTheme.surface,
+          color: adminTheme.slate,
+        }}
+      />
+      <input
+        type="date"
+        onChange={(e) => setEndDate(new Date(e.target.value))}
+        style={{
+          padding: '8px 12px',
+          borderRadius: '12px',
+          border: `1px solid ${adminTheme.border}`,
+          backgroundColor: adminTheme.surface,
+          color: adminTheme.slate,
+        }}
+      />
+    </>
+  )}
+
+  {/* Go Button */}
+  <Pressable
+    onPress={handleFetchReportByDate}
+    className="rounded-xl px-4 py-2"
+    style={{ backgroundColor: adminTheme.primary }}
+  >
+    <Text style={{ color: "#fff" }}>
+      {loadingReport ? "Loading..." : "Go"}
+    </Text>
+  </Pressable>
+</View>
+
+
+</View>
+{Platform.OS !== "web" && (
+  <>
+    <DatePicker
+      modal
+      open={openStart}
+      date={startDate || new Date()}
+      mode="date"
+      onConfirm={(date) => {
+        setOpenStart(false);
+        setStartDate(date);
+      }}
+      onCancel={() => setOpenStart(false)}
+    />
+
+    <DatePicker
+      modal
+      open={openEnd}
+      date={endDate || new Date()}
+      mode="date"
+      onConfirm={(date) => {
+        setOpenEnd(false);
+        setEndDate(date);
+      }}
+      onCancel={() => setOpenEnd(false)}
+    />
+  </>
+)}
           <FilterBar
             searchTerm={searchTerm}
             onChangeSearchTerm={setSearchTerm}
@@ -551,6 +782,44 @@ function MobileReports({
     () => filterAuditItems(report.items, searchTerm, statusFilter),
     [report.items, searchTerm, statusFilter]
   );
+  const [startDate, setStartDate] = useState<Date | null>(null);
+const [endDate, setEndDate] = useState<Date | null>(null);
+const [openStart, setOpenStart] = useState(false);
+const [openEnd, setOpenEnd] = useState(false);
+const [loadingReport, setLoadingReport] = useState(false);
+
+async function handleFetchReportByDate() {
+  if (!startDate || !endDate) {
+    alert("Please select both dates");
+    return;
+  }
+
+  try {
+    setLoadingReport(true);
+
+    const rawData = await apiService.getReportByDateWiseAsset(
+      formatDateForApi(startDate),
+      formatDateForApi(endDate)
+    );
+
+    const { items, summary } = computeDatewiseAuditItems(rawData);
+
+    const newReport: LatestAuditReport = {
+      ...report,
+      items,
+      referenceId: rawData[0]?.ReferenceId ?? null,
+      observedAt: rawData[0]?.ScanningDate ?? null,
+      summary,
+    };
+
+    setLatestAuditReport(newReport);
+
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoadingReport(false);
+  }
+}
 
   return (
     <ScrollView
@@ -596,6 +865,46 @@ function MobileReports({
         <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
           Audit results ({report.items.length})
         </Text>
+        <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+
+  <Pressable
+    onPress={() => setOpenStart(true)}
+    className="rounded-xl border px-3 py-2"
+    style={{ borderColor: adminTheme.border }}
+  >
+    <Text>
+      {startDate ? startDate.toDateString() : "Start Date"}
+    </Text>
+  </Pressable>
+
+  <Pressable
+    onPress={() => setOpenEnd(true)}
+    className="rounded-xl border px-3 py-2"
+    style={{ borderColor: adminTheme.border }}
+  >
+    <Text>
+      {endDate ? endDate.toDateString() : "End Date"}
+    </Text>
+  </Pressable>
+  {Platform.OS === "web" && (
+  <View style={{ flexDirection: "row", gap: 10 }}>
+   <input
+  type="datetime-local"
+  onChange={(e) => setStartDate(new Date(e.target.value))}
+/>
+  </View>
+)}
+
+  <Pressable
+    onPress={handleFetchReportByDate}
+    className="rounded-xl px-4 py-2"
+    style={{ backgroundColor: adminTheme.primary }}
+  >
+    <Text style={{ color: "#fff" }}>
+      {loadingReport ? "Loading..." : "Go"}
+    </Text>
+  </Pressable>
+</View>
 
         <FilterBar
           searchTerm={searchTerm}
