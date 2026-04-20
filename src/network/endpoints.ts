@@ -5,21 +5,21 @@ export const ENDPOINTS = {
   AUTH: {
     LOGIN: "/api/Account/validatelogin",
     REFRESH: "/api/Account/RefreshToken",
-  GET_USER_DETAILS: (
-    userId = "",
-    pageNo = 1,
-    rowCount = 10,
-    sortOrder = "ASC",
-    sortColumn = "UserTypeId"
-  ) =>
-    `/api/Account/GetUserDetails?UserId=${encodeURIComponent(
-      userId
-    )}&pageNo=${pageNo}&rowCount=${rowCount}&sortOrder=${sortOrder}&sortColumn=${sortColumn}`,
+    GET_USER_DETAILS: (
+      userId = "",
+      pageNo = 1,
+      rowCount = 10,
+      sortOrder = "ASC",
+      sortColumn = "UserTypeId"
+    ) =>
+      `/api/Account/GetUserDetails?UserId=${encodeURIComponent(
+        userId
+      )}&pageNo=${pageNo}&rowCount=${rowCount}&sortOrder=${sortOrder}&sortColumn=${sortColumn}`,
   },
   ORG: {
     GET_DETAILS: "/api/org/GetDetails",
   },
- WAREHOUSE: {
+  WAREHOUSE: {
     GET_BY_ORG: (pageNo = 1, rowCount = 50) =>
       `/api/warehouse/getwarehousebyOrg?pageNo=${pageNo}&rowCount=${rowCount}`,
     GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>
@@ -27,12 +27,11 @@ export const ENDPOINTS = {
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
     GET_AUDIT_DATA: (referenceId: string) =>
       `/api/warehouse/GetWarehouseAuditData?referanceId=${encodeURIComponent(referenceId)}`,
-
-    // ✅ ADD THIS HERE
+    GET_REPORT_BY_EMPLOYEE: (userId: string) =>
+      `/api/warehouse/GetReportByEmployee?userid=${encodeURIComponent(userId)}`,
     GET_REPORT_BY_DATE: (startDate: string, endDate: string) =>
-  `/api/warehouse/GetReportByDateWiseAsset?StartDate=${startDate}&EndDate=${endDate}`,
+      `/api/warehouse/GetReportByDateWiseAsset?StartDate=${startDate}&EndDate=${endDate}`,
   },
-
   INVENTORY: {
     SEARCH_BARCODE_SCAN_MODE: (searchText: string) =>
       `/api/InventoryManagement/Search_InventoryBarcodeScanMode?searchText=${encodeURIComponent(
@@ -40,4 +39,3 @@ export const ENDPOINTS = {
       )}&isTaxable=true&isGSTtype=true&IsRestrict=false&IsProforma=false&IsTagWise=true`,
   },
 } as const;
-

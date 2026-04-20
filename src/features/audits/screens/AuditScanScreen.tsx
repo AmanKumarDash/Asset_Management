@@ -1,8 +1,6 @@
-import { USER_ROLES } from "@/constants/auth";
 import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
 import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
 import { AuditPhase } from "@/features/audits/types/audit";
-import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { WarehouseSummary } from "@/models/warehouse";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
@@ -25,7 +23,6 @@ import {
   auditScanOverview,
 } from "../data/auditScanData";
 import { useAuditScanState } from "../hooks/useAuditScanState";
-import EmployeeAuditScanScreen from "./EmployeeAuditScanScreen";
 
 // Returns the color and icon styling for a scan list row based on its tone.
 function getToneStyles(tone: AuditItemTone) {
@@ -1332,17 +1329,8 @@ function DesktopAuditScan({ width }: { width: number }) {
 
 // Main audit screen entry component that chooses between mobile, desktop, or employee audit views.
 export default function AuditScanScreen() {
-  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const isMobile = width < 1024;
-
-  if (!user) {
-    return null;
-  }
-
-  if (user.role === USER_ROLES.EMPLOYEE) {
-    return <EmployeeAuditScanScreen />;
-  }
 
   return isMobile ? <MobileAuditScan /> : <DesktopAuditScan width={width} />;
 }

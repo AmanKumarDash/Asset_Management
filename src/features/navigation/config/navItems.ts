@@ -93,6 +93,11 @@ const employeeMobileNavItems: AppNavItem[] = [
     icon: "check-square",
   },
   {
+    label: "Reports",
+    href: "/reports",
+    icon: "bar-chart-2",
+  },
+  {
     label: "Profile",
     href: "/profile",
     icon: "user",

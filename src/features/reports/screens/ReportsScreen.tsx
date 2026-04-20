@@ -11,6 +11,7 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -34,14 +35,14 @@ interface DatewiseScanItem {
   ProductId: number;
   ProductCode: string;
   ReferenceId: string;
-  WarehouseAuditData: Array<{
-    WarehouseData: Array<{
+  WarehouseAuditData: {
+    WarehouseData: {
       ProductId: number;
       TagId: string;
       ProductName: string;
       ProductCode: string;
-    }>;
-  }>;
+    }[];
+  }[];
 }
 
 function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
@@ -532,15 +533,29 @@ function EmptyResults() {
   );
 }
 
-function DesktopReports({ 
-  report, 
-  onExportPdf, 
-  isExporting 
-}: { 
-  report: LatestAuditReport; 
-  onExportPdf: () => void; 
+type ReportDetailProps = {
+  report: LatestAuditReport;
+  onExportPdf: () => void;
   isExporting: boolean;
-}){
+  onBack?: () => void;
+  showDateFilters?: boolean;
+};
+
+function handleDefaultBackNavigation() {
+  if (router.canGoBack()) {
+    router.back();
+  } else {
+    router.push("/audits");
+  }
+}
+
+function DesktopReports({
+  report,
+  onExportPdf,
+  isExporting,
+  onBack,
+  showDateFilters = true,
+}: ReportDetailProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const filteredItems = useMemo(
@@ -606,13 +621,7 @@ async function handleFetchReportByDate() {
           <SectionButton
             title="Back"
             icon="arrow-left"
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push("/audits");
-              }
-            }}
+            onPress={onBack ?? handleDefaultBackNavigation}
           />
           <SectionButton 
             title={isExporting ? "Exporting..." : "Export PDF"}
@@ -632,6 +641,8 @@ async function handleFetchReportByDate() {
           <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
             Audit results ({report.items.length})
           </Text>
+          {showDateFilters ? (
+            <>
           <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
 
   {/* ✅ MOBILE BUTTONS */}
@@ -730,6 +741,8 @@ async function handleFetchReportByDate() {
     />
   </>
 )}
+            </>
+          ) : null}
           <FilterBar
             searchTerm={searchTerm}
             onChangeSearchTerm={setSearchTerm}
@@ -767,15 +780,13 @@ async function handleFetchReportByDate() {
   );
 }
 
-function MobileReports({ 
-  report, 
-  onExportPdf, 
-  isExporting 
-}: { 
-  report: LatestAuditReport; 
-  onExportPdf: () => void; 
-  isExporting: boolean;
-}) {
+function MobileReports({
+  report,
+  onExportPdf,
+  isExporting,
+  onBack,
+  showDateFilters = true,
+}: ReportDetailProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const filteredItems = useMemo(
@@ -830,13 +841,7 @@ async function handleFetchReportByDate() {
       <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
         <View className="flex-row items-start">
           <Pressable
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push("/audits");
-              }
-            }}
+            onPress={onBack ?? handleDefaultBackNavigation}
             className="mr-3 mt-1 h-9 w-9 items-center justify-center rounded-[12px] border"
             style={{
               borderColor: adminTheme.border,
@@ -865,6 +870,8 @@ async function handleFetchReportByDate() {
         <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
           Audit results ({report.items.length})
         </Text>
+        {showDateFilters ? (
+          <>
         <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
 
   <Pressable
@@ -887,12 +894,30 @@ async function handleFetchReportByDate() {
     </Text>
   </Pressable>
   {Platform.OS === "web" && (
-  <View style={{ flexDirection: "row", gap: 10 }}>
-   <input
-  type="datetime-local"
-  onChange={(e) => setStartDate(new Date(e.target.value))}
-/>
-  </View>
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <input
+        type="date"
+        onChange={(e) => setStartDate(new Date(e.target.value))}
+        style={{
+          padding: "8px 12px",
+          borderRadius: "12px",
+          border: `1px solid ${adminTheme.border}`,
+          backgroundColor: adminTheme.surface,
+          color: adminTheme.slate,
+        }}
+      />
+      <input
+        type="date"
+        onChange={(e) => setEndDate(new Date(e.target.value))}
+        style={{
+          padding: "8px 12px",
+          borderRadius: "12px",
+          border: `1px solid ${adminTheme.border}`,
+          backgroundColor: adminTheme.surface,
+          color: adminTheme.slate,
+        }}
+      />
+    </View>
 )}
 
   <Pressable
@@ -905,6 +930,35 @@ async function handleFetchReportByDate() {
     </Text>
   </Pressable>
 </View>
+            {Platform.OS !== "web" && (
+              <>
+                <DatePicker
+                  modal
+                  open={openStart}
+                  date={startDate || new Date()}
+                  mode="date"
+                  onConfirm={(date) => {
+                    setOpenStart(false);
+                    setStartDate(date);
+                  }}
+                  onCancel={() => setOpenStart(false)}
+                />
+
+                <DatePicker
+                  modal
+                  open={openEnd}
+                  date={endDate || new Date()}
+                  mode="date"
+                  onConfirm={(date) => {
+                    setOpenEnd(false);
+                    setEndDate(date);
+                  }}
+                  onCancel={() => setOpenEnd(false)}
+                />
+              </>
+            )}
+          </>
+        ) : null}
 
         <FilterBar
           searchTerm={searchTerm}
@@ -946,20 +1000,31 @@ export default function ReportsScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const latestReport = useLatestAuditReport();
-  const report = latestReport ?? getFallbackReport();
+  const adminReport = latestReport ?? getFallbackReport();
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedEmployeeReport, setSelectedEmployeeReport] =
+    useState<LatestAuditReport | null>(null);
   const isMobile = width < 1024;
+  const activeReport =
+    user?.role === "employee" ? selectedEmployeeReport : adminReport;
 
   async function handleExportPdf() {
-    if (!user) {
+    if (!user || !activeReport) {
       return;
     }
 
     setIsExporting(true);
     try {
-      await exportAuditReportAsPdf(report, user.name);
+      await exportAuditReportAsPdf(activeReport, user.name);
     } catch (error) {
       console.warn("Failed to export PDF:", error);
+
+      if (Platform.OS !== "web") {
+        Alert.alert(
+          "Export failed",
+          "We couldn't generate the PDF. Please try again."
+        );
+      }
     } finally {
       setIsExporting(false);
     }
@@ -970,12 +1035,39 @@ export default function ReportsScreen() {
   }
 
   if (user.role === "employee") {
-    return <EmployeeReportsScreen />;
+    if (!activeReport) {
+      return (
+        <EmployeeReportsScreen
+          onSelectReport={(report) => {
+            setSelectedEmployeeReport(report);
+            setLatestAuditReport(report);
+          }}
+        />
+      );
+    }
+
+    return isMobile ? (
+      <MobileReports
+        report={activeReport}
+        onExportPdf={handleExportPdf}
+        isExporting={isExporting}
+        onBack={() => setSelectedEmployeeReport(null)}
+        showDateFilters={false}
+      />
+    ) : (
+      <DesktopReports
+        report={activeReport}
+        onExportPdf={handleExportPdf}
+        isExporting={isExporting}
+        onBack={() => setSelectedEmployeeReport(null)}
+        showDateFilters={false}
+      />
+    );
   }
 
   return isMobile ? (
-    <MobileReports report={report} onExportPdf={handleExportPdf} isExporting={isExporting} />
+    <MobileReports report={adminReport} onExportPdf={handleExportPdf} isExporting={isExporting} />
   ) : (
-    <DesktopReports report={report} onExportPdf={handleExportPdf} isExporting={isExporting} />
+    <DesktopReports report={adminReport} onExportPdf={handleExportPdf} isExporting={isExporting} />
   );
 }

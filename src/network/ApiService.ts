@@ -70,6 +70,16 @@ export type CreateUserRequest = {
 
 export type WarehouseApiRecord = Record<string, unknown>;
 
+export type EmployeeReportApiItem = {
+  WareHouseId: number | string;
+  ProductId: number | string;
+  ProductCode?: string | null;
+  TagId?: string | number | null;
+  RefrenceId?: string | null;
+  ReferenceId?: string | null;
+  ScanningDate?: string | null;
+};
+
 function extractAuditReferenceId(
   payload: AuditSubmitResponse | string | null | undefined
 ): string {
@@ -232,24 +242,30 @@ class ApiService {
     return extractResponseData<AuditComparisonResponse>(response.data) ?? {};
   }
 
-    // Fetches audit scan records between a date range for a given organization.
-async getReportByDateWiseAsset(
-  startDate: string,
-  endDate: string
-): Promise<any[]> {
-  assertApiBaseUrlConfigured();
+  // Loads all submitted employee report rows so the UI can build grouped summaries by reference id.
+  async getReportByEmployee(userId: string): Promise<EmployeeReportApiItem[]> {
+    assertApiBaseUrlConfigured();
 
-  const response = await this.api.get<
-    ApiCollectionEnvelope<any> | any[]
-  >(
-    ENDPOINTS.WAREHOUSE.GET_REPORT_BY_DATE(
-      startDate,
-      endDate
-    )
-  );
+    const response = await this.api.get<
+      ApiCollectionEnvelope<EmployeeReportApiItem> | EmployeeReportApiItem[]
+    >(ENDPOINTS.WAREHOUSE.GET_REPORT_BY_EMPLOYEE(userId));
 
-  return extractResponseCollection<any>(response.data);
-}
+    return extractResponseCollection<EmployeeReportApiItem>(response.data);
+  }
+
+  // Fetches audit scan records between a date range for a given organization.
+  async getReportByDateWiseAsset(
+    startDate: string,
+    endDate: string
+  ): Promise<any[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiCollectionEnvelope<any> | any[]
+    >(ENDPOINTS.WAREHOUSE.GET_REPORT_BY_DATE(startDate, endDate));
+
+    return extractResponseCollection<any>(response.data);
+  }
 }
 
 export const apiService = new ApiService();

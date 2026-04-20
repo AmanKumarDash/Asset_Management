@@ -244,6 +244,7 @@ function pickAuditComparisonArrays(response: AuditComparisonResponse): {
     "ScannedAssets",
     "ScannedItems",
     "Scanned",
+    "AuditScanData",
     "ActualData",
     "ActualItems",
     "Actual",

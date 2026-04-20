@@ -1,7 +1,6 @@
 import { LatestAuditReport } from "@/features/reports/state/latestAuditReportStore";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
-import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 
 function formatDate(date: Date | null) {
@@ -359,19 +358,8 @@ export async function exportAuditReportAsPdf(
     const { uri } = await Print.printToFileAsync({ html });
 
     if (uri) {
-      const targetUri = `${FileSystem.documentDirectory}${fileName}.pdf`;
-
-      await FileSystem.copyAsync({
-        from: uri,
-        to: targetUri,
-      });
-
-      const shareUri =
-        Platform.OS === "android"
-          ? await FileSystem.getContentUriAsync(targetUri)
-          : targetUri;
-
-      await shareAsync(shareUri, {
+      // For native, share the file (which allows saving)
+      await shareAsync(uri, {
         mimeType: "application/pdf",
         dialogTitle: "Asset Audit Report",
         UTI: "com.adobe.pdf",
