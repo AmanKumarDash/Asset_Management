@@ -3,14 +3,14 @@ import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   LatestAuditReport,
   setLatestAuditReport,
-  useLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
-import { apiService } from "@/network/ApiService";
+import { UserDetails, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -21,10 +21,6 @@ import {
   useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
-import {
-  auditReportSummary,
-  reportMismatches,
-} from "../data/reportData";
 import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
@@ -151,6 +147,7 @@ function getToneStyles(tone: AuditItemTone) {
   }
 }
 
+//filter items by serach text and status
 function filterAuditItems(
   items: AuditScanItem[],
   searchTerm: string,
@@ -170,35 +167,17 @@ function filterAuditItems(
     return matchesStatus && matchesSearch;
   });
 }
+// Constructs display name from user object
+function getUserDisplayName(user: UserDetails) {
+  const fullName = [user.FirstName, user.LastName]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .map((part) => part.trim())
+    .join(" ");
 
-function getFallbackReport(): LatestAuditReport {
-  const items: AuditScanItem[] = reportMismatches.map((item) => ({
-    id: item.id,
-    title: item.title,
-    subtitle: item.subtitle,
-    tone: item.tone,
-    icon: item.tone === "missing" ? "briefcase" : "plus-circle",
-  }));
-
-  return {
-    title: auditReportSummary.title,
-    location: auditReportSummary.location,
-    mobileMeta: auditReportSummary.mobileMeta,
-    desktopMeta: auditReportSummary.desktopMeta,
-    status: auditReportSummary.status,
-    referenceId: null,
-    observedAt: null,
-    summary: {
-      found: auditReportSummary.found,
-      missing: auditReportSummary.missing,
-      extra: auditReportSummary.extra,
-      scanned: auditReportSummary.found + auditReportSummary.extra,
-      expected: auditReportSummary.expected,
-    },
-    items,
-  };
+  return fullName || user.EmailId?.trim() || user.UserId?.trim() || "Unknown employee";
 }
 
+//Reusable button component with icon support
 function SectionButton({
   title,
   filled = false,
@@ -235,7 +214,7 @@ function SectionButton({
     </Pressable>
   );
 }
-
+// PREPARE THE CHART FOR SHWIG AUDIT REPORT
 function DonutChart({
   found,
   missing,
@@ -313,7 +292,7 @@ function DonutChart({
     </View>
   );
 }
-
+//Prepare the summary card for the audit report
 function SummaryLegendRow({
   label,
   value,
@@ -447,6 +426,7 @@ function ReportResultItem({
   );
 }
 
+//Search and filter controls
 function FilterBar({
   searchTerm,
   onChangeSearchTerm,
@@ -516,7 +496,7 @@ function FilterBar({
     </View>
   );
 }
-
+// Displayed when no items match the search or filter criteria
 function EmptyResults() {
   return (
     <View
@@ -529,6 +509,177 @@ function EmptyResults() {
       <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
         No report items match the current search or status filter.
       </Text>
+    </View>
+  );
+}
+
+//Admin-specific controls for employee report selection
+function AdminReportControls({
+  showEmployeeReports,
+  onChangeShowEmployeeReports,
+  selectedEmployee,
+  employees,
+  isLoadingEmployees,
+  employeeLookupError,
+  isEmployeePickerOpen,
+  onToggleEmployeePicker,
+  onSelectEmployee,
+  onRetryEmployeeLoad,
+}: {
+  showEmployeeReports: boolean;
+  onChangeShowEmployeeReports: (value: boolean) => void;
+  selectedEmployee: UserDetails | null;
+  employees: UserDetails[];
+  isLoadingEmployees: boolean;
+  employeeLookupError: string | null;
+  isEmployeePickerOpen: boolean;
+  onToggleEmployeePicker: () => void;
+  onSelectEmployee: (value: UserDetails) => void;
+  onRetryEmployeeLoad: () => void;
+}) {
+  return (
+    <View
+      className="rounded-[20px] border px-4 py-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <Text className="text-sm font-medium" style={{ color: adminTheme.slateSoft }}>
+        Report source
+      </Text>
+
+      <View className="mt-3 flex-row flex-wrap" style={{ gap: 8 }}>
+        <Pressable
+          onPress={() => onChangeShowEmployeeReports(false)}
+          className="rounded-full border px-3 py-2"
+          style={{
+            borderColor: !showEmployeeReports ? adminTheme.primary : adminTheme.border,
+            backgroundColor: !showEmployeeReports ? adminTheme.infoBg : adminTheme.surface,
+          }}
+        >
+          <Text
+            className="text-sm font-medium"
+            style={{
+              color: !showEmployeeReports ? adminTheme.primary : adminTheme.slate,
+            }}
+          >
+            My reports
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onChangeShowEmployeeReports(true)}
+          className="rounded-full border px-3 py-2"
+          style={{
+            borderColor: showEmployeeReports ? adminTheme.primary : adminTheme.border,
+            backgroundColor: showEmployeeReports ? adminTheme.infoBg : adminTheme.surface,
+          }}
+        >
+          <Text
+            className="text-sm font-medium"
+            style={{
+              color: showEmployeeReports ? adminTheme.primary : adminTheme.slate,
+            }}
+          >
+            Employee reports
+          </Text>
+        </Pressable>
+      </View>
+
+      {showEmployeeReports ? (
+        <View className="mt-4">
+          <Text className="text-sm font-medium" style={{ color: adminTheme.slateSoft }}>
+            Select employee
+          </Text>
+
+          <Pressable
+            onPress={onToggleEmployeePicker}
+            className="mt-2 flex-row items-center justify-between rounded-[14px] border px-4 py-3.5"
+            style={{
+              borderColor: adminTheme.border,
+              backgroundColor: adminTheme.surfaceAlt,
+            }}
+          >
+            <Text style={{ color: adminTheme.slate }}>
+              {selectedEmployee
+                ? getUserDisplayName(selectedEmployee)
+                : isLoadingEmployees
+                  ? "Loading employees..."
+                  : "Choose an employee"}
+            </Text>
+            <Feather
+              name={isEmployeePickerOpen ? "chevron-up" : "chevron-down"}
+              size={18}
+              color={adminTheme.slateSoft}
+            />
+          </Pressable>
+
+          {isEmployeePickerOpen ? (
+            <View
+              className="mt-2 rounded-[14px] border"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: adminTheme.surface,
+                maxHeight: 220,
+              }}
+            >
+              <ScrollView nestedScrollEnabled>
+                {isLoadingEmployees ? (
+                  <View className="items-center px-4 py-5">
+                    <ActivityIndicator size="small" color={adminTheme.primary} />
+                    <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+                      Loading employees...
+                    </Text>
+                  </View>
+                ) : employeeLookupError ? (
+                  <View className="px-4 py-4">
+                    <Text className="text-sm leading-5" style={{ color: "#D64545" }}>
+                      {employeeLookupError}
+                    </Text>
+                    <Pressable
+                      onPress={onRetryEmployeeLoad}
+                      className="mt-3 self-start rounded-xl px-4 py-2"
+                      style={{ backgroundColor: adminTheme.primary }}
+                    >
+                      <Text className="text-sm font-semibold text-white">Retry</Text>
+                    </Pressable>
+                  </View>
+                ) : employees.length === 0 ? (
+                  <View className="px-4 py-4">
+                    <Text className="text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+                      No employees are available for this organization yet.
+                    </Text>
+                  </View>
+                ) : (
+                  employees.map((employee, index) => {
+                    const isSelected =
+                      selectedEmployee?.UserId?.trim() === employee.UserId?.trim();
+
+                    return (
+                      <Pressable
+                        key={`${employee.UserId}-${index}`}
+                        onPress={() => onSelectEmployee(employee)}
+                        className={`px-4 py-3 ${index < employees.length - 1 ? "border-b" : ""}`}
+                        style={{
+                          borderColor: index < employees.length - 1 ? adminTheme.border : undefined,
+                          backgroundColor: isSelected ? adminTheme.infoBg : adminTheme.surface,
+                        }}
+                      >
+                        <Text
+                          className="text-sm font-medium"
+                          style={{ color: adminTheme.slate }}
+                        >
+                          {getUserDisplayName(employee)}
+                        </Text>
+                        <Text className="mt-1 text-xs" style={{ color: adminTheme.slateSoft }}>
+                          {employee.UserId?.trim() || "Unknown id"}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -567,6 +718,8 @@ const [endDate, setEndDate] = useState<Date | null>(null);
 const [openStart, setOpenStart] = useState(false);
 const [openEnd, setOpenEnd] = useState(false);
 const [loadingReport, setLoadingReport] = useState(false);
+
+// Fetches a new report based on the selected date range
 async function handleFetchReportByDate() {
   if (!startDate || !endDate) {
     alert("Select both dates");
@@ -999,14 +1152,71 @@ async function handleFetchReportByDate() {
 export default function ReportsScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
-  const latestReport = useLatestAuditReport();
-  const adminReport = latestReport ?? getFallbackReport();
   const [isExporting, setIsExporting] = useState(false);
   const [selectedEmployeeReport, setSelectedEmployeeReport] =
     useState<LatestAuditReport | null>(null);
+  const [selectedAdminReport, setSelectedAdminReport] =
+    useState<LatestAuditReport | null>(null);
+  const [showEmployeeReports, setShowEmployeeReports] = useState(false);
+  const [organizationEmployees, setOrganizationEmployees] = useState<UserDetails[]>([]);
+  const [selectedAdminEmployee, setSelectedAdminEmployee] = useState<UserDetails | null>(null);
+  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
+  const [employeeLookupError, setEmployeeLookupError] = useState<string | null>(null);
+  const [isEmployeePickerOpen, setIsEmployeePickerOpen] = useState(false);
   const isMobile = width < 1024;
   const activeReport =
-    user?.role === "employee" ? selectedEmployeeReport : adminReport;
+    user?.role === "employee" ? selectedEmployeeReport : selectedAdminReport;
+
+    // Only runs for admin users
+  const loadOrganizationEmployees = useCallback(async () => {
+    if (user?.role !== "admin") {
+      return;
+    }
+
+    try {
+      setIsLoadingEmployees(true);
+      setEmployeeLookupError(null);
+      const response = await apiService.getUserDetails("");
+      const filteredEmployees = response.filter(
+        (employee) => employee.UserId?.trim() && employee.UserId?.trim() !== user.employeeId.trim()
+      );
+
+      setOrganizationEmployees(filteredEmployees);
+    } catch (error) {
+      console.warn("Failed to load organization employees:", error);
+      setOrganizationEmployees([]);
+      setEmployeeLookupError(
+        "Unable to load employees for this organization right now."
+      );
+    } finally {
+      setIsLoadingEmployees(false);
+    }
+  }, [user?.employeeId, user?.role]);
+
+
+  // Load employees when admin switches to employee reports view
+  useEffect(() => {
+    if (user?.role !== "admin" || !showEmployeeReports || organizationEmployees.length > 0) {
+      return;
+    }
+
+    void loadOrganizationEmployees();
+  }, [loadOrganizationEmployees, organizationEmployees.length, showEmployeeReports, user?.role]);
+
+  const adminSubjectUserId =
+    showEmployeeReports
+      ? selectedAdminEmployee?.UserId?.trim() ?? null
+      : user?.employeeId ?? null;
+  const adminHeaderTitle = showEmployeeReports
+    ? selectedAdminEmployee
+      ? `${getUserDisplayName(selectedAdminEmployee)} Reports`
+      : "Employee Reports"
+    : "My Reports";
+  const adminHeaderSubtitle = showEmployeeReports
+    ? selectedAdminEmployee
+      ? `Review submitted audits for ${getUserDisplayName(selectedAdminEmployee)}`
+      : "Select an employee to review submitted audits."
+    : "Review the audits you have already submitted";
 
   async function handleExportPdf() {
     if (!user || !activeReport) {
@@ -1015,6 +1225,7 @@ export default function ReportsScreen() {
 
     setIsExporting(true);
     try {
+      // Calls utility to generate and download PDF based on report data and user info
       await exportAuditReportAsPdf(activeReport, user.name);
     } catch (error) {
       console.warn("Failed to export PDF:", error);
@@ -1034,6 +1245,37 @@ export default function ReportsScreen() {
     return null;
   }
 
+  const adminHeaderControls = (
+    <AdminReportControls
+      showEmployeeReports={showEmployeeReports}
+      onChangeShowEmployeeReports={(value) => {
+        setShowEmployeeReports(value);
+        setSelectedAdminReport(null);
+        setIsEmployeePickerOpen(false);
+      }}
+      selectedEmployee={selectedAdminEmployee}
+      employees={organizationEmployees}
+      isLoadingEmployees={isLoadingEmployees}
+      employeeLookupError={employeeLookupError}
+      isEmployeePickerOpen={isEmployeePickerOpen}
+      onToggleEmployeePicker={() => {
+        setIsEmployeePickerOpen((current) => !current);
+
+        if (!isLoadingEmployees && organizationEmployees.length === 0 && !employeeLookupError) {
+          void loadOrganizationEmployees();
+        }
+      }}
+      onSelectEmployee={(employee) => {
+        setSelectedAdminEmployee(employee);
+        setSelectedAdminReport(null);
+        setIsEmployeePickerOpen(false);
+      }}
+      onRetryEmployeeLoad={() => {
+        void loadOrganizationEmployees();
+      }}
+    />
+  );
+
   if (user.role === "employee") {
     if (!activeReport) {
       return (
@@ -1042,6 +1284,9 @@ export default function ReportsScreen() {
             setSelectedEmployeeReport(report);
             setLatestAuditReport(report);
           }}
+          title="My Reports"
+          subtitle="Review the audits you have already submitted"
+          showOpenScanButton
         />
       );
     }
@@ -1065,9 +1310,50 @@ export default function ReportsScreen() {
     );
   }
 
+  if (!activeReport) {
+    return (
+      <EmployeeReportsScreen
+        onSelectReport={(report) => {
+          setSelectedAdminReport(report);
+          setLatestAuditReport(report);
+        }}
+        subjectUserId={adminSubjectUserId}
+        title={adminHeaderTitle}
+        subtitle={adminHeaderSubtitle}
+        accentColor={adminTheme.primary}
+        showOpenScanButton={false}
+        headerControls={adminHeaderControls}
+        loadingMessage={
+          showEmployeeReports
+            ? "Loading employee reports..."
+            : "Loading your reports..."
+        }
+        emptyMessage={
+          showEmployeeReports
+            ? "No submitted reports are available for the selected employee yet."
+            : "No submitted reports are available for this admin yet."
+        }
+        missingSubjectMessage="Select an employee from the dropdown to review submitted reports."
+        retryButtonColor={adminTheme.primary}
+      />
+    );
+  }
+
   return isMobile ? (
-    <MobileReports report={adminReport} onExportPdf={handleExportPdf} isExporting={isExporting} />
+    <MobileReports
+      report={activeReport}
+      onExportPdf={handleExportPdf}
+      isExporting={isExporting}
+      onBack={() => setSelectedAdminReport(null)}
+      showDateFilters={false}
+    />
   ) : (
-    <DesktopReports report={adminReport} onExportPdf={handleExportPdf} isExporting={isExporting} />
+    <DesktopReports
+      report={activeReport}
+      onExportPdf={handleExportPdf}
+      isExporting={isExporting}
+      onBack={() => setSelectedAdminReport(null)}
+      showDateFilters={false}
+    />
   );
 }

@@ -1,8 +1,8 @@
+import { appLogger } from "@/utils/appLogger";
 import { Feather } from "@expo/vector-icons";
 import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
-import { appLogger } from "@/utils/appLogger";
 import AuthButton from "../components/AuthButton";
 import AuthCard from "../components/AuthCard";
 import AuthInput from "../components/AuthInput";
@@ -95,15 +95,7 @@ export default function LoginScreen() {
           </View>
         ) : null}
 
-        <View className="mt-6 rounded-lg bg-gray-100 p-4">
-          <Text className="text-sm text-gray-600">
-            Your role (Admin or Employee) is automatically detected. Contact
-            your administrator if you need access.
-          </Text>
-          <Text className="mt-3 text-sm text-gray-600">
-            Make sure `EXPO_PUBLIC_API_URL` points to your backend before signing in.
-          </Text>
-        </View>
+
       </AuthCard>
     </View>
   );

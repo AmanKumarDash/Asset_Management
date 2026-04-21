@@ -6,7 +6,7 @@ import { EmployeeReportApiItem, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -30,6 +30,16 @@ type EmployeeReportSummary = {
 
 type EmployeeReportsScreenProps = {
   onSelectReport: (report: LatestAuditReport) => void;
+  subjectUserId?: string | null;
+  title?: string;
+  subtitle?: string;
+  accentColor?: string;
+  showOpenScanButton?: boolean;
+  headerControls?: ReactNode;
+  loadingMessage?: string;
+  emptyMessage?: string;
+  missingSubjectMessage?: string;
+  retryButtonColor?: string;
 };
 
 type AuditReportAsset = Record<string, unknown>;
@@ -579,9 +589,11 @@ function ReportStatus() {
 function EmptyState({
   message,
   onRetry,
+  retryButtonColor,
 }: {
   message: string;
   onRetry?: () => void;
+  retryButtonColor?: string;
 }) {
   return (
     <View
@@ -595,7 +607,7 @@ function EmptyState({
         <Pressable
           onPress={onRetry}
           className="mt-4 self-start rounded-xl px-4 py-2.5"
-          style={{ backgroundColor: adminTheme.employeePrimary }}
+          style={{ backgroundColor: retryButtonColor ?? adminTheme.employeePrimary }}
         >
           <Text className="text-sm font-semibold text-white">Retry</Text>
         </Pressable>
@@ -612,6 +624,16 @@ function DesktopEmployeeReports({
   loadingReferenceId,
   onRetry,
   onSelectReport,
+  title,
+  subtitle,
+  accentColor,
+  showOpenScanButton,
+  headerControls,
+  loadingMessage,
+  emptyMessage,
+  missingSubjectMessage,
+  hasSubjectUserId,
+  retryButtonColor,
 }: {
   reports: EmployeeReportSummary[];
   totalScanned: number;
@@ -620,6 +642,16 @@ function DesktopEmployeeReports({
   loadingReferenceId: string | null;
   onRetry: () => void;
   onSelectReport: (report: LatestAuditReport) => void;
+  title: string;
+  subtitle: string;
+  accentColor: string;
+  showOpenScanButton: boolean;
+  headerControls?: ReactNode;
+  loadingMessage: string;
+  emptyMessage: string;
+  missingSubjectMessage: string;
+  hasSubjectUserId: boolean;
+  retryButtonColor: string;
 }) {
   return (
     <ScrollView
@@ -630,28 +662,32 @@ function DesktopEmployeeReports({
       <View className="mb-5 flex-row items-start justify-between">
         <View>
           <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-            My Reports
+            {title}
           </Text>
           <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-            Review the audits you have already submitted
+            {subtitle}
           </Text>
         </View>
 
-        <Pressable
-          onPress={() => router.push("/audits")}
-          className="rounded-xl px-4 py-2.5"
-          style={{ backgroundColor: adminTheme.employeePrimary }}
-        >
-          <Text className="text-sm font-semibold text-white">Open Scan</Text>
-        </Pressable>
+        {showOpenScanButton ? (
+          <Pressable
+            onPress={() => router.push("/audits")}
+            className="rounded-xl px-4 py-2.5"
+            style={{ backgroundColor: accentColor }}
+          >
+            <Text className="text-sm font-semibold text-white">Open Scan</Text>
+          </Pressable>
+        ) : null}
       </View>
+
+      {headerControls ? <View className="mb-5">{headerControls}</View> : null}
 
       <View className="mb-5 flex-row gap-3">
         <View
           className="flex-1 rounded-[18px] border px-4 py-4"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
-          <Text className="text-[28px] font-semibold" style={{ color: adminTheme.employeePrimary }}>
+          <Text className="text-[28px] font-semibold" style={{ color: accentColor }}>
             {reports.length}
           </Text>
           <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
@@ -673,15 +709,17 @@ function DesktopEmployeeReports({
 
       {isLoading ? (
         <View className="items-center justify-center py-12">
-          <ActivityIndicator size="large" color={adminTheme.employeePrimary} />
+          <ActivityIndicator size="large" color={accentColor} />
           <Text className="mt-3 text-sm" style={{ color: adminTheme.muted }}>
-            Loading your reports...
+            {loadingMessage}
           </Text>
         </View>
       ) : errorMessage ? (
-        <EmptyState message={errorMessage} onRetry={onRetry} />
+        <EmptyState message={errorMessage} onRetry={onRetry} retryButtonColor={retryButtonColor} />
+      ) : !hasSubjectUserId ? (
+        <EmptyState message={missingSubjectMessage} />
       ) : reports.length === 0 ? (
-        <EmptyState message="No submitted reports are available for this employee yet." />
+        <EmptyState message={emptyMessage} />
       ) : (
         <View
           className="overflow-hidden rounded-[20px] border bg-white"
@@ -743,10 +781,7 @@ function DesktopEmployeeReports({
                 </Text>
                 <View className="flex-[1]">
                   {loadingReferenceId === report.referenceId ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={adminTheme.employeePrimary}
-                    />
+                    <ActivityIndicator size="small" color={accentColor} />
                   ) : (
                     <ReportStatus />
                   )}
@@ -767,6 +802,15 @@ function MobileEmployeeReports({
   loadingReferenceId,
   onRetry,
   onSelectReport,
+  title,
+  subtitle,
+  accentColor,
+  headerControls,
+  loadingMessage,
+  emptyMessage,
+  missingSubjectMessage,
+  hasSubjectUserId,
+  retryButtonColor,
 }: {
   reports: EmployeeReportSummary[];
   isLoading: boolean;
@@ -774,6 +818,15 @@ function MobileEmployeeReports({
   loadingReferenceId: string | null;
   onRetry: () => void;
   onSelectReport: (report: LatestAuditReport) => void;
+  title: string;
+  subtitle: string;
+  accentColor: string;
+  headerControls?: ReactNode;
+  loadingMessage: string;
+  emptyMessage: string;
+  missingSubjectMessage: string;
+  hasSubjectUserId: boolean;
+  retryButtonColor: string;
 }) {
   return (
     <ScrollView
@@ -783,25 +836,29 @@ function MobileEmployeeReports({
     >
       <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
         <Text className="text-[22px] font-semibold" style={{ color: adminTheme.slate }}>
-          My Reports
+          {title}
         </Text>
         <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-          Previously submitted audits
+          {subtitle}
         </Text>
       </View>
 
       <View className="px-4 pt-4">
+        {headerControls ? <View className="mb-4">{headerControls}</View> : null}
+
         {isLoading ? (
           <View className="items-center justify-center py-12">
-            <ActivityIndicator size="large" color={adminTheme.employeePrimary} />
+            <ActivityIndicator size="large" color={accentColor} />
             <Text className="mt-3 text-sm" style={{ color: adminTheme.muted }}>
-              Loading your reports...
+              {loadingMessage}
             </Text>
           </View>
         ) : errorMessage ? (
-          <EmptyState message={errorMessage} onRetry={onRetry} />
+          <EmptyState message={errorMessage} onRetry={onRetry} retryButtonColor={retryButtonColor} />
+        ) : !hasSubjectUserId ? (
+          <EmptyState message={missingSubjectMessage} />
         ) : reports.length === 0 ? (
-          <EmptyState message="No submitted reports are available for this employee yet." />
+          <EmptyState message={emptyMessage} />
         ) : (
           reports.map((report, index) => (
             <Pressable
@@ -830,10 +887,7 @@ function MobileEmployeeReports({
                   </Text>
                 </View>
                 {loadingReferenceId === report.referenceId ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={adminTheme.employeePrimary}
-                  />
+                  <ActivityIndicator size="small" color={accentColor} />
                 ) : (
                   <Feather name="chevron-right" size={16} color={adminTheme.muted} />
                 )}
@@ -864,9 +918,20 @@ function MobileEmployeeReports({
 
 export default function EmployeeReportsScreen({
   onSelectReport,
+  subjectUserId,
+  title = "My Reports",
+  subtitle = "Review the audits you have already submitted",
+  accentColor = adminTheme.employeePrimary,
+  showOpenScanButton = true,
+  headerControls,
+  loadingMessage = "Loading your reports...",
+  emptyMessage = "No submitted reports are available for this employee yet.",
+  missingSubjectMessage = "Select an employee to review submitted reports.",
+  retryButtonColor,
 }: EmployeeReportsScreenProps) {
   const { width } = useWindowDimensions();
   const { user } = useAuthSession();
+  const resolvedSubjectUserId = subjectUserId ?? user?.employeeId ?? null;
   const [reports, setReports] = useState<EmployeeReportSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -877,10 +942,10 @@ export default function EmployeeReportsScreen({
     let isMounted = true;
 
     async function loadReports() {
-      if (!user?.employeeId) {
+      if (!resolvedSubjectUserId) {
         if (isMounted) {
           setReports([]);
-          setErrorMessage("Unable to find the employee id for this account.");
+          setErrorMessage(null);
           setIsLoading(false);
         }
         return;
@@ -892,7 +957,7 @@ export default function EmployeeReportsScreen({
       }
 
       try {
-        const response = await apiService.getReportByEmployee(user.employeeId);
+        const response = await apiService.getReportByEmployee(resolvedSubjectUserId);
 
         if (!isMounted) {
           return;
@@ -904,9 +969,9 @@ export default function EmployeeReportsScreen({
           return;
         }
 
-        console.warn("Failed to load employee reports:", error);
+        console.warn("Failed to load reports:", error);
         setReports([]);
-        setErrorMessage("Unable to load your submitted reports right now.");
+        setErrorMessage("Unable to load submitted reports right now.");
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -919,7 +984,7 @@ export default function EmployeeReportsScreen({
     return () => {
       isMounted = false;
     };
-  }, [reloadCount, user?.employeeId]);
+  }, [reloadCount, resolvedSubjectUserId]);
 
   const totalScanned = useMemo(
     () => reports.reduce((sum, report) => sum + report.report.summary.scanned, 0),
@@ -948,7 +1013,7 @@ export default function EmployeeReportsScreen({
 
       onSelectReport(detailedReport);
     } catch (error) {
-      console.warn("Failed to load employee report details:", error);
+      console.warn("Failed to load report details:", error);
       Alert.alert(
         "Unable to open report",
         "We couldn't load the full report details right now. Please try again."
@@ -958,6 +1023,8 @@ export default function EmployeeReportsScreen({
     }
   };
 
+  const resolvedRetryButtonColor = retryButtonColor ?? accentColor;
+
   return width < 1024 ? (
     <MobileEmployeeReports
       reports={reports}
@@ -966,6 +1033,15 @@ export default function EmployeeReportsScreen({
       loadingReferenceId={loadingReferenceId}
       onRetry={handleRetry}
       onSelectReport={handleSelectReport}
+      title={title}
+      subtitle={subtitle}
+      accentColor={accentColor}
+      headerControls={headerControls}
+      loadingMessage={loadingMessage}
+      emptyMessage={emptyMessage}
+      missingSubjectMessage={missingSubjectMessage}
+      hasSubjectUserId={Boolean(resolvedSubjectUserId)}
+      retryButtonColor={resolvedRetryButtonColor}
     />
   ) : (
     <DesktopEmployeeReports
@@ -976,6 +1052,16 @@ export default function EmployeeReportsScreen({
       loadingReferenceId={loadingReferenceId}
       onRetry={handleRetry}
       onSelectReport={handleSelectReport}
+      title={title}
+      subtitle={subtitle}
+      accentColor={accentColor}
+      showOpenScanButton={showOpenScanButton}
+      headerControls={headerControls}
+      loadingMessage={loadingMessage}
+      emptyMessage={emptyMessage}
+      missingSubjectMessage={missingSubjectMessage}
+      hasSubjectUserId={Boolean(resolvedSubjectUserId)}
+      retryButtonColor={resolvedRetryButtonColor}
     />
   );
 }
