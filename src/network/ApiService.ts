@@ -242,13 +242,25 @@ class ApiService {
     return extractResponseData<AuditComparisonResponse>(response.data) ?? {};
   }
 
-  // Loads all submitted employee report rows so the UI can build grouped summaries by reference id.
-  async getReportByEmployee(userId: string): Promise<EmployeeReportApiItem[]> {
+  // Loads submitted employee report rows, optionally constrained to a date range.
+  async getReportByEmployee(
+    userId: string,
+    options?: {
+      fromDate?: string;
+      toDate?: string;
+    }
+  ): Promise<EmployeeReportApiItem[]> {
     assertApiBaseUrlConfigured();
 
     const response = await this.api.get<
       ApiCollectionEnvelope<EmployeeReportApiItem> | EmployeeReportApiItem[]
-    >(ENDPOINTS.WAREHOUSE.GET_REPORT_BY_EMPLOYEE(userId));
+    >(
+      ENDPOINTS.WAREHOUSE.GET_REPORT_BY_EMPLOYEE(
+        userId,
+        options?.fromDate,
+        options?.toDate
+      )
+    );
 
     return extractResponseCollection<EmployeeReportApiItem>(response.data);
   }

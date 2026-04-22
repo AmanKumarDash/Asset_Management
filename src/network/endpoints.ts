@@ -27,8 +27,25 @@ export const ENDPOINTS = {
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
     GET_AUDIT_DATA: (referenceId: string) =>
       `/api/warehouse/GetWarehouseAuditData?referanceId=${encodeURIComponent(referenceId)}`,
-    GET_REPORT_BY_EMPLOYEE: (userId: string) =>
-      `/api/warehouse/GetReportByEmployee?userid=${encodeURIComponent(userId)}`,
+    GET_REPORT_BY_EMPLOYEE: (
+      userId: string,
+      fromDate?: string,
+      toDate?: string
+    ) => {
+      const params = new URLSearchParams({
+        userid: userId,
+      });
+
+      if (fromDate) {
+        params.set("FromDate", fromDate);
+      }
+
+      if (toDate) {
+        params.set("ToDate", toDate);
+      }
+
+      return `/api/warehouse/GetReportByEmployee?${params.toString()}`;
+    },
     GET_REPORT_BY_DATE: (startDate: string, endDate: string) =>
       `/api/warehouse/GetReportByDateWiseAsset?StartDate=${startDate}&EndDate=${endDate}`,
   },

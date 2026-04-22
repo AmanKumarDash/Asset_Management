@@ -7,9 +7,11 @@ import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import DatePicker from "react-native-date-picker";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -88,6 +90,74 @@ function formatSummaryDate(value: string | null) {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function getTodayDate() {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+function formatDateForApi(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateInputValue(date: Date) {
+  return formatDateForApi(date);
+}
+
+function formatDateFilterLabel(date: Date) {
+  return date.toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function normalizeDateOnly(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getDateKeyFromValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const isoDateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+
+  if (isoDateMatch) {
+    return isoDateMatch[1];
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return formatDateForApi(parsed);
+}
+
+function filterReportsByDateRange(
+  items: EmployeeReportApiItem[],
+  startDate: Date,
+  endDate: Date
+) {
+  const startKey = formatDateForApi(normalizeDateOnly(startDate));
+  const endKey = formatDateForApi(normalizeDateOnly(endDate));
+
+  return items.filter((item) => {
+    const scanningDateKey = getDateKeyFromValue(item.ScanningDate);
+
+    if (!scanningDateKey) {
+      return false;
+    }
+
+    return scanningDateKey >= startKey && scanningDateKey <= endKey;
   });
 }
 
@@ -616,6 +686,149 @@ function EmptyState({
   );
 }
 
+function DateRangeControls({
+  startDate,
+  endDate,
+  onChangeStartDate,
+  onChangeEndDate,
+  onApply,
+  accentColor,
+  isLoading,
+}: {
+  startDate: Date;
+  endDate: Date;
+  onChangeStartDate: (date: Date) => void;
+  onChangeEndDate: (date: Date) => void;
+  onApply: () => void;
+  accentColor: string;
+  isLoading: boolean;
+}) {
+  const [isStartPickerOpen, setIsStartPickerOpen] = useState(false);
+  const [isEndPickerOpen, setIsEndPickerOpen] = useState(false);
+
+  return (
+    <View
+      className="rounded-[20px] border px-4 py-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <Text className="text-sm font-medium" style={{ color: adminTheme.slateSoft }}>
+        Date range
+      </Text>
+
+      <View className="mt-3 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+        {Platform.OS === "web" ? (
+          <>
+            <input
+              type="date"
+              value={formatDateInputValue(startDate)}
+              onChange={(event) => {
+                const nextDate = new Date(event.target.value);
+
+                if (!Number.isNaN(nextDate.getTime())) {
+                  onChangeStartDate(nextDate);
+                }
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "12px",
+                border: `1px solid ${adminTheme.border}`,
+                backgroundColor: adminTheme.surfaceAlt,
+                color: adminTheme.slate,
+              }}
+            />
+            <input
+              type="date"
+              value={formatDateInputValue(endDate)}
+              onChange={(event) => {
+                const nextDate = new Date(event.target.value);
+
+                if (!Number.isNaN(nextDate.getTime())) {
+                  onChangeEndDate(nextDate);
+                }
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "12px",
+                border: `1px solid ${adminTheme.border}`,
+                backgroundColor: adminTheme.surfaceAlt,
+                color: adminTheme.slate,
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={() => setIsStartPickerOpen(true)}
+              className="rounded-xl border px-3 py-2.5"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: adminTheme.surfaceAlt,
+              }}
+            >
+              <Text style={{ color: adminTheme.slate }}>
+                {formatDateFilterLabel(startDate)}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setIsEndPickerOpen(true)}
+              className="rounded-xl border px-3 py-2.5"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: adminTheme.surfaceAlt,
+              }}
+            >
+              <Text style={{ color: adminTheme.slate }}>
+                {formatDateFilterLabel(endDate)}
+              </Text>
+            </Pressable>
+          </>
+        )}
+
+        <Pressable
+          onPress={onApply}
+          disabled={isLoading}
+          className="rounded-xl px-4 py-2.5"
+          style={{
+            backgroundColor: accentColor,
+            opacity: isLoading ? 0.75 : 1,
+          }}
+        >
+          <Text className="text-sm font-semibold text-white">
+            {isLoading ? "Loading..." : "Go"}
+          </Text>
+        </Pressable>
+      </View>
+
+      {Platform.OS !== "web" ? (
+        <>
+          <DatePicker
+            modal
+            open={isStartPickerOpen}
+            date={startDate}
+            mode="date"
+            onConfirm={(date) => {
+              setIsStartPickerOpen(false);
+              onChangeStartDate(date);
+            }}
+            onCancel={() => setIsStartPickerOpen(false)}
+          />
+          <DatePicker
+            modal
+            open={isEndPickerOpen}
+            date={endDate}
+            mode="date"
+            onConfirm={(date) => {
+              setIsEndPickerOpen(false);
+              onChangeEndDate(date);
+            }}
+            onCancel={() => setIsEndPickerOpen(false)}
+          />
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 function DesktopEmployeeReports({
   reports,
   totalScanned,
@@ -932,11 +1145,42 @@ export default function EmployeeReportsScreen({
   const { width } = useWindowDimensions();
   const { user } = useAuthSession();
   const resolvedSubjectUserId = subjectUserId ?? user?.employeeId ?? null;
+  const shouldShowDateRangeFilter = Boolean(user);
   const [reports, setReports] = useState<EmployeeReportSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loadingReferenceId, setLoadingReferenceId] = useState<string | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
+  const [selectedStartDate, setSelectedStartDate] = useState<Date>(() => getTodayDate());
+  const [selectedEndDate, setSelectedEndDate] = useState<Date>(() => getTodayDate());
+  const [appliedStartDate, setAppliedStartDate] = useState<Date>(() => getTodayDate());
+  const [appliedEndDate, setAppliedEndDate] = useState<Date>(() => getTodayDate());
+
+  const handleChangeStartDate = (date: Date) => {
+    const normalizedDate = normalizeDateOnly(date);
+
+    setSelectedStartDate(normalizedDate);
+
+    if (normalizedDate.getTime() > selectedEndDate.getTime()) {
+      setSelectedEndDate(normalizedDate);
+    }
+  };
+
+  const handleChangeEndDate = (date: Date) => {
+    const normalizedDate = normalizeDateOnly(date);
+
+    setSelectedEndDate(normalizedDate);
+
+    if (normalizedDate.getTime() < selectedStartDate.getTime()) {
+      setSelectedStartDate(normalizedDate);
+    }
+  };
+
+  const handleApplyDateRange = () => {
+    setAppliedStartDate(normalizeDateOnly(selectedStartDate));
+    setAppliedEndDate(normalizeDateOnly(selectedEndDate));
+    setReloadCount((current) => current + 1);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -957,13 +1201,24 @@ export default function EmployeeReportsScreen({
       }
 
       try {
-        const response = await apiService.getReportByEmployee(resolvedSubjectUserId);
+        const response = await apiService.getReportByEmployee(resolvedSubjectUserId, {
+          fromDate: shouldShowDateRangeFilter
+            ? formatDateForApi(appliedStartDate)
+            : undefined,
+          toDate: shouldShowDateRangeFilter
+            ? formatDateForApi(appliedEndDate)
+            : undefined,
+        });
 
         if (!isMounted) {
           return;
         }
 
-        setReports(buildEmployeeReports(response));
+        const filteredResponse = shouldShowDateRangeFilter
+          ? filterReportsByDateRange(response, appliedStartDate, appliedEndDate)
+          : response;
+
+        setReports(buildEmployeeReports(filteredResponse));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -984,7 +1239,13 @@ export default function EmployeeReportsScreen({
     return () => {
       isMounted = false;
     };
-  }, [reloadCount, resolvedSubjectUserId]);
+  }, [
+    appliedEndDate,
+    appliedStartDate,
+    reloadCount,
+    resolvedSubjectUserId,
+    shouldShowDateRangeFilter,
+  ]);
 
   const totalScanned = useMemo(
     () => reports.reduce((sum, report) => sum + report.report.summary.scanned, 0),
@@ -1024,6 +1285,25 @@ export default function EmployeeReportsScreen({
   };
 
   const resolvedRetryButtonColor = retryButtonColor ?? accentColor;
+  const resolvedHeaderControls = shouldShowDateRangeFilter ? (
+    <>
+      <DateRangeControls
+        startDate={selectedStartDate}
+        endDate={selectedEndDate}
+        onChangeStartDate={handleChangeStartDate}
+        onChangeEndDate={handleChangeEndDate}
+        onApply={handleApplyDateRange}
+        accentColor={accentColor}
+        isLoading={isLoading}
+      />
+      {headerControls ? <View className="mt-4">{headerControls}</View> : null}
+    </>
+  ) : (
+    headerControls
+  );
+  const resolvedEmptyMessage = shouldShowDateRangeFilter
+    ? "No submitted reports are available for the selected date range."
+    : emptyMessage;
 
   return width < 1024 ? (
     <MobileEmployeeReports
@@ -1036,9 +1316,9 @@ export default function EmployeeReportsScreen({
       title={title}
       subtitle={subtitle}
       accentColor={accentColor}
-      headerControls={headerControls}
+      headerControls={resolvedHeaderControls}
       loadingMessage={loadingMessage}
-      emptyMessage={emptyMessage}
+      emptyMessage={resolvedEmptyMessage}
       missingSubjectMessage={missingSubjectMessage}
       hasSubjectUserId={Boolean(resolvedSubjectUserId)}
       retryButtonColor={resolvedRetryButtonColor}
@@ -1056,9 +1336,9 @@ export default function EmployeeReportsScreen({
       subtitle={subtitle}
       accentColor={accentColor}
       showOpenScanButton={showOpenScanButton}
-      headerControls={headerControls}
+      headerControls={resolvedHeaderControls}
       loadingMessage={loadingMessage}
-      emptyMessage={emptyMessage}
+      emptyMessage={resolvedEmptyMessage}
       missingSubjectMessage={missingSubjectMessage}
       hasSubjectUserId={Boolean(resolvedSubjectUserId)}
       retryButtonColor={resolvedRetryButtonColor}
