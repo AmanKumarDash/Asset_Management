@@ -1,11 +1,19 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { CreateUserRequest, apiService } from "@/network/ApiService";
+import { OrganizationAddress } from "@/models/organization";
+import { WarehouseSummary } from "@/models/warehouse";
+import {
+  CreateUserRequest,
+  UserDetails,
+  WarehouseApiRecord,
+  apiService,
+} from "@/network/ApiService";
 import { getApiErrorMessage } from "@/network/responses";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -29,7 +37,270 @@ type FieldProps = {
   required?: boolean;
   keyboardType?: "default" | "email-address" | "phone-pad";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  editable?: boolean;
 };
+
+type EmployeeFormValues = {
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  employeeId: string;
+  email: string;
+  mobile: string;
+  userType: UserTypeValue;
+  selectedWarehouseIds: string[];
+};
+
+const EMPTY_FORM_VALUES: EmployeeFormValues = {
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  employeeId: "",
+  email: "",
+  mobile: "",
+  userType: 3,
+  selectedWarehouseIds: [],
+};
+
+function pickString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function pickId(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getAddressSubtitle(address: unknown) {
+  if (!address || typeof address !== "object") {
+    return null;
+  }
+
+  const addressRecord = address as OrganizationAddress & Record<string, unknown>;
+  const parts = [
+    pickString(addressRecord, ["Address1"]),
+    pickString(addressRecord, ["Address2"]),
+    pickString(addressRecord, ["CityName"]),
+    pickString(addressRecord, ["StateName"]),
+    pickString(addressRecord, ["CountryName"]),
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" - ") : null;
+}
+
+function normalizeWarehouse(record: WarehouseApiRecord, index: number): WarehouseSummary {
+  const id =
+    pickId(record, ["Id", "ID", "WarehouseId", "warehouseId"]) ??
+    `warehouse-${index + 1}`;
+  const name =
+    pickString(record, [
+      "WareHouseName",
+      "WarehouseName",
+      "Name",
+      "Title",
+      "ShortName",
+      "warehouseName",
+    ]) ?? "";
+  const code = pickString(record, [
+    "Code",
+    "WarehouseCode",
+    "ShortName",
+    "ReferenceId",
+    "warehouseCode",
+  ]);
+  const subtitle =
+    [
+      code,
+      pickString(record, ["CityName", "cityName"]),
+      pickString(record, ["StateName", "stateName"]),
+      getAddressSubtitle(record.Address),
+    ]
+      .filter(Boolean)
+      .join(" - ") || null;
+
+  return {
+    id,
+    name,
+    code,
+    subtitle,
+    raw: record,
+  };
+}
+
+function normalizeWarehouses(records: WarehouseApiRecord[]) {
+  const seen = new Set<string>();
+
+  return records
+    .map((record, index) => normalizeWarehouse(record, index))
+    .filter((warehouse) => {
+      if (seen.has(warehouse.id)) {
+        return false;
+      }
+
+      seen.add(warehouse.id);
+      return true;
+    });
+}
+
+function toWarehouseId(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+    return trimmedValue ? trimmedValue : null;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+
+    return (
+      pickId(record, [
+        "Id",
+        "ID",
+        "WarehouseId",
+        "warehouseId",
+        "WareHouseId",
+        "wareHouseId",
+        "Value",
+        "value",
+      ]) ?? null
+    );
+  }
+
+  return null;
+}
+
+function collectWarehouseIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => toWarehouseId(entry))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  const id = toWarehouseId(value);
+  return id ? [id] : [];
+}
+
+function extractAssignedWarehouseIds(source: unknown) {
+  if (!source || typeof source !== "object") {
+    return [];
+  }
+
+  const record = source as Record<string, unknown>;
+  const warehouseCandidates = [
+    record.WarehouseIds,
+    record.WareHouseIds,
+    record.warehouseIds,
+    record.wareHouseIds,
+    record.AssignedWarehouseIds,
+    record.AssignedWareHouseIds,
+    record.AccessWarehouseIds,
+    record.AccessWareHouseIds,
+    record.WarehouseList,
+    record.WareHouseList,
+    record.Warehouses,
+    record.warehouses,
+    record.AccessWarehouses,
+    record.AssignedWarehouses,
+    record.WarehouseId,
+    record.WareHouseId,
+    record.warehouseId,
+    record.wareHouseId,
+  ];
+
+  return Array.from(
+    new Set(warehouseCandidates.flatMap((candidate) => collectWarehouseIds(candidate)))
+  );
+}
+
+function normalizeUserType(userType: unknown): UserTypeValue {
+  return Number(userType) === 1 ? 1 : 3;
+}
+
+function mapUserDetailsToFormValues(user: UserDetails): EmployeeFormValues {
+  return {
+    firstName: typeof user.FirstName === "string" ? user.FirstName : "",
+    middleName: typeof user.MiddleName === "string" ? user.MiddleName : "",
+    lastName: typeof user.LastName === "string" ? user.LastName : "",
+    employeeId: typeof user.UserId === "string" ? user.UserId : "",
+    email: typeof user.EmailId === "string" ? user.EmailId : "",
+    mobile: typeof user.Mobile === "string" ? user.Mobile : "",
+    userType: normalizeUserType(user.UserType),
+    selectedWarehouseIds: extractAssignedWarehouseIds(user),
+  };
+}
+
+function getDefaultUserAddress(): NonNullable<CreateUserRequest["Address"]> {
+  return {
+    Id: 0,
+    Address1: "",
+    Address2: "",
+    City: 0,
+    CityName: "",
+    DistrictId: 0,
+    DistrictName: "",
+    StateId: 101,
+    StateName: "",
+    CountryId: 101,
+    CountryName: "",
+    Pin: 0,
+  };
+}
+
+function buildEmployeePayload(values: EmployeeFormValues): CreateUserRequest {
+  return {
+    UserId: values.employeeId,
+    FirstName: values.firstName,
+    MiddleName: values.middleName || undefined,
+    LastName: values.lastName,
+    UserType: values.userType,
+    EmailId: values.email || undefined,
+    Mobile: values.mobile,
+    Address: getDefaultUserAddress(),
+    GSTTypeID: 2,
+    GSTType: "Un-Register",
+  };
+}
+
+function buildWarehouseAccessRequest(values: EmployeeFormValues) {
+  return {
+    AssignTo: values.employeeId,
+    WareHouseId: values.selectedWarehouseIds.join(","),
+    Description: "",
+  };
+}
+
+function normalizeRouteUserId(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
 
 function Field({
   label,
@@ -39,6 +310,7 @@ function Field({
   required = false,
   keyboardType = "default",
   autoCapitalize = "sentences",
+  editable = true,
 }: FieldProps) {
   return (
     <View className="flex-1">
@@ -53,12 +325,14 @@ function Field({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
+        editable={editable}
         placeholderTextColor={adminTheme.muted}
         className="rounded-[14px] border px-4 py-3.5 text-base"
         style={{
           borderColor: adminTheme.border,
-          backgroundColor: adminTheme.surface,
+          backgroundColor: editable ? adminTheme.surface : adminTheme.surfaceAlt,
           color: adminTheme.slate,
+          opacity: editable ? 1 : 0.75,
         }}
       />
     </View>
@@ -95,12 +369,14 @@ function UserTypeField({
   value,
   isOpen,
   isMobile,
+  editable = true,
   onToggle,
   onSelect,
 }: {
   value: UserTypeValue;
   isOpen: boolean;
   isMobile: boolean;
+  editable?: boolean;
   onToggle: () => void;
   onSelect: (value: UserTypeValue) => void;
 }) {
@@ -113,11 +389,12 @@ function UserTypeField({
         User Type *
       </Text>
       <Pressable
-        onPress={onToggle}
+        onPress={editable ? onToggle : undefined}
         className="flex-row items-center justify-between rounded-[14px] border px-4 py-3.5"
         style={{
           borderColor: isOpen ? adminTheme.primary : adminTheme.border,
           backgroundColor: adminTheme.surfaceAlt,
+          opacity: editable ? 1 : 0.75,
         }}
       >
         <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
@@ -126,7 +403,7 @@ function UserTypeField({
         <Feather name="chevron-down" size={16} color={adminTheme.muted} />
       </Pressable>
 
-      {isOpen ? (
+      {isOpen && editable ? (
         <View
           className="mt-3 overflow-hidden rounded-[14px] border"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
@@ -165,11 +442,190 @@ function UserTypeField({
   );
 }
 
+function summarizeSelectedWarehouses(
+  warehouses: WarehouseSummary[],
+  selectedWarehouseIds: string[]
+) {
+  if (selectedWarehouseIds.length === 0) {
+    return "Select one or more warehouses";
+  }
+
+  const selectedWarehouses = warehouses.filter((warehouse) =>
+    selectedWarehouseIds.includes(warehouse.id)
+  );
+
+  if (selectedWarehouses.length === 0) {
+    return `${selectedWarehouseIds.length} warehouses selected`;
+  }
+
+  if (selectedWarehouses.length === 1) {
+    return selectedWarehouses[0].name;
+  }
+
+  if (selectedWarehouses.length === 2) {
+    return `${selectedWarehouses[0].name}, ${selectedWarehouses[1].name}`;
+  }
+
+  return `${selectedWarehouses[0].name}, ${selectedWarehouses[1].name} +${
+    selectedWarehouses.length - 2
+  } more`;
+}
+
+function WarehouseAccessField({
+  warehouses,
+  selectedWarehouseIds,
+  isOpen,
+  isLoading,
+  error,
+  onToggle,
+  onToggleWarehouse,
+  onClear,
+  onRetry,
+}: {
+  warehouses: WarehouseSummary[];
+  selectedWarehouseIds: string[];
+  isOpen: boolean;
+  isLoading: boolean;
+  error: string | null;
+  onToggle: () => void;
+  onToggleWarehouse: (warehouseId: string) => void;
+  onClear: () => void;
+  onRetry: () => void;
+}) {
+  const summary = summarizeSelectedWarehouses(warehouses, selectedWarehouseIds);
+
+  return (
+    <View>
+      <View className="mb-2 flex-row items-center justify-between">
+        <Text className="text-sm" style={{ color: adminTheme.muted }}>
+          Warehouse Access *
+        </Text>
+        {selectedWarehouseIds.length > 0 ? (
+          <Pressable onPress={onClear}>
+            <Text className="text-xs font-medium" style={{ color: adminTheme.primary }}>
+              Clear selection
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      <Pressable
+        onPress={onToggle}
+        className="flex-row items-center justify-between rounded-[14px] border px-4 py-3.5"
+        style={{
+          borderColor: isOpen ? adminTheme.primary : adminTheme.border,
+          backgroundColor: adminTheme.surfaceAlt,
+        }}
+      >
+        <View className="flex-1 pr-3">
+          <Text className="text-base" style={{ color: adminTheme.slateSoft }}>
+            {summary}
+          </Text>
+          <Text className="mt-1 text-xs" style={{ color: adminTheme.muted }}>
+            {selectedWarehouseIds.length} selected
+          </Text>
+        </View>
+        <Feather name="chevron-down" size={16} color={adminTheme.muted} />
+      </Pressable>
+
+      {isOpen ? (
+        <View
+          className="mt-3 overflow-hidden rounded-[14px] border"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+        >
+          {isLoading ? (
+            <View className="px-4 py-4">
+              <Text className="text-sm" style={{ color: adminTheme.muted }}>
+                Loading organization warehouses...
+              </Text>
+            </View>
+          ) : error ? (
+            <View className="px-4 py-4">
+              <Text className="text-sm leading-5" style={{ color: "#A83D3D" }}>
+                {error}
+              </Text>
+              <Pressable onPress={onRetry} className="mt-3 self-start">
+                <Text className="text-sm font-medium" style={{ color: adminTheme.primary }}>
+                  Retry
+                </Text>
+              </Pressable>
+            </View>
+          ) : warehouses.length === 0 ? (
+            <View className="px-4 py-4">
+              <Text className="text-sm leading-5" style={{ color: adminTheme.muted }}>
+                No warehouses were returned for this organization.
+              </Text>
+            </View>
+          ) : (
+            <View>
+              {warehouses.map((warehouse, index) => {
+                const selected = selectedWarehouseIds.includes(warehouse.id);
+
+                return (
+                  <Pressable
+                    key={warehouse.id}
+                    onPress={() => onToggleWarehouse(warehouse.id)}
+                    className={`flex-row items-start justify-between px-4 py-3.5 ${
+                      index < warehouses.length - 1 ? "border-b" : ""
+                    }`}
+                    style={
+                      index < warehouses.length - 1
+                        ? { borderColor: adminTheme.border }
+                        : undefined
+                    }
+                  >
+                    <View className="flex-1 pr-3">
+                      <Text
+                        className="text-base font-medium"
+                        style={{ color: selected ? adminTheme.primary : adminTheme.slate }}
+                      >
+                        {warehouse.name || warehouse.code || "Unnamed warehouse"}
+                      </Text>
+                      {warehouse.subtitle ? (
+                        <Text className="mt-1 text-xs leading-5" style={{ color: adminTheme.muted }}>
+                          {warehouse.subtitle}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View
+                      className="mt-0.5 h-5 w-5 items-center justify-center rounded-md border"
+                      style={{
+                        borderColor: selected ? adminTheme.primary : adminTheme.border,
+                        backgroundColor: selected ? adminTheme.primary : adminTheme.surface,
+                      }}
+                    >
+                      {selected ? <Feather name="check" size={12} color="#ffffff" /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function LoadingState({ title }: { title: string }) {
+  return (
+    <View className="flex-1 items-center justify-center px-6">
+      <ActivityIndicator size="large" color={adminTheme.primary} />
+      <Text className="mt-4 text-base" style={{ color: adminTheme.muted }}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
 export default function AddEmployeeScreen() {
   const { width } = useWindowDimensions();
   const { organization, refreshOrganization } = useAuthSession();
+  const { userId } = useLocalSearchParams<{ userId?: string | string[] }>();
   const isMobile = width < 1024;
   const isWide = width >= 1260;
+  const editingUserId = normalizeRouteUserId(userId).trim();
+  const isEditMode = Boolean(editingUserId);
 
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
@@ -178,97 +634,191 @@ export default function AddEmployeeScreen() {
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [userType, setUserType] = useState<UserTypeValue>(3);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
+  const [warehouseError, setWarehouseError] = useState<string | null>(null);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
   const [userTypeOpen, setUserTypeOpen] = useState(false);
+  const [warehousePickerOpen, setWarehousePickerOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingEmployee, setIsLoadingEmployee] = useState(isEditMode);
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState("");
-
+  const hasSelectedWarehouses = selectedWarehouseIds.length > 0;
   const resetFeedback = () => {
     setSubmitError("");
     setSubmitSuccess("");
   };
 
- const handleSubmit = async () => {
-  const trimmedFirstName = firstName.trim();
-  const trimmedMiddleName = middleName.trim();
-  const trimmedLastName = lastName.trim();
-  const trimmedEmployeeId = employeeId.trim();
-  const trimmedEmail = email.trim();
-  const trimmedMobile = mobile.trim();
+  const applyFormValues = (values: EmployeeFormValues) => {
+    setFirstName(values.firstName);
+    setMiddleName(values.middleName);
+    setLastName(values.lastName);
+    setEmployeeId(values.employeeId);
+    setEmail(values.email);
+    setMobile(values.mobile);
+    setUserType(values.userType);
+    setSelectedWarehouseIds(values.selectedWarehouseIds);
+  };
 
-  if (!trimmedFirstName) {
-    setSubmitError("First Name is required.");
-    return;
-  }
+  const loadWarehouses = useCallback(async () => {
+    setIsLoadingWarehouses(true);
+    setWarehouseError(null);
 
-  if (!trimmedLastName) {
-    setSubmitError("Last Name is required.");
-    return;
-  }
+    try {
+      const resolvedOrganization = organization ?? (await refreshOrganization());
 
-  if (!trimmedEmployeeId) {
-    setSubmitError("Employee ID is required.");
-    return;
-  }
+      if (!resolvedOrganization) {
+        setWarehouses([]);
+        setWarehouseError("Unable to load organization details for warehouse access.");
+        return;
+      }
 
-  if (!trimmedMobile) {
-    setSubmitError("Mobile is required.");
-    return;
-  }
+      const records = await apiService.getWarehouses(1, 50);
+      setWarehouses(normalizeWarehouses(records));
+    } catch (error) {
+      setWarehouses([]);
+      setWarehouseError(
+        getApiErrorMessage(error, "Unable to load organization warehouses right now.")
+      );
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  }, [organization, refreshOrganization]);
 
-  setIsSubmitting(true);
-  resetFeedback();
+  useEffect(() => {
+    void loadWarehouses();
+  }, [loadWarehouses]);
 
-  try {
-   const payload: CreateUserRequest = {
-  UserId: trimmedEmployeeId,
-  FirstName: trimmedFirstName,
-  MiddleName: trimmedMiddleName || undefined,
-  LastName: trimmedLastName,
-  UserType: userType,
-  EmailId: trimmedEmail || undefined,
-  Mobile: trimmedMobile,
+  useEffect(() => {
+    if (!isEditMode) {
+      applyFormValues(EMPTY_FORM_VALUES);
+      setIsLoadingEmployee(false);
+      return;
+    }
 
-  // ✅ INTERNAL DEFAULTS (fix for backend crash)
-  Address: {
-    Id: 0,
-    Address1: "",
-    Address2: "",
-    City: 0,
-    CityName: "",
-    DistrictId: 0,
-    DistrictName: "",
-    StateId: 101,
-    StateName: "",
-    CountryId: 101, // India
-    CountryName: "",
-    Pin: 0,
-  },
+    const loadEmployee = async () => {
+      setIsLoadingEmployee(true);
+      resetFeedback();
 
-  GSTTypeID: 2,
-  GSTType: "Un-Register",
-};
+      try {
+        const employees = await apiService.getUserDetails(editingUserId, 1, 10);
+        const employee =
+          employees.find((entry) => entry.UserId?.trim() === editingUserId) ?? employees[0];
 
-    await apiService.createUser(payload);
+        if (!employee) {
+          setSubmitError("No employee details were returned for this user.");
+          return;
+        }
 
-    setSubmitSuccess("Employee created successfully.");
+        applyFormValues(mapUserDetailsToFormValues(employee));
+      } catch (error) {
+        setSubmitError(
+          getApiErrorMessage(error, "Unable to load employee details right now.")
+        );
+      } finally {
+        setIsLoadingEmployee(false);
+      }
+    };
 
-    setFirstName("");
-    setMiddleName("");
-    setLastName("");
-    setEmployeeId("");
-    setEmail("");
-    setMobile("");
-    setUserType(3);
-    setUserTypeOpen(false);
-  } catch (error) {
-    setSubmitError(
-      getApiErrorMessage(error, "Unable to create the employee right now.")
+    void loadEmployee();
+  }, [editingUserId, isEditMode]);
+
+  const handleToggleWarehouse = (warehouseId: string) => {
+    setSelectedWarehouseIds((current) =>
+      current.includes(warehouseId)
+        ? current.filter((id) => id !== warehouseId)
+        : [...current, warehouseId]
     );
-  } finally {
-    setIsSubmitting(false);
+    resetFeedback();
+  };
+
+  const handleSubmit = async () => {
+    const values: EmployeeFormValues = {
+      firstName: firstName.trim(),
+      middleName: middleName.trim(),
+      lastName: lastName.trim(),
+      employeeId: employeeId.trim(),
+      email: email.trim(),
+      mobile: mobile.trim(),
+      userType,
+      selectedWarehouseIds,
+    };
+
+    if (!values.firstName) {
+      setSubmitError("First Name is required.");
+      return;
+    }
+
+    if (!values.lastName) {
+      setSubmitError("Last Name is required.");
+      return;
+    }
+
+    if (!values.employeeId) {
+      setSubmitError("Employee ID is required.");
+      return;
+    }
+
+    if (!values.mobile) {
+      setSubmitError("Mobile is required.");
+      return;
+    }
+
+    if (values.selectedWarehouseIds.length === 0) {
+      setSubmitError("Select at least one warehouse for employee access.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    resetFeedback();
+
+    try {
+      if (isEditMode) {
+        await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
+        setSubmitSuccess("Employee access updated successfully.");
+      } else {
+        await apiService.createUser(buildEmployeePayload(values));
+        try {
+          await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
+        } catch (warehouseAccessError) {
+          setSubmitError(
+            getApiErrorMessage(
+              warehouseAccessError,
+              "Employee was created, but assigning warehouse access failed. Open the employee again and retry warehouse assignment."
+            )
+          );
+          return;
+        }
+
+        setSubmitSuccess("Employee created and warehouse access assigned successfully.");
+        applyFormValues(EMPTY_FORM_VALUES);
+      }
+    } catch (error) {
+      setSubmitError(
+        getApiErrorMessage(
+          error,
+          isEditMode
+            ? "Unable to update the employee right now."
+            : "Unable to create the employee right now."
+        )
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isEditMode && isLoadingEmployee) {
+    return <LoadingState title="Loading employee details..." />;
   }
-};
+
+  const title = isEditMode ? "Edit Employee" : "Add Employee";
+  const subtitle = isEditMode
+    ? "Update employee warehouse access"
+    : "Create a user and assign warehouse access";
+  const infoMessage = isEditMode
+    ? "Only warehouse access is updated here because the backend currently provides the WarehouseAccess API for edits."
+    : "Required fields are First Name, Last Name, Employee ID, Mobile, User Type, and at least one warehouse access selection.";
 
   return (
     <ScrollView
@@ -281,8 +831,14 @@ export default function AddEmployeeScreen() {
       {isMobile ? (
         <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
           <View className="mb-4 items-center">
-            <View className="rounded-full px-5 py-2" style={{ backgroundColor: adminTheme.accentGoldSoft }}>
-              <Text className="text-xs font-medium tracking-[0.4px]" style={{ color: adminTheme.accentGold }}>
+            <View
+              className="rounded-full px-5 py-2"
+              style={{ backgroundColor: adminTheme.accentGoldSoft }}
+            >
+              <Text
+                className="text-xs font-medium tracking-[0.4px]"
+                style={{ color: adminTheme.accentGold }}
+              >
                 Admin user setup
               </Text>
             </View>
@@ -298,10 +854,10 @@ export default function AddEmployeeScreen() {
             </Pressable>
             <View className="flex-1">
               <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-                Add Employee
+                {title}
               </Text>
               <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-                Create a user with the existing admin API
+                {subtitle}
               </Text>
             </View>
           </View>
@@ -310,10 +866,10 @@ export default function AddEmployeeScreen() {
         <View className="mb-6 flex-row items-start justify-between">
           <View>
             <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-              Add Employee
+              {title}
             </Text>
             <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-              Create a user with the existing admin API
+              {subtitle}
             </Text>
           </View>
 
@@ -329,15 +885,21 @@ export default function AddEmployeeScreen() {
             </Pressable>
             <Pressable
               onPress={() => void handleSubmit()}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !hasSelectedWarehouses}
               className="rounded-xl px-5 py-2.5"
               style={{
                 backgroundColor: isSubmitting ? adminTheme.primaryDark : adminTheme.primary,
-                opacity: isSubmitting ? 0.8 : 1,
+                opacity: isSubmitting || !hasSelectedWarehouses ? 0.8 : 1,
               }}
             >
               <Text className="text-sm font-semibold text-white">
-                {isSubmitting ? "Creating..." : "Create Employee"}
+                {isSubmitting
+                  ? isEditMode
+                    ? "Saving..."
+                    : "Creating..."
+                  : isEditMode
+                    ? "Save Changes"
+                    : "Create Employee"}
               </Text>
             </Pressable>
           </View>
@@ -365,41 +927,125 @@ export default function AddEmployeeScreen() {
             </View>
           ) : (
             <View className="mb-4">
-              <Banner
-                message="Required fields are First Name, Last Name, Employee ID, Mobile, User Type, and the logged-in organization."
-                tone="info"
-              />
+              <Banner message={infoMessage} tone="info" />
             </View>
           )}
 
           <View className="mb-5 flex-row gap-4" style={{ flexWrap: isWide ? "nowrap" : "wrap" }}>
-            <Field label="First Name" value={firstName} placeholder="Narendra" required autoCapitalize="words" onChangeText={(value) => { setFirstName(value); resetFeedback(); }} />
-            <Field label="Middle Name" value={middleName} placeholder="Kumar" autoCapitalize="words" onChangeText={(value) => { setMiddleName(value); resetFeedback(); }} />
-            <Field label="Last Name" value={lastName} placeholder="Sharma" required autoCapitalize="words" onChangeText={(value) => { setLastName(value); resetFeedback(); }} />
+            <Field
+              label="First Name"
+              value={firstName}
+              placeholder="Narendra"
+              required
+              editable={!isEditMode}
+              autoCapitalize="words"
+              onChangeText={(value) => {
+                setFirstName(value);
+                resetFeedback();
+              }}
+            />
+            <Field
+              label="Middle Name"
+              value={middleName}
+              placeholder="Kumar"
+              editable={!isEditMode}
+              autoCapitalize="words"
+              onChangeText={(value) => {
+                setMiddleName(value);
+                resetFeedback();
+              }}
+            />
+            <Field
+              label="Last Name"
+              value={lastName}
+              placeholder="Sharma"
+              required
+              editable={!isEditMode}
+              autoCapitalize="words"
+              onChangeText={(value) => {
+                setLastName(value);
+                resetFeedback();
+              }}
+            />
           </View>
 
           <View className="mb-5 flex-row gap-4" style={{ flexWrap: isWide ? "nowrap" : "wrap" }}>
-            <Field label="Employee ID" value={employeeId} placeholder="EMP-0042" required autoCapitalize="characters" onChangeText={(value) => { setEmployeeId(value); resetFeedback(); }} />
-            <Field label="Email" value={email} placeholder="narendra@company.com" keyboardType="email-address" autoCapitalize="none" onChangeText={(value) => { setEmail(value); resetFeedback(); }} />
+            <Field
+              label="Employee ID"
+              value={employeeId}
+              placeholder="EMP-0042"
+              required
+              editable={!isEditMode}
+              autoCapitalize="characters"
+              onChangeText={(value) => {
+                setEmployeeId(value);
+                resetFeedback();
+              }}
+            />
+            <Field
+              label="Email"
+              value={email}
+              placeholder="narendra@company.com"
+              editable={!isEditMode}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              onChangeText={(value) => {
+                setEmail(value);
+                resetFeedback();
+              }}
+            />
           </View>
 
-          <View className="flex-row gap-4" style={{ flexWrap: isWide ? "nowrap" : "wrap" }}>
-            <Field label="Mobile" value={mobile} placeholder="9876543210" required keyboardType="phone-pad" autoCapitalize="none" onChangeText={(value) => { setMobile(value); resetFeedback(); }} />
+          <View className="mb-5 flex-row gap-4" style={{ flexWrap: isWide ? "nowrap" : "wrap" }}>
+            <Field
+              label="Mobile"
+              value={mobile}
+              placeholder="9876543210"
+              required
+              editable={!isEditMode}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              onChangeText={(value) => {
+                setMobile(value);
+                resetFeedback();
+              }}
+            />
             <UserTypeField
               value={userType}
               isOpen={userTypeOpen}
               isMobile={isMobile}
+              editable={!isEditMode}
               onToggle={() => {
                 setUserTypeOpen((current) => !current);
-                setSubmitError("");
+                resetFeedback();
               }}
               onSelect={(value) => {
                 setUserType(value);
                 setUserTypeOpen(false);
-                setSubmitError("");
+                resetFeedback();
               }}
             />
           </View>
+
+          <WarehouseAccessField
+            warehouses={warehouses}
+            selectedWarehouseIds={selectedWarehouseIds}
+            isOpen={warehousePickerOpen}
+            isLoading={isLoadingWarehouses}
+            error={warehouseError}
+            onToggle={() => {
+              setWarehousePickerOpen((current) => !current);
+              resetFeedback();
+            }}
+            onToggleWarehouse={handleToggleWarehouse}
+            onClear={() => {
+              setSelectedWarehouseIds([]);
+              resetFeedback();
+            }}
+            onRetry={() => {
+              void loadWarehouses();
+            }}
+          />
         </View>
       </View>
 
@@ -407,15 +1053,21 @@ export default function AddEmployeeScreen() {
         <View className="px-4 pt-4">
           <Pressable
             onPress={() => void handleSubmit()}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !hasSelectedWarehouses}
             className="items-center rounded-[18px] px-5 py-4"
             style={{
               backgroundColor: isSubmitting ? adminTheme.primaryDark : adminTheme.primary,
-              opacity: isSubmitting ? 0.8 : 1,
+              opacity: isSubmitting || !hasSelectedWarehouses ? 0.8 : 1,
             }}
           >
             <Text className="text-base font-semibold text-white">
-              {isSubmitting ? "Creating..." : "Create Employee"}
+              {isSubmitting
+                ? isEditMode
+                  ? "Saving..."
+                  : "Creating..."
+                : isEditMode
+                  ? "Save Changes"
+                  : "Create Employee"}
             </Text>
           </Pressable>
         </View>

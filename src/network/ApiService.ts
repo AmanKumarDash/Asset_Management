@@ -36,7 +36,7 @@ export type UserDetails = {
   Type?: string;
   CompanyName?: string;
   GSTNo?: string;
-};
+} & Record<string, unknown>;
 
 export type CreateUserRequest = {
   UserId?: string;
@@ -68,7 +68,20 @@ export type CreateUserRequest = {
   Offline_Id?: string;
 };
 
+export type WarehouseAccessRequest = {
+  AssignTo: string;
+  WareHouseId: string;
+  Description?: string;
+};
+
 export type WarehouseApiRecord = Record<string, unknown>;
+
+export type WarehouseAccessApiItem = {
+  WareHouseId?: number | string;
+  WarehouseId?: number | string;
+  WareHouseName?: string | null;
+  WarehouseName?: string | null;
+} & Record<string, unknown>;
 
 export type EmployeeReportApiItem = {
   WareHouseId: number | string;
@@ -164,6 +177,31 @@ class ApiService {
     );
 
     return extractResponseData<unknown>(response.data);
+  }
+
+  // Assigns one or more warehouses to an employee using the dedicated warehouse access API.
+  async updateWarehouseAccess(payload: WarehouseAccessRequest): Promise<unknown> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.post<ApiEnvelope<unknown> | unknown>(
+      ENDPOINTS.WAREHOUSE.ACCESS,
+      payload
+    );
+
+    return extractResponseData<unknown>(response.data);
+  }
+
+  // Loads the warehouse list assigned to a specific user so audit access can be limited per login.
+  async getWarehouseAccessByUser(
+    userId: string
+  ): Promise<WarehouseAccessApiItem[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiCollectionEnvelope<WarehouseAccessApiItem> | WarehouseAccessApiItem[]
+    >(ENDPOINTS.WAREHOUSE.GET_ACCESS_BY_USER(userId));
+
+    return extractResponseCollection<WarehouseAccessApiItem>(response.data);
   }
 
   // Fetches all warehouses visible to the logged-in organization for the audit setup screen.

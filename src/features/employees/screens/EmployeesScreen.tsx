@@ -1,9 +1,10 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { UserDetails, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
+import { useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { Href, router } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -171,11 +172,15 @@ function SummaryCards({ employees }: { employees: EmployeeListEntry[] }) {
 function EmployeeTable({
   employees,
   canAdd,
+  canEdit,
   onAdd,
+  onEdit,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
+  canEdit: boolean;
   onAdd: () => void;
+  onEdit: (employeeId: string) => void;
 }) {
   return (
     <View
@@ -222,11 +227,17 @@ function EmployeeTable({
         <Text className="flex-[0.9] text-xs font-medium" style={{ color: adminTheme.muted }}>
           Status
         </Text>
+        {canEdit ? (
+          <Text className="flex-[0.9] text-right text-xs font-medium" style={{ color: adminTheme.muted }}>
+            Actions
+          </Text>
+        ) : null}
       </View>
 
       {employees.map((employee, index) => (
-        <View
+        <Pressable
           key={employee.userId}
+          onPress={canEdit ? () => onEdit(employee.userId) : undefined}
           className={`px-5 py-4 ${index < employees.length - 1 ? "border-b" : ""}`}
           style={
             index < employees.length - 1
@@ -261,8 +272,15 @@ function EmployeeTable({
             <View className="flex-[0.9]">
               <StatusPill label={employee.status} tone={employee.statusTone} />
             </View>
+            {canEdit ? (
+              <View className="flex-[0.9] items-end">
+                <Text className="text-sm font-medium" style={{ color: adminTheme.primary }}>
+                  Edit
+                </Text>
+              </View>
+            ) : null}
           </View>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
@@ -300,11 +318,15 @@ function DetailRow({
 function MobileEmployees({
   employees,
   canAdd,
+  canEdit,
   onAdd,
+  onEdit,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
+  canEdit: boolean;
   onAdd: () => void;
+  onEdit: (employeeId: string) => void;
 }) {
   return (
     <ScrollView
@@ -354,8 +376,9 @@ function MobileEmployees({
         <SummaryCards employees={employees} />
 
         {employees.map((employee, index) => (
-          <View
+          <Pressable
             key={employee.userId}
+            onPress={canEdit ? () => onEdit(employee.userId) : undefined}
             className={`rounded-[20px] border px-4 py-4 ${
               index < employees.length - 1 ? "mb-3" : ""
             }`}
@@ -395,7 +418,14 @@ function MobileEmployees({
               <DetailRow icon="phone" label="Mobile" value={employee.mobile} />
               <DetailRow icon="mail" label="Email" value={employee.email} />
             </View>
-          </View>
+            {canEdit ? (
+              <View className="mt-4 border-t pt-4" style={{ borderColor: adminTheme.border }}>
+                <Text className="text-sm font-medium" style={{ color: adminTheme.primary }}>
+                  Edit warehouse access
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
         ))}
       </View>
     </ScrollView>
@@ -405,11 +435,15 @@ function MobileEmployees({
 function DesktopEmployees({
   employees,
   canAdd,
+  canEdit,
   onAdd,
+  onEdit,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
+  canEdit: boolean;
   onAdd: () => void;
+  onEdit: (employeeId: string) => void;
 }) {
   return (
     <ScrollView
@@ -436,7 +470,13 @@ function DesktopEmployees({
       </View>
 
       <SummaryCards employees={employees} />
-      <EmployeeTable employees={employees} canAdd={false} onAdd={onAdd} />
+      <EmployeeTable
+        employees={employees}
+        canAdd={false}
+        canEdit={canEdit}
+        onAdd={onAdd}
+        onEdit={onEdit}
+      />
     </ScrollView>
   );
 }
@@ -483,47 +523,62 @@ export default function EmployeesScreen() {
   const { width } = useWindowDimensions();
   const { user } = useAuthSession();
   const isMobile = width < 1024;
-  const canAddEmployee = user?.role === "admin";
+  const canManageEmployees = user?.role === "admin";
 
   const [employees, setEmployees] = useState<EmployeeListEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const openAddEmployee = () => router.push("/employees/new");
+  const openEditEmployee = (employeeId: string) =>
+    router.push(
+      {
+        pathname: "/employees/new",
+        params: { userId: employeeId },
+      } as unknown as Href
+    );
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const data = await apiService.getUserDetails("");
-        setEmployees(data.map((employee, index) => formatEmployee(employee, index)));
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
 
-    void fetchUsers();
+    try {
+      const data = await apiService.getUserDetails("");
+      setEmployees(data.map((employee, index) => formatEmployee(employee, index)));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchUsers();
+    }, [fetchUsers])
+  );
 
   if (loading) {
     return <LoadingState />;
   }
 
   if (employees.length === 0) {
-    return <EmptyState canAdd={canAddEmployee} onAdd={openAddEmployee} />;
+    return <EmptyState canAdd={canManageEmployees} onAdd={openAddEmployee} />;
   }
 
   return isMobile ? (
     <MobileEmployees
       employees={employees}
-      canAdd={canAddEmployee}
+      canAdd={canManageEmployees}
+      canEdit={canManageEmployees}
       onAdd={openAddEmployee}
+      onEdit={openEditEmployee}
     />
   ) : (
     <DesktopEmployees
       employees={employees}
-      canAdd={canAddEmployee}
+      canAdd={canManageEmployees}
+      canEdit={canManageEmployees}
       onAdd={openAddEmployee}
+      onEdit={openEditEmployee}
     />
   );
 }

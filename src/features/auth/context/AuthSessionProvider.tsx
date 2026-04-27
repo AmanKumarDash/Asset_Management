@@ -9,6 +9,7 @@ import {
 import { STORAGE_KEYS } from "@/constants/storage";
 import { OrganizationDetails } from "@/models/organization";
 import { AuthSession } from "@/models/session";
+import { WarehouseSummary } from "@/models/warehouse";
 import { AppPermission, AppUser } from "@/models/user";
 import { apiService } from "@/network/ApiService";
 import { setAccessToken, setSessionExpiredHandler } from "@/network/axiosConfig";
@@ -16,6 +17,7 @@ import { getApiErrorMessage } from "@/network/responses";
 import { secureStorage } from "@/storage/secureStorage";
 import { storage } from "@/storage/storage";
 import { appLogger } from "@/utils/appLogger";
+import { normalizeWarehouses } from "@/utils/warehouseSummary";
 import { mapLoginResponse } from "../utils/authMapper";
 import { AuthSessionContextValue, SignInInput, SignInResult } from "../types/auth";
 
@@ -38,18 +40,26 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
+  const [accessibleWarehouses, setAccessibleWarehouses] = useState<WarehouseSummary[]>([]);
 
   useEffect(() => {
     let isMounted = true;
 
     // Restores the last known session from storage so refresh/login is not required on every app launch.
     const hydrateSession = async () => {
-      const [storedToken, storedRefreshToken, storedUser, storedOrganization] =
+      const [
+        storedToken,
+        storedRefreshToken,
+        storedUser,
+        storedOrganization,
+        storedWarehouseAccess,
+      ] =
         await Promise.all([
           secureStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
           secureStorage.getItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
           storage.getObject<AppUser>(STORAGE_KEYS.AUTH_USER),
           storage.getObject<OrganizationDetails>(STORAGE_KEYS.AUTH_ORGANIZATION),
+          storage.getObject<WarehouseSummary[]>(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
         ]);
 
       if (!isMounted) {
@@ -59,6 +69,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setAccessToken(storedToken);
       setUser(storedUser);
       setOrganization(storedOrganization);
+      setAccessibleWarehouses(storedWarehouseAccess ?? []);
       setIsHydrated(true);
 
       appLogger.info("AuthSession", "Hydrated auth session from storage.", {
@@ -66,6 +77,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         hasRefreshToken: Boolean(storedRefreshToken),
         hasUser: Boolean(storedUser),
         hasOrganization: Boolean(storedOrganization),
+        warehouseAccessCount: storedWarehouseAccess?.length ?? 0,
       });
     };
 
@@ -111,6 +123,10 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     await storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION);
   }, []);
 
+  const persistWarehouseAccess = useCallback(async (value: WarehouseSummary[]) => {
+    await storage.setObject(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS, value);
+  }, []);
+
   // Removes all persisted auth-related data during sign-out and expired-session cleanup.
   const clearSession = useCallback(async () => {
     await Promise.all([
@@ -118,10 +134,37 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       storage.removeItem(STORAGE_KEYS.AUTH_ACCESS_TOKEN_EXPIRES_AT),
       storage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
       storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION),
+      storage.removeItem(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
     ]);
   }, []);
+
+  const loadWarehouseAccessForUser = useCallback(
+    async (userId: string) => {
+      const normalizedUserId = userId.trim();
+
+      if (!normalizedUserId) {
+        setAccessibleWarehouses([]);
+        await persistWarehouseAccess([]);
+        return [];
+      }
+
+      const payload = await apiService.getWarehouseAccessByUser(normalizedUserId);
+      const normalizedWarehouses = normalizeWarehouses(payload);
+
+      setAccessibleWarehouses(normalizedWarehouses);
+      await persistWarehouseAccess(normalizedWarehouses);
+
+      appLogger.info("AuthSession", "Loaded warehouse access for user.", {
+        userId: normalizedUserId,
+        warehouseCount: normalizedWarehouses.length,
+      });
+
+      return normalizedWarehouses;
+    },
+    [persistWarehouseAccess]
+  );
 
   // Refreshes organization details on demand so profile and audit screens can reuse one shared source of truth.
   const refreshOrganization = useCallback(async () => {
@@ -156,6 +199,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setAccessToken(null);
       setUser(null);
       setOrganization(null);
+      setAccessibleWarehouses([]);
       void clearSession();
     });
 
@@ -163,6 +207,30 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setSessionExpiredHandler(null);
     };
   }, [clearSession]);
+
+  const refreshWarehouseAccess = useCallback(async () => {
+    try {
+      if (!user?.employeeId?.trim()) {
+        setAccessibleWarehouses([]);
+        await persistWarehouseAccess([]);
+        return [];
+      }
+
+      return await loadWarehouseAccessForUser(user.employeeId);
+    } catch (error) {
+      const message = getApiErrorMessage(
+        error,
+        "Unable to load warehouse access right now."
+      );
+
+      appLogger.warn("AuthSession", "Warehouse access fetch failed.", {
+        userId: user?.employeeId ?? "",
+        message,
+      });
+
+      throw error;
+    }
+  }, [loadWarehouseAccessForUser, persistWarehouseAccess, user?.employeeId]);
 
   // Handles login, session persistence, and the follow-up organization bootstrap required by the app.
   const signIn = useCallback(
@@ -177,10 +245,27 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         setAccessToken(session.token);
         setUser(session.user);
         setOrganization(null);
+        setAccessibleWarehouses([]);
         await persistSession(session);
         await persistOrganization(null);
+        await persistWarehouseAccess([]);
 
-        const organizationPayload = await refreshOrganization();
+        const [organizationPayload, warehouseAccessPayload] = await Promise.all([
+          refreshOrganization(),
+          loadWarehouseAccessForUser(session.user.employeeId).catch((error) => {
+            const message = getApiErrorMessage(
+              error,
+              "Unable to load warehouse access right now."
+            );
+
+            appLogger.warn("AuthSession", "Warehouse access bootstrap failed after sign-in.", {
+              userId: session.user.employeeId,
+              message,
+            });
+
+            return [];
+          }),
+        ]);
 
         appLogger.info("AuthSession", "User signed in successfully.", {
           role: session.user.role,
@@ -189,6 +274,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
           accessTokenExpiresAt: session.accessTokenExpiresAt,
           refreshTokenExpiresAt: session.refreshTokenExpiresAt,
           hasOrganization: Boolean(organizationPayload),
+          warehouseAccessCount: warehouseAccessPayload.length,
         });
 
         return { success: true };
@@ -201,6 +287,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         setAccessToken(null);
         setUser(null);
         setOrganization(null);
+        setAccessibleWarehouses([]);
         await clearSession();
 
         appLogger.warn("AuthSession", "Sign-in failed.", {
@@ -214,7 +301,14 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         };
       }
     },
-    [clearSession, persistOrganization, persistSession, refreshOrganization]
+    [
+      clearSession,
+      loadWarehouseAccessForUser,
+      persistOrganization,
+      persistSession,
+      persistWarehouseAccess,
+      refreshOrganization,
+    ]
   );
 
   // Clears in-memory and persisted session state when the user leaves the app intentionally.
@@ -225,6 +319,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
     setUser(null);
     setOrganization(null);
+    setAccessibleWarehouses([]);
     void clearSession();
   }, [clearSession, user]);
 
@@ -264,13 +359,26 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       isHydrated,
       user,
       organization,
+      accessibleWarehouses,
       signIn,
       signOut,
       updateUser,
       refreshOrganization,
+      refreshWarehouseAccess,
       hasPermission,
     }),
-    [hasPermission, isHydrated, organization, refreshOrganization, signIn, signOut, updateUser, user]
+    [
+      accessibleWarehouses,
+      hasPermission,
+      isHydrated,
+      organization,
+      refreshOrganization,
+      refreshWarehouseAccess,
+      signIn,
+      signOut,
+      updateUser,
+      user,
+    ]
   );
 
   return (

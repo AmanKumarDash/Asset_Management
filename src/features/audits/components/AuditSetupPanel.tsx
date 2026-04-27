@@ -187,7 +187,7 @@ export default function AuditSetupPanel({
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
           <Text className="text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
-            No warehouses were returned for this organization yet.
+            No warehouses are assigned to this account yet.
           </Text>
         </View>
       ) : null}
