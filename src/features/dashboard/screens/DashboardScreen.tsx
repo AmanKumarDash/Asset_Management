@@ -1,478 +1,167 @@
+import { useMemo, useState } from "react";
 import { router } from "expo-router";
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { USER_ROLES } from "@/constants/auth";
-import EmployeeDashboardScreen from "./EmployeeDashboardScreen";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { employees } from "@/features/employees/data/employeeData";
-import { AppUser } from "@/models/user";
+import {
+  DashboardPeriod,
+  formatDashboardDate,
+  getPeriodLabel,
+  useAdminDashboardData,
+} from "@/features/dashboard/hooks/useDashboardData";
+import {
+  ActionButton,
+  ColumnChart,
+  DashboardError,
+  DashboardStatsGrid,
+  EmptyBlock,
+  HorizontalBarChart,
+  LoadingState,
+  PeriodSwitch,
+  ProgressInsightCard,
+  SectionCard,
+} from "@/features/dashboard/components/DashboardVisuals";
+import EmployeeDashboardScreen from "./EmployeeDashboardScreen";
 import { adminTheme } from "@/theme/adminTheme";
 
-const stats = [
-  {
-    label: "Total employees",
-    value: "6",
-    color: "#1f5ea8",
-  },
-  {
-    label: "Audits assigned",
-    value: "4",
-    color: "#4f7d1f",
-  },
-  {
-    label: "Pending submission",
-    value: "2",
-    color: "#9c6306",
-  },
-  {
-    label: "Asset mismatches",
-    value: "17",
-    color: "#a3262d",
-  },
-] as const;
-
-const auditCards = [
-  {
-    title: "Conference Room ",
-    meta: "Block A - 48 assets - Aman",
-    status: "Submitted",
-    statusTone: "info",
-    progress: 1,
-    progressLabel: "48 / 48 scanned",
-    footer: "20 Mar - 9:30 AM",
-  },
-  {
-    title: "Warehouse",
-    meta: "Block B - 112 assets - Naman",
-    status: "In progress",
-    statusTone: "warning",
-    progress: 0.18,
-    progressLabel: "20 / 112 scanned",
-    footer: "18% complete",
-  },
-  {
-    title: "Server Room",
-    meta: "Block C - 28 assets - jatin",
-    status: "Completed",
-    statusTone: "success",
-    progress: 1,
-    progressLabel: "28 / 28 scanned",
-    footer: "19 Mar",
-  },
-  {
-    title: "Meeting Room",
-    meta: "Block D - 34 assets - Unassigned",
-    status: "Not started",
-    statusTone: "muted",
-    progress: 0,
-    progressLabel: "0 / 34 scanned",
-    footer: "No assignee yet",
-  },
-] as const;
-
-type Tone = "info" | "warning" | "success" | "muted";
-
-function getPillStyles(tone: Tone) {
-  switch (tone) {
-    case "info":
-      return { bg: adminTheme.infoBg, text: adminTheme.primary };
-    case "warning":
-      return { bg: adminTheme.warningBg, text: adminTheme.warningText };
-    case "success":
-      return { bg: adminTheme.successBg, text: adminTheme.successText };
-    default:
-      return { bg: adminTheme.mutedBg, text: adminTheme.mutedText };
-  }
-}
-
-function getProgressColor(tone: Tone) {
-  switch (tone) {
-    case "info":
-      return adminTheme.primary;
-    case "warning":
-      return adminTheme.warningText;
-    case "success":
-      return adminTheme.successText;
-    default:
-      return adminTheme.border;
-  }
-}
-
-function StatusPill({ label, tone }: { label: string; tone: Tone }) {
-  const styles = getPillStyles(tone);
-
-  return (
-    <View
-      className="rounded-full px-2.5 py-1"
-      style={{ backgroundColor: styles.bg }}
-    >
-      <Text className="text-xs font-medium" style={{ color: styles.text }}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function MobileHeader({ user }: { user: AppUser }) {
-  return (
-    <View className="mb-5 border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
-      <View className="mb-4 items-center">
-        {/* <View className="rounded-full bg-[#f6e6c7] px-5 py-2">
-          <Text className="text-xs font-medium tracking-[0.4px] text-[#8a5b11]">
-            Screen 2 - Admin dashboard
-          </Text>
-        </View> */}
-      </View>
-
-      <View className="flex-row items-start justify-between">
-        <View>
-          <View className="self-start rounded-full px-3 py-1" style={{ backgroundColor: adminTheme.accentGoldSoft }}>
-            <Text className="text-xs font-medium" style={{ color: adminTheme.accentGold }}>
-              {user.roleBadge}
-            </Text>
-          </View>
-          <Text className="mt-3 text-[30px] font-semibold" style={{ color: adminTheme.slate }}>
-            {user.name}
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={() => router.push("/profile")}
-          className="h-12 w-12 items-center justify-center rounded-full"
-          style={{ backgroundColor: user.avatarBg }}
-        >
-          <Text
-            className="text-base font-semibold"
-            style={{ color: user.avatarText }}
-          >
-            {user.initials}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function SectionButton({
-  title,
-  filled = false,
-  onPress,
+function AuditList({
+  audits,
 }: {
-  title: string;
-  filled?: boolean;
-  onPress?: () => void;
+  audits: {
+    id: string;
+    title: string;
+    location: string;
+    completedAt: string | null;
+    scannedCount: number;
+    referenceId: string;
+    employeeName?: string;
+  }[];
 }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className="rounded-xl border px-4 py-2.5"
-      style={{
-        borderColor: filled ? adminTheme.primary : adminTheme.border,
-        backgroundColor: filled ? adminTheme.primary : adminTheme.surface,
-      }}
-    >
-      <Text className="text-xs font-semibold" style={{ color: filled ? "#ffffff" : adminTheme.slate }}>
-        {title}
-      </Text>
-    </Pressable>
-  );
-}
-
-function MobileStatsGrid({ width }: { width: number }) {
-  const horizontalPadding = 32;
-  const columnGap = 10;
-  const cardWidth = (width - horizontalPadding - columnGap) / 2;
+  if (audits.length === 0) {
+    return <EmptyBlock message="No submitted audits were found for this period yet." />;
+  }
 
   return (
-    <View className="mb-6 flex-row flex-wrap justify-between px-4">
-      {stats.map((stat, index) => (
+    <View>
+      {audits.map((audit, index) => (
         <View
-          key={stat.label}
-          className="rounded-[16px] border px-4 py-4"
-          style={{
-            width: cardWidth,
-            marginBottom: index < stats.length - 2 ? columnGap : 0,
-            backgroundColor: adminTheme.surfaceAlt,
-            borderColor: adminTheme.border,
-          }}
-        >
-          <Text
-            className="text-[22px] font-semibold"
-            style={{ color: stat.color }}
-          >
-            {stat.value}
-          </Text>
-          <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-            {stat.label
-              .replace("Total ", "")
-              .replace(" submission", "")
-              .replace("Asset ", "")}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function DashboardTable({ onAddEmployee }: { onAddEmployee: () => void }) {
-  return (
-    <View className="overflow-hidden rounded-[20px] border bg-white" style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}>
-      <View className="flex-row items-center justify-between border-b px-4 py-3.5" style={{ borderColor: adminTheme.border }}>
-        <Text className="text-[20px] font-semibold" style={{ color: adminTheme.slate }}>Employees</Text>
-        <Pressable
-          onPress={onAddEmployee}
-          className="rounded-xl px-3.5 py-2.5"
-          style={{ backgroundColor: adminTheme.primary }}
-        >
-          <Text className="text-xs font-semibold text-white">+ Add</Text>
-        </Pressable>
-      </View>
-
-      <View className="border-b px-4 py-3" style={{ borderColor: adminTheme.border }}>
-        <View className="flex-row">
-          <Text className="flex-[1.6] text-xs font-medium" style={{ color: adminTheme.muted }}>Name</Text>
-          <Text className="flex-[1.5] text-xs font-medium" style={{ color: adminTheme.muted }}>Department</Text>
-          <Text className="flex-[2] text-xs font-medium" style={{ color: adminTheme.muted }}>Assigned audit</Text>
-          <Text className="flex-[1.1] text-xs font-medium" style={{ color: adminTheme.muted }}>Status</Text>
-          <Text className="flex-[1] text-xs font-medium" style={{ color: adminTheme.muted }}>Last active</Text>
-        </View>
-      </View>
-
-      {employees.map((employee, index) => (
-        <View
-          key={employee.name}
-          className={`px-4 py-3.5 ${index < employees.length - 1 ? "border-b" : ""}`}
-          style={index < employees.length - 1 ? { borderColor: adminTheme.border } : undefined}
-        >
-          <View className="flex-row items-center">
-            <View className="flex-[1.6] flex-row items-center">
-              <View
-                className="mr-3 h-9 w-9 items-center justify-center rounded-full"
-                style={{ backgroundColor: employee.avatarColor }}
-              >
-                <Text
-                  className="text-xs font-semibold"
-                  style={{ color: employee.avatarText }}
-                >
-                  {employee.initials}
-                </Text>
-              </View>
-              <Text className="text-sm font-medium" style={{ color: adminTheme.slate }}>{employee.name}</Text>
-            </View>
-            <Text className="flex-[1.5] text-sm" style={{ color: adminTheme.slate }}>{employee.department}</Text>
-            <Text className="flex-[2] text-sm" style={{ color: adminTheme.slate }}>{employee.audit}</Text>
-            <View className="flex-[1.1]">
-              <StatusPill label={employee.status} tone={employee.statusTone} />
-            </View>
-            <Text className="flex-[1] text-sm" style={{ color: adminTheme.slate }}>{employee.activeAt}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function MobileEmployeeCards({ onAddEmployee }: { onAddEmployee: () => void }) {
-  return (
-    <View className="mb-6 px-4">
-      <View className="mb-3 flex-row items-center justify-between">
-        <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>Employees</Text>
-        <Pressable onPress={onAddEmployee}>
-          <Text className="text-base font-medium" style={{ color: adminTheme.primary }}>+ Add</Text>
-        </Pressable>
-      </View>
-
-      {employees.map((employee, index) => (
-        <View
-          key={employee.name}
-          className={`rounded-[18px] border bg-white p-4 ${
-            index < employees.length - 1 ? "mb-3" : ""
+          key={audit.id}
+          className={`rounded-[18px] border px-4 py-4 ${
+            index < audits.length - 1 ? "mb-3" : ""
           }`}
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              <View
-                className="mr-3 h-10 w-10 items-center justify-center rounded-full"
-                style={{ backgroundColor: employee.avatarColor }}
-              >
-                <Text
-                  className="text-sm font-semibold"
-                  style={{ color: employee.avatarText }}
-                >
-                  {employee.initials}
-                </Text>
-              </View>
-              <View>
-                <Text className="text-[18px] font-medium" style={{ color: adminTheme.slate }}>{employee.name}</Text>
-                <Text className="text-sm" style={{ color: adminTheme.muted }}>
-                  {employee.audit === "-" ? "No audit assigned" : employee.audit.toLowerCase()}
-                </Text>
-              </View>
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
+                {audit.title}
+              </Text>
+              <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
+                {audit.location}
+                {audit.employeeName ? ` - ${audit.employeeName}` : ""}
+              </Text>
             </View>
-            <StatusPill label={employee.status} tone={employee.statusTone} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function MobileAuditCards() {
-  return (
-    <View className="px-4 pb-2">
-      <View className="mb-3 flex-row items-center justify-between">
-        <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-          Audit submissions
-        </Text>
-        <Pressable>
-          <Text className="text-base font-medium" style={{ color: adminTheme.primary }}>View all</Text>
-        </Pressable>
-      </View>
-
-      {auditCards.slice(0, 2).map((card, index) => (
-        <View
-          key={card.title}
-          className={`rounded-[18px] border bg-white p-4 ${
-            index === 0 ? "mb-3" : ""
-          }`}
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-        >
-          <View className="mb-2 flex-row items-start justify-between gap-3">
-            <Text className="flex-1 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-              {card.title}
-            </Text>
-            <StatusPill label={card.status} tone={card.statusTone} />
-          </View>
-
-          <Text className="text-sm" style={{ color: adminTheme.muted }}>
-            {card.meta.split(" - ")[0]}
-          </Text>
-          <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
-            {card.title === "Conference Room "
-              ? "by Aman - 20 Mar - 9:30 AM"
-              : "assigned to Subhasmita"}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function MobileDashboard({ user }: { user: AppUser }) {
-  const { width } = useWindowDimensions();
-  const openAddEmployee = () => router.push("/employees/new");
-
-  return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingBottom: 20 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <MobileHeader user={user} />
-      <MobileStatsGrid width={width} />
-      <MobileEmployeeCards onAddEmployee={openAddEmployee} />
-      <MobileAuditCards />
-    </ScrollView>
-  );
-}
-
-function DesktopDashboard({ width }: { width: number }) {
-  const isWide = width >= 1280;
-  const openAddEmployee = () => router.push("/employees/new");
-
-  return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 20 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="mb-5">
-        <View
-          className="flex-row items-center justify-between"
-          style={{ flexWrap: width < 900 ? "wrap" : "nowrap", rowGap: 14 }}
-        >
-          <View>
-            <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>Dashboard</Text>
-            <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-              Overview of all audits and employees
-            </Text>
-          </View>
-
-          <View className="flex-row gap-3">
-            <SectionButton title="Export" />
-            <SectionButton
-              title="+ Add Employee"
-              filled
-              onPress={openAddEmployee}
-            />
-          </View>
-        </View>
-      </View>
-
-      <View className="mb-5 flex-row flex-wrap gap-3">
-        {stats.map((stat) => (
-          <View
-            key={stat.label}
-            className="min-w-[180px] flex-1 rounded-[18px] border px-4 py-4"
-            style={{ backgroundColor: adminTheme.surfaceAlt, borderColor: adminTheme.border }}
-          >
-            <Text
-              className="text-[28px] font-semibold"
-              style={{ color: stat.color }}
+            <View
+              className="rounded-full px-3 py-1"
+              style={{ backgroundColor: adminTheme.infoBg }}
             >
-              {stat.value}
+              <Text className="text-xs font-medium" style={{ color: adminTheme.primary }}>
+                Submitted
+              </Text>
+            </View>
+          </View>
+
+          <View className="mt-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+            <Text className="text-sm" style={{ color: adminTheme.slate }}>
+              {audit.scannedCount} assets scanned
             </Text>
-            <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>{stat.label}</Text>
+            <Text className="text-sm" style={{ color: adminTheme.muted }}>
+              {formatDashboardDate(audit.completedAt)}
+            </Text>
           </View>
-        ))}
-      </View>
 
-      <View className="mb-5 flex-row flex-wrap gap-3">
-        {auditCards.map((card) => (
-          <View
-            key={card.title}
-            className="rounded-[18px] border bg-white p-4"
-            style={{ width: isWide ? "49%" : "100%", borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-          >
-            <View className="mb-1 flex-row items-start justify-between gap-4">
-              <View className="flex-1">
-                <Text className="text-[22px] font-semibold" style={{ color: adminTheme.slate }}>
-                  {card.title}
-                </Text>
-                <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>{card.meta}</Text>
-              </View>
-              <StatusPill label={card.status} tone={card.statusTone} />
-            </View>
+          <Text className="mt-2 text-xs" style={{ color: adminTheme.muted }}>
+            Reference: {audit.referenceId}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
-            <View className="mt-4 h-[4px] rounded-full" style={{ backgroundColor: adminTheme.border }}>
-              <View
-                className="h-[4px] rounded-full"
-                style={{
-                  width: `${card.progress * 100}%`,
-                  backgroundColor: getProgressColor(card.statusTone),
-                }}
-              />
-            </View>
+function TeamActivityList({
+  activity,
+}: {
+  activity: {
+    id: string;
+    name: string;
+    reportCount: number;
+    scannedAssets: number;
+    lastSubmittedAt: string | null;
+  }[];
+}) {
+  if (activity.length === 0) {
+    return <EmptyBlock message="Employee activity will appear here once reports start coming in." />;
+  }
 
-            <View className="mt-3 flex-row items-center justify-between">
-              <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>{card.progressLabel}</Text>
-              <Text className="text-sm" style={{ color: adminTheme.muted }}>{card.footer}</Text>
-            </View>
+  return (
+    <View>
+      {activity.map((item, index) => (
+        <View
+          key={item.id}
+          className={`rounded-[18px] border px-4 py-4 ${
+            index < activity.length - 1 ? "mb-3" : ""
+          }`}
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <View className="flex-row items-center justify-between gap-3">
+            <Text className="flex-1 text-base font-semibold" style={{ color: adminTheme.slate }}>
+              {item.name}
+            </Text>
+            <Text className="text-sm font-medium" style={{ color: adminTheme.primary }}>
+              {item.reportCount} audits
+            </Text>
           </View>
-        ))}
-      </View>
 
-      <DashboardTable onAddEmployee={openAddEmployee} />
-
-      
-    </ScrollView>
+          <View className="mt-3 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+            <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
+              {item.scannedAssets} assets scanned
+            </Text>
+            <Text className="text-sm" style={{ color: adminTheme.muted }}>
+              {formatDashboardDate(item.lastSubmittedAt)}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
 export default function DashboardScreen() {
-  const { user } = useAuthSession();
+  const { user, organization } = useAuthSession();
   const { width } = useWindowDimensions();
-  const isMobile = width < 1024;
+  const [period, setPeriod] = useState<DashboardPeriod>("weekly");
+  const { data, isLoading, errorMessage, periodLabel, reload } = useAdminDashboardData(period);
+  const isDesktop = width >= 1024;
+  const isCompactMobile = width < 640;
+  const teamBars = useMemo(
+    () =>
+      data.teamActivity.slice(0, 5).map((item) => ({
+        label: item.name,
+        value: item.scannedAssets,
+        helper: `${item.reportCount} submitted audits`,
+      })),
+    [data.teamActivity]
+  );
+  const auditColumns = useMemo(
+    () =>
+      data.recentAudits.slice(0, 4).map((item, index) => ({
+        label: item.employeeName === "You" ? `Admin ${index + 1}` : `Audit ${index + 1}`,
+        value: item.scannedCount,
+        caption: item.location,
+      })),
+    [data.recentAudits]
+  );
 
   if (!user) {
     return null;
@@ -482,6 +171,194 @@ export default function DashboardScreen() {
     return <EmployeeDashboardScreen />;
   }
 
-  return isMobile ? <MobileDashboard user={user} /> : <DesktopDashboard width={width} />;
-}
+  const stats = [
+    {
+      label: "Employees",
+      value: String(data.employeeCount),
+      helper: "Total employee accounts in your organization.",
+      tone: "primary" as const,
+    },
+    {
+      label: "Active auditors",
+      value: String(data.activeAuditorCount),
+      helper: `${getPeriodLabel(period)} employees with at least one submitted audit.`,
+      tone: "success" as const,
+    },
+    {
+      label: "Submitted audits",
+      value: String(data.submittedAuditCount),
+      helper: `Completed audit submissions recorded for ${periodLabel.toLowerCase()}.`,
+      tone: "gold" as const,
+    },
+    {
+      label: "Assets scanned",
+      value: String(data.scannedAssetCount),
+      helper: `${data.locationCount} warehouse locations covered in this view.`,
+      tone: "warning" as const,
+    },
+  ];
 
+  const participationProgress =
+    data.employeeCount > 0 ? data.activeAuditorCount / data.employeeCount : 0;
+
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerStyle={{
+        paddingHorizontal: isDesktop ? 20 : 16,
+        paddingVertical: 20,
+        paddingBottom: isDesktop ? 24 : 90,
+      }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View
+        className="rounded-[28px] border px-5 py-5"
+        style={{ borderColor: "#D9E5FF", backgroundColor: "#F6FAFF" }}
+      >
+        <View
+          className="flex-row items-start justify-between"
+          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 16 }}
+        >
+          <View className="flex-1">
+            <View
+              className="self-start rounded-full px-3 py-1"
+              style={{ backgroundColor: adminTheme.accentGoldSoft }}
+            >
+              <Text className="text-xs font-medium" style={{ color: adminTheme.accentGold }}>
+                Admin dashboard
+              </Text>
+            </View>
+            <Text className="mt-4 text-[30px] font-semibold" style={{ color: adminTheme.slate }}>
+              {organization?.Name?.trim() || "Operations overview"}
+            </Text>
+            <Text className="mt-2 text-sm leading-6" style={{ color: adminTheme.slateSoft }}>
+              Track employee activity, audit submissions, and scanned asset volume with a view
+              built from real report data. This keeps the dashboard clean today and dependable as
+              your audit history grows.
+            </Text>
+          </View>
+
+          <View
+            className="flex-row flex-wrap"
+            style={{ gap: 10, width: isCompactMobile ? "100%" : undefined }}
+          >
+            <ActionButton
+              label="Open Audits"
+              icon="clipboard"
+              accentColor={adminTheme.primary}
+              onPress={() => router.push("/audits")}
+              fullWidth={isCompactMobile}
+            />
+            <ActionButton
+              label="Add Employee"
+              icon="user-plus"
+              filled
+              accentColor={adminTheme.primary}
+              onPress={() => router.push("/employees/new")}
+              fullWidth={isCompactMobile}
+            />
+          </View>
+        </View>
+
+        <View
+          className="mt-5 flex-row items-center justify-between"
+          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 12 }}
+        >
+          <View>
+            <Text className="text-sm font-medium" style={{ color: adminTheme.muted }}>
+              Viewing
+            </Text>
+            <Text className="mt-1 text-base font-semibold" style={{ color: adminTheme.slate }}>
+              {periodLabel} audit activity
+            </Text>
+          </View>
+          <PeriodSwitch value={period} onChange={setPeriod} accentColor={adminTheme.primary} />
+        </View>
+      </View>
+
+      {isLoading ? <LoadingState label={periodLabel} accentColor={adminTheme.primary} /> : null}
+      {!isLoading && errorMessage ? (
+        <View className="mt-5">
+          <DashboardError
+            message={errorMessage}
+            onRetry={reload}
+            accentColor={adminTheme.primary}
+            borderColor="#D9E5FF"
+            backgroundColor="#F6FAFF"
+          />
+        </View>
+      ) : null}
+
+      {!isLoading && !errorMessage ? (
+        <>
+          <DashboardStatsGrid stats={stats} width={width} isDesktop={isDesktop} />
+
+          <View
+            className="mt-5"
+            style={{
+              flexDirection: isDesktop ? "row" : "column",
+              gap: 16,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <ProgressInsightCard
+                title="Team Participation"
+                subtitle="How many employee accounts contributed at least one audit in the selected period."
+                valueLabel={`${Math.round(participationProgress * 100)}%`}
+                progress={participationProgress}
+                accentColor={adminTheme.primary}
+                helper={`${data.activeAuditorCount} of ${data.employeeCount} employees submitted audit activity.`}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <ColumnChart
+                title="Recent Audit Volume"
+                subtitle="Latest submissions compared by scanned asset count."
+                items={auditColumns}
+                accentColor={adminTheme.accentGold}
+                emptyMessage="Recent audit volume will appear here after submissions are recorded."
+              />
+            </View>
+          </View>
+
+          <View
+            className="mt-5"
+            style={{
+              flexDirection: isDesktop ? "row" : "column",
+              gap: 16,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <HorizontalBarChart
+                title="Top Contributors"
+                subtitle="Employees with the highest scanned volume for the selected period."
+                items={teamBars}
+                accentColor={adminTheme.primary}
+                emptyMessage="Contributor insights will appear here after employees submit audits."
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <SectionCard
+                title="Recent Audits"
+                subtitle="Most recent submissions across your team and your own admin account."
+              >
+                <AuditList audits={data.recentAudits} />
+              </SectionCard>
+            </View>
+          </View>
+
+          <View className="mt-5">
+            <SectionCard
+              title="Team Activity"
+              subtitle="Who submitted work in the selected period and how much they scanned."
+            >
+              <TeamActivityList activity={data.teamActivity} />
+            </SectionCard>
+          </View>
+        </>
+      ) : null}
+    </ScrollView>
+  );
+}

@@ -41,7 +41,7 @@ The app reads API configuration from environment variables.
 File: `.env.example`
 
 ```env
-EXPO_PUBLIC_API_URL=https://api-preprod.smaketsolutions.com
+EXPO_PUBLIC_API_URL=https://backend-prepod.smaketsolutions.com
 ```
 
 Key environment variable:

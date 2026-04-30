@@ -1,322 +1,359 @@
-import { Feather } from "@expo/vector-icons";
+import { useMemo, useState } from "react";
 import { router } from "expo-router";
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import {
-  employeeAssignedAudit,
-  employeeCompletedAudits,
-} from "@/features/audits/data/employeeAuditData";
+  DashboardPeriod,
+  formatDashboardDate,
+  useEmployeeDashboardData,
+} from "@/features/dashboard/hooks/useDashboardData";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import {
+  ActionButton,
+  ColumnChart,
+  DashboardError,
+  DashboardStatsGrid,
+  EmptyBlock,
+  HorizontalBarChart,
+  LoadingState,
+  PeriodSwitch,
+  ProgressInsightCard,
+  SectionCard,
+} from "@/features/dashboard/components/DashboardVisuals";
 import { adminTheme } from "@/theme/adminTheme";
 
-function StatusBadge({ label }: { label: string }) {
-  return (
-    <View
-      className="self-start rounded-full px-3 py-1"
-      style={{ backgroundColor: adminTheme.employeePrimarySoft }}
-    >
-      <Text
-        className="text-xs font-medium"
-        style={{ color: adminTheme.employeePrimary }}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function AssignedAuditCard({ mobile = false }: { mobile?: boolean }) {
-  return (
-    <View
-      className="rounded-[20px] border bg-white p-4"
-      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-    >
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1">
-          <Text className="text-[20px] font-semibold" style={{ color: adminTheme.slate }}>
-            {employeeAssignedAudit.title}
-          </Text>
-          <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-            {employeeAssignedAudit.location} - {employeeAssignedAudit.assets} assets - Assigned by{" "}
-            {employeeAssignedAudit.assignedBy}
-          </Text>
-        </View>
-        <StatusBadge label={employeeAssignedAudit.status} />
-      </View>
-
-      <View
-        className="mt-4 h-[4px] rounded-full"
-        style={{ backgroundColor: adminTheme.border }}
-      >
-        <View
-          className="h-[4px] rounded-full"
-          style={{
-            width: `${(employeeAssignedAudit.scanned / employeeAssignedAudit.assets) * 100}%`,
-            backgroundColor: adminTheme.employeePrimary,
-          }}
-        />
-      </View>
-
-      <View className="mt-4 flex-row items-center justify-between">
-        <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
-          {employeeAssignedAudit.dueText} - {employeeAssignedAudit.scanned} /{" "}
-          {employeeAssignedAudit.assets}
-        </Text>
-        <Pressable
-          onPress={() => router.push("/audits")}
-          className="rounded-xl px-4 py-2.5"
-          style={{ backgroundColor: adminTheme.employeePrimary }}
-        >
-          <Text className="text-sm font-semibold text-white">
-            {mobile ? "Start Audit" : "Start Audit ->"}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function DesktopEmployeeDashboard() {
-  const { user } = useAuthSession();
-
-  if (!user) {
-    return null;
+function WarehouseList({
+  warehouses,
+}: {
+  warehouses: { id: string; name: string; subtitle: string | null }[];
+}) {
+  if (warehouses.length === 0) {
+    return (
+      <EmptyBlock message="No warehouse access is assigned yet. Once locations are mapped to your account, they will appear here." />
+    );
   }
 
-  const statCards = [
-    { label: "Pending audit", value: "1", color: "#854F0B" },
-    { label: "Completed audits", value: String(employeeCompletedAudits.length), color: "#3B6D11" },
-    { label: "Total assets scanned", value: "51", color: adminTheme.employeePrimary },
-  ] as const;
+  return (
+    <View>
+      {warehouses.map((warehouse, index) => (
+        <View
+          key={warehouse.id}
+          className={`rounded-[18px] border px-4 py-4 ${
+            index < warehouses.length - 1 ? "mb-3" : ""
+          }`}
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
+            {warehouse.name}
+          </Text>
+          <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+            {warehouse.subtitle || "Assigned audit location"}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function RecentAuditList({
+  audits,
+}: {
+  audits: {
+    id: string;
+    title: string;
+    location: string;
+    completedAt: string | null;
+    scannedCount: number;
+    referenceId: string;
+  }[];
+}) {
+  if (audits.length === 0) {
+    return <EmptyBlock message="No submitted audits were found for this period yet." />;
+  }
 
   return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 20 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="mb-5">
-        <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-          My Dashboard
-        </Text>
-        <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-          Welcome back, {user.name}
-        </Text>
-      </View>
-
-      <View
-        className="mb-5 flex-row rounded-[20px] border px-4 py-4"
-        style={{ borderColor: "#D4E6FF", backgroundColor: adminTheme.infoBg }}
-      >
+    <View>
+      {audits.map((audit, index) => (
         <View
-          className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
-          style={{ backgroundColor: "#DDEBFF" }}
+          key={audit.id}
+          className={`rounded-[18px] border px-4 py-4 ${
+            index < audits.length - 1 ? "mb-3" : ""
+          }`}
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
-          <Feather name="clipboard" size={18} color={adminTheme.primary} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
-            1 audit assigned and due today
-          </Text>
-          <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-            {employeeAssignedAudit.title} - Assigned by {employeeAssignedAudit.assignedBy} - Please
-            complete before end of day
-          </Text>
-        </View>
-      </View>
-
-      <View className="mb-5 flex-row gap-3">
-        {statCards.map((card) => (
-          <View
-            key={card.label}
-            className="flex-1 rounded-[18px] border px-4 py-4"
-            style={{ backgroundColor: adminTheme.surfaceAlt, borderColor: adminTheme.border }}
-          >
-            <Text className="text-[28px] font-semibold" style={{ color: card.color }}>
-              {card.value}
-            </Text>
-            <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-              {card.label}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-        Assigned audit
-      </Text>
-      <AssignedAuditCard />
-
-      <Text className="mb-3 mt-5 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-        Completed audits
-      </Text>
-      <View
-        className="overflow-hidden rounded-[20px] border bg-white"
-        style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-      >
-        <View className="border-b px-4 py-3" style={{ borderColor: adminTheme.border }}>
-          <View className="flex-row">
-            <Text className="flex-[2] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Audit name
-            </Text>
-            <Text className="flex-[1.2] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Location
-            </Text>
-            <Text className="flex-[1.6] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Date & time
-            </Text>
-            <Text className="flex-[1] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Scanned
-            </Text>
-            <Text className="flex-[1] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Match rate
-            </Text>
-            <Text className="flex-[1] text-xs font-medium" style={{ color: adminTheme.muted }}>
-              Status
-            </Text>
-          </View>
-        </View>
-
-        {employeeCompletedAudits.map((audit, index) => (
-          <View
-            key={audit.id}
-            className={`px-4 py-3.5 ${index < employeeCompletedAudits.length - 1 ? "border-b" : ""}`}
-            style={
-              index < employeeCompletedAudits.length - 1
-                ? { borderColor: adminTheme.border }
-                : undefined
-            }
-          >
-            <View className="flex-row items-center">
-              <Text className="flex-[2] text-sm font-medium" style={{ color: adminTheme.slate }}>
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
                 {audit.title}
               </Text>
-              <Text className="flex-[1.2] text-sm" style={{ color: adminTheme.slate }}>
+              <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
                 {audit.location}
               </Text>
-              <Text className="flex-[1.6] text-sm" style={{ color: adminTheme.slate }}>
-                {audit.completedAt}
+            </View>
+            <View
+              className="rounded-full px-3 py-1"
+              style={{ backgroundColor: adminTheme.employeePrimarySoft }}
+            >
+              <Text className="text-xs font-medium" style={{ color: adminTheme.employeePrimary }}>
+                Submitted
               </Text>
-              <Text className="flex-[1] text-sm" style={{ color: adminTheme.slate }}>
-                {audit.scannedLabel}
-              </Text>
-              <Text
-                className="flex-[1] text-sm font-medium"
-                style={{ color: adminTheme.successText }}
-              >
-                {audit.matchRate}
-              </Text>
-              <View className="flex-[1]">
-                <StatusBadge label={audit.status} />
-              </View>
             </View>
           </View>
-        ))}
-      </View>
-    </ScrollView>
+
+          <View className="mt-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+            <Text className="text-sm" style={{ color: adminTheme.slate }}>
+              {audit.scannedCount} assets scanned
+            </Text>
+            <Text className="text-sm" style={{ color: adminTheme.muted }}>
+              {formatDashboardDate(audit.completedAt)}
+            </Text>
+          </View>
+
+          <Text className="mt-2 text-xs" style={{ color: adminTheme.muted }}>
+            Reference: {audit.referenceId}
+          </Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
-function MobileEmployeeDashboard() {
+export default function EmployeeDashboardScreen() {
   const { user } = useAuthSession();
+  const { width } = useWindowDimensions();
+  const [period, setPeriod] = useState<DashboardPeriod>("weekly");
+  const { data, isLoading, errorMessage, periodLabel, reload } = useEmployeeDashboardData(period);
+  const isDesktop = width >= 1024;
+  const isCompactMobile = width < 640;
+  const recentAuditBars = useMemo(
+    () =>
+      data.recentAudits.slice(0, 5).map((item) => ({
+        label: item.location,
+        value: item.scannedCount,
+        helper: formatDashboardDate(item.completedAt),
+      })),
+    [data.recentAudits]
+  );
+  const recentAuditColumns = useMemo(
+    () =>
+      data.recentAudits.slice(0, 4).map((item, index) => ({
+        label: `Audit ${index + 1}`,
+        value: item.scannedCount,
+        caption: item.location,
+      })),
+    [data.recentAudits]
+  );
 
   if (!user) {
     return null;
   }
 
+  const stats = [
+    {
+      label: "Assigned locations",
+      value: String(data.assignedLocationCount),
+      helper: "Warehouses currently available from your account access.",
+      tone: "employee" as const,
+    },
+    {
+      label: "Submitted audits",
+      value: String(data.submittedAuditCount),
+      helper: `Your completed audit submissions for ${periodLabel.toLowerCase()}.`,
+      tone: "success" as const,
+    },
+    {
+      label: "Assets scanned",
+      value: String(data.scannedAssetCount),
+      helper: "Unique assets scanned in the selected period.",
+      tone: "warning" as const,
+    },
+    {
+      label: "Audited locations",
+      value: String(data.auditedLocationCount),
+      helper: "Locations where you completed at least one audit.",
+      tone: "employee" as const,
+    },
+  ];
+
+  const coverageProgress =
+    data.assignedLocationCount > 0
+      ? data.auditedLocationCount / data.assignedLocationCount
+      : 0;
+
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ paddingBottom: 24 }}
+      contentContainerStyle={{
+        paddingHorizontal: isDesktop ? 20 : 16,
+        paddingVertical: 20,
+        paddingBottom: isDesktop ? 24 : 90,
+      }}
       showsVerticalScrollIndicator={false}
     >
-      <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
-        <View className="flex-row items-center justify-between">
-          <View>
+      <View
+        className="rounded-[28px] border px-5 py-5"
+        style={{ borderColor: "#D7EBE4", backgroundColor: "#F5FCF8" }}
+      >
+        <View
+          className="flex-row items-start justify-between"
+          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 16 }}
+        >
+          <View className="flex-1">
             <View
               className="self-start rounded-full px-3 py-1"
               style={{ backgroundColor: adminTheme.employeePrimarySoft }}
             >
               <Text className="text-xs font-medium" style={{ color: adminTheme.employeePrimary }}>
-                {user.roleBadge}
+                Employee dashboard
               </Text>
             </View>
-            <Text className="mt-3 text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
-              {user.name}
+            <Text className="mt-4 text-[30px] font-semibold" style={{ color: adminTheme.slate }}>
+              Welcome back, {user.name}
+            </Text>
+            <Text className="mt-2 text-sm leading-6" style={{ color: adminTheme.slateSoft }}>
+              Keep this view focused on what you can act on fast: assigned locations, recent
+              submissions, and how much you scanned over time.
             </Text>
           </View>
+
           <View
-            className="h-12 w-12 items-center justify-center rounded-full"
-            style={{ backgroundColor: user.avatarBg }}
+            className="flex-row flex-wrap"
+            style={{ gap: 10, width: isCompactMobile ? "100%" : undefined }}
           >
-            <Text className="text-base font-semibold" style={{ color: user.avatarText }}>
-              {user.initials}
-            </Text>
+            <ActionButton
+              label="My Reports"
+              icon="bar-chart-2"
+              accentColor={adminTheme.employeePrimary}
+              onPress={() => router.push("/reports")}
+              fullWidth={isCompactMobile}
+            />
+            <ActionButton
+              label="Start Audit"
+              icon="play"
+              filled
+              accentColor={adminTheme.employeePrimary}
+              onPress={() => router.push("/audits")}
+              fullWidth={isCompactMobile}
+            />
           </View>
         </View>
-      </View>
 
-      <View
-        className="mx-4 mt-4 flex-row rounded-[18px] border px-4 py-4"
-        style={{ borderColor: "#D4E6FF", backgroundColor: adminTheme.infoBg }}
-      >
-        <View className="mr-3">
-          <Feather name="clipboard" size={18} color={adminTheme.primary} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
-            1 audit assigned to you
-          </Text>
-          <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-            Due today - Assigned by Alka
-          </Text>
-        </View>
-      </View>
-
-      <View className="px-4 pt-4">
-        <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-          My assigned audits
-        </Text>
-        <AssignedAuditCard mobile />
-      </View>
-
-      <View className="px-4 pt-4">
-        <View className="mb-3 flex-row items-center justify-between">
-          <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Completed audits
-          </Text>
-          <Text className="text-xs" style={{ color: adminTheme.muted }}>
-            {employeeCompletedAudits.length} total
-          </Text>
+        <View
+          className="mt-5 flex-row items-center justify-between"
+          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 12 }}
+        >
+          <View>
+            <Text className="text-sm font-medium" style={{ color: adminTheme.muted }}>
+              Viewing
+            </Text>
+            <Text className="mt-1 text-base font-semibold" style={{ color: adminTheme.slate }}>
+              {periodLabel} audit activity
+            </Text>
+          </View>
+          <PeriodSwitch
+            value={period}
+            onChange={setPeriod}
+            accentColor={adminTheme.employeePrimary}
+          />
         </View>
 
-        {employeeCompletedAudits.map((audit, index) => (
+        <View
+          className="mt-5 rounded-[20px] border px-4 py-4"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+        >
+          <Text className="text-sm font-medium" style={{ color: adminTheme.muted }}>
+            Last submission
+          </Text>
+          <Text className="mt-2 text-lg font-semibold" style={{ color: adminTheme.slate }}>
+            {formatDashboardDate(data.lastSubmittedAt)}
+          </Text>
+        </View>
+      </View>
+
+      {isLoading ? (
+        <LoadingState label={periodLabel} accentColor={adminTheme.employeePrimary} />
+      ) : null}
+      {!isLoading && errorMessage ? (
+        <View className="mt-5">
+          <DashboardError
+            message={errorMessage}
+            onRetry={reload}
+            accentColor={adminTheme.employeePrimary}
+            borderColor="#D7EBE4"
+            backgroundColor="#F5FCF8"
+          />
+        </View>
+      ) : null}
+
+      {!isLoading && !errorMessage ? (
+        <>
+          <DashboardStatsGrid stats={stats} width={width} isDesktop={isDesktop} />
+
           <View
-            key={audit.id}
-            className={`rounded-[18px] border bg-white px-4 py-4 ${
-              index < employeeCompletedAudits.length - 1 ? "mb-3" : ""
-            }`}
-            style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            className="mt-5"
+            style={{
+              flexDirection: isDesktop ? "row" : "column",
+              gap: 16,
+            }}
           >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1">
-                <Text className="text-[18px] font-medium" style={{ color: adminTheme.slate }}>
-                  {audit.title}
-                </Text>
-                <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-                  {audit.completedAt}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={adminTheme.muted} />
+            <View style={{ flex: 1 }}>
+              <ProgressInsightCard
+                title="Location Coverage"
+                subtitle="How much of your assigned access has already been audited in the selected period."
+                valueLabel={`${data.auditedLocationCount}/${data.assignedLocationCount || 0}`}
+                progress={coverageProgress}
+                accentColor={adminTheme.employeePrimary}
+                helper={`${data.auditedLocationCount} audited locations out of ${data.assignedLocationCount} assigned locations.`}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <ColumnChart
+                title="Audit Scan Volume"
+                subtitle="Your latest audit submissions compared by scanned asset count."
+                items={recentAuditColumns}
+                accentColor={adminTheme.employeePrimary}
+                emptyMessage="Audit scan volume will appear here after you submit reports."
+              />
             </View>
           </View>
-        ))}
-      </View>
+
+          <View
+            className="mt-5"
+            style={{
+              flexDirection: isDesktop ? "row" : "column",
+              gap: 16,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <HorizontalBarChart
+                title="Recent Audit Bars"
+                subtitle="A quick comparison of scanned volume across your latest audits."
+                items={recentAuditBars}
+                accentColor={adminTheme.employeePrimary}
+                emptyMessage="Recent audit comparisons will appear here after you submit reports."
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <SectionCard
+                title="Assigned Locations"
+                subtitle="These are the places currently available for you to audit."
+              >
+                <WarehouseList warehouses={data.accessibleWarehouses.slice(0, 6)} />
+              </SectionCard>
+            </View>
+          </View>
+
+          <View className="mt-5">
+            <SectionCard
+              title="Recent Audits"
+              subtitle="Your latest submitted audit reports for the selected period."
+            >
+              <RecentAuditList audits={data.recentAudits.slice(0, 6)} />
+            </SectionCard>
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
-}
-
-export default function EmployeeDashboardScreen() {
-  const { width } = useWindowDimensions();
-
-  return width < 1024 ? <MobileEmployeeDashboard /> : <DesktopEmployeeDashboard />;
 }
