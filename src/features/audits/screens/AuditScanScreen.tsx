@@ -219,6 +219,29 @@ function getSelectedWarehouseTotalAssets(
   return fallbackCount;
 }
 
+function getWarehouseById(warehouses: WarehouseSummary[], warehouseId?: string | null) {
+  return warehouses.find((warehouse) => warehouse.id === warehouseId) ?? null;
+}
+
+function getSelectedWarehouseSummary(
+  warehouses: WarehouseSummary[],
+  selectedWarehouseIds: string[]
+) {
+  const selectedNames = selectedWarehouseIds
+    .map((warehouseId) => getWarehouseById(warehouses, warehouseId)?.name)
+    .filter(Boolean);
+
+  if (selectedNames.length === 0) {
+    return null;
+  }
+
+  if (selectedNames.length === 1) {
+    return selectedNames[0];
+  }
+
+  return `${selectedNames[0]} +${selectedNames.length - 1} more`;
+}
+
 // Returns the empty-state message shown when there are no scan items to display.
 function getEmptyStateDescription(phase: AuditPhase) {
   if (phase === "submitted") {
@@ -562,6 +585,40 @@ function SubmitActionButton({
   );
 }
 
+function ProceedNextWarehouseButton({
+  show,
+  onProceed,
+  mobile = false,
+}: {
+  show: boolean;
+  onProceed: () => void;
+  mobile?: boolean;
+}) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <Pressable
+      onPress={onProceed}
+      className={`mt-3 items-center rounded-[14px] border ${
+        mobile ? "px-5 py-4" : "px-4 py-4"
+      }`}
+      style={{
+        borderColor: adminTheme.primary,
+        backgroundColor: adminTheme.surface,
+      }}
+    >
+      <Text
+        className={`${mobile ? "text-base" : "text-[16px]"} font-semibold`}
+        style={{ color: adminTheme.primary }}
+      >
+        Proceed to next warehouse
+      </Text>
+    </Pressable>
+  );
+}
+
 // Renders the desktop-only progress summary card with scan counts and a submit button.
 function DesktopProgressCard({
   phase,
@@ -572,6 +629,8 @@ function DesktopProgressCard({
   canSubmit,
   totalAssets,
   onSubmitAudit,
+  hasNextWarehouse,
+  onProceedNextWarehouse,
 }: {
   phase: AuditPhase;
   scanned: number;
@@ -581,6 +640,8 @@ function DesktopProgressCard({
   canSubmit: boolean;
   totalAssets: number;
   onSubmitAudit: () => void;
+  hasNextWarehouse: boolean;
+  onProceedNextWarehouse: () => void;
 }) {
   const progress = totalAssets > 0 ? Math.min(scanned / totalAssets, 1) : 0;
 
@@ -653,6 +714,10 @@ function DesktopProgressCard({
           canSubmit={canSubmit}
           onSubmitAudit={onSubmitAudit}
         />
+        <ProceedNextWarehouseButton
+          show={phase === "submitted" && hasNextWarehouse}
+          onProceed={onProceedNextWarehouse}
+        />
       </View>
     </View>
   );
@@ -723,13 +788,15 @@ function MobileAuditScan() {
     connectionStatus,
     manualAssetId,
     setManualAssetId,
-    prepareWarehouseAudit,
+    prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
+    proceedToNextWarehouse,
     resetAudit,
     summary,
     auditWarehouseId,
+    hasNextWarehouse,
     expectedAssetCount,
     isPreparingWarehouse,
   } = useAuditScanState();
@@ -737,8 +804,9 @@ function MobileAuditScan() {
     organization,
     warehouses,
     selectedWarehouse,
-    selectedWarehouseId,
+    selectedWarehouseIds,
     setSelectedWarehouseId,
+    toggleSelectedWarehouseId,
     isLoading,
     error,
     refreshSetup,
@@ -747,11 +815,16 @@ function MobileAuditScan() {
     auditPhase === "scanning" ||
     auditPhase === "submitting" ||
     isPreparingWarehouse;
-  const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
+  const activeWarehouseId = auditWarehouseId;
+  const activeWarehouse = getWarehouseById(warehouses, activeWarehouseId) ?? selectedWarehouse;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
   const totalAssets = hasSelectedWarehouse
-    ? getSelectedWarehouseTotalAssets(selectedWarehouse, expectedAssetCount)
+    ? getSelectedWarehouseTotalAssets(activeWarehouse, expectedAssetCount)
     : auditScanOverview.totalAssets;
+  const selectedWarehouseSummary = getSelectedWarehouseSummary(
+    warehouses,
+    selectedWarehouseIds
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -762,8 +835,11 @@ function MobileAuditScan() {
   );
 
   const handleSelectWarehouse = (warehouseId: string) => {
-    setSelectedWarehouseId(warehouseId);
-    void prepareWarehouseAudit(warehouseId);
+    toggleSelectedWarehouseId(warehouseId);
+  };
+
+  const startSelectedWarehouseSession = () => {
+    void prepareMultiWarehouseAudit(selectedWarehouseIds);
   };
 
   const goBackToWarehouseSelection = () => {
@@ -814,7 +890,7 @@ function MobileAuditScan() {
               style={{ color: adminTheme.slate }}
             >
               {hasSelectedWarehouse
-                ? selectedWarehouse?.name ?? auditScanOverview.title
+                ? activeWarehouse?.name ?? auditScanOverview.title
                 : auditScanOverview.title}
             </Text>
             <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
@@ -832,13 +908,44 @@ function MobileAuditScan() {
             <AuditSetupPanel
               organization={organization}
               warehouses={warehouses}
-              selectedWarehouseId={selectedWarehouseId}
+              selectedWarehouseIds={selectedWarehouseIds}
               onSelectWarehouse={handleSelectWarehouse}
+              onToggleWarehouse={handleSelectWarehouse}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
               selectionLocked={selectionLocked}
             />
+          </View>
+
+          <View className="px-4 pt-4">
+            <Pressable
+              onPress={startSelectedWarehouseSession}
+              disabled={selectedWarehouseIds.length === 0 || isPreparingWarehouse}
+              className="items-center rounded-[18px] px-5 py-4"
+              style={{
+                backgroundColor:
+                  selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                    ? adminTheme.primary
+                    : adminTheme.mutedBg,
+              }}
+            >
+              <Text
+                className="text-base font-semibold"
+                style={{
+                  color:
+                    selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                      ? "#FFFFFF"
+                      : adminTheme.mutedText,
+                }}
+              >
+                {isPreparingWarehouse
+                  ? "Preparing warehouses..."
+                  : selectedWarehouseSummary
+                    ? `Start audit for ${selectedWarehouseSummary}`
+                    : "Select warehouses to start"}
+              </Text>
+            </Pressable>
           </View>
 
           <View className="px-4 pt-4">
@@ -849,7 +956,7 @@ function MobileAuditScan() {
         <>
           <View className="px-4 pt-4">
             <WarehouseSelectionNotice
-              warehouseName={selectedWarehouse?.name}
+              warehouseName={activeWarehouse?.name}
               onBack={goBackToWarehouseSelection}
             />
           </View>
@@ -1016,6 +1123,11 @@ function MobileAuditScan() {
               onSubmitAudit={submitAudit}
               mobile
             />
+            <ProceedNextWarehouseButton
+              show={auditPhase === "submitted" && hasNextWarehouse}
+              onProceed={proceedToNextWarehouse}
+              mobile
+            />
           </View>
 
           <View className="px-4 pt-4">
@@ -1043,13 +1155,15 @@ function DesktopAuditScan({ width }: { width: number }) {
     connectionStatus,
     manualAssetId,
     setManualAssetId,
-    prepareWarehouseAudit,
+    prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
+    proceedToNextWarehouse,
     resetAudit,
     summary,
     auditWarehouseId,
+    hasNextWarehouse,
     expectedAssetCount,
     isPreparingWarehouse,
   } = useAuditScanState();
@@ -1057,8 +1171,9 @@ function DesktopAuditScan({ width }: { width: number }) {
     organization,
     warehouses,
     selectedWarehouse,
-    selectedWarehouseId,
+    selectedWarehouseIds,
     setSelectedWarehouseId,
+    toggleSelectedWarehouseId,
     isLoading,
     error,
     refreshSetup,
@@ -1068,11 +1183,16 @@ function DesktopAuditScan({ width }: { width: number }) {
     auditPhase === "scanning" ||
     auditPhase === "submitting" ||
     isPreparingWarehouse;
-  const activeWarehouseId = selectedWarehouseId ?? auditWarehouseId;
+  const activeWarehouseId = auditWarehouseId;
+  const activeWarehouse = getWarehouseById(warehouses, activeWarehouseId) ?? selectedWarehouse;
   const hasSelectedWarehouse = Boolean(activeWarehouseId);
   const totalAssets = hasSelectedWarehouse
-    ? getSelectedWarehouseTotalAssets(selectedWarehouse, expectedAssetCount)
+    ? getSelectedWarehouseTotalAssets(activeWarehouse, expectedAssetCount)
     : auditScanOverview.totalAssets;
+  const selectedWarehouseSummary = getSelectedWarehouseSummary(
+    warehouses,
+    selectedWarehouseIds
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -1083,8 +1203,11 @@ function DesktopAuditScan({ width }: { width: number }) {
   );
 
   const handleSelectWarehouse = (warehouseId: string) => {
-    setSelectedWarehouseId(warehouseId);
-    void prepareWarehouseAudit(warehouseId);
+    toggleSelectedWarehouseId(warehouseId);
+  };
+
+  const startSelectedWarehouseSession = () => {
+    void prepareMultiWarehouseAudit(selectedWarehouseIds);
   };
 
   const goBackToWarehouseSelection = () => {
@@ -1105,7 +1228,7 @@ function DesktopAuditScan({ width }: { width: number }) {
             style={{ color: adminTheme.slate }}
           >
             {hasSelectedWarehouse
-              ? selectedWarehouse?.name ?? auditScanOverview.title
+              ? activeWarehouse?.name ?? auditScanOverview.title
               : auditScanOverview.title}
           </Text>
           <Text className="mt-1 text-base" style={{ color: adminTheme.slateSoft }}>
@@ -1125,13 +1248,44 @@ function DesktopAuditScan({ width }: { width: number }) {
             <AuditSetupPanel
               organization={organization}
               warehouses={warehouses}
-              selectedWarehouseId={selectedWarehouseId}
+              selectedWarehouseIds={selectedWarehouseIds}
               onSelectWarehouse={handleSelectWarehouse}
+              onToggleWarehouse={handleSelectWarehouse}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
               selectionLocked={selectionLocked}
             />
+          </View>
+
+          <View className="mb-5">
+            <Pressable
+              onPress={startSelectedWarehouseSession}
+              disabled={selectedWarehouseIds.length === 0 || isPreparingWarehouse}
+              className="items-center rounded-[18px] px-5 py-4"
+              style={{
+                backgroundColor:
+                  selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                    ? adminTheme.primary
+                    : adminTheme.mutedBg,
+              }}
+            >
+              <Text
+                className="text-base font-semibold"
+                style={{
+                  color:
+                    selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                      ? "#FFFFFF"
+                      : adminTheme.mutedText,
+                }}
+              >
+                {isPreparingWarehouse
+                  ? "Preparing warehouses..."
+                  : selectedWarehouseSummary
+                    ? `Start audit for ${selectedWarehouseSummary}`
+                    : "Select warehouses to start"}
+              </Text>
+            </Pressable>
           </View>
 
           <WarehouseSelectionNotice />
@@ -1140,7 +1294,7 @@ function DesktopAuditScan({ width }: { width: number }) {
         <>
           <View className="mb-5">
             <WarehouseSelectionNotice
-              warehouseName={selectedWarehouse?.name}
+              warehouseName={activeWarehouse?.name}
               onBack={goBackToWarehouseSelection}
             />
           </View>
@@ -1171,6 +1325,8 @@ function DesktopAuditScan({ width }: { width: number }) {
                 canSubmit={canSubmit}
                 totalAssets={totalAssets}
                 onSubmitAudit={submitAudit}
+                hasNextWarehouse={hasNextWarehouse}
+                onProceedNextWarehouse={proceedToNextWarehouse}
               />
             </View>
           </View>

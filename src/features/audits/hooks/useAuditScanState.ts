@@ -6,9 +6,14 @@ import {
   AuditReportAsset,
   AuditReportTone,
   AuditSummary,
+  WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { setLatestAuditReport } from "@/features/reports/state/latestAuditReportStore";
+import {
+  LatestAuditReport,
+  setLatestAuditReport,
+} from "@/features/reports/state/latestAuditReportStore";
+import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
 import { appLogger } from "@/utils/appLogger";
@@ -17,6 +22,18 @@ import { AuditScanItem } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
 
 type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId" | "UserId">;
+
+type PendingMissingAuditItem = AuditScanItem & {
+  expectedWarehouseId: string;
+  expectedWarehouseName?: string;
+};
+
+type ResolvedMisplacedAuditItem = AuditScanItem & {
+  expectedWarehouseId: string;
+  expectedWarehouseName?: string;
+  foundWarehouseId: string;
+  foundWarehouseName?: string;
+};
 
 // Extracts a tag id from either plain strings or the nested payloads returned by the scanner stream.
 function getTagId(entry: unknown): string | null {
@@ -373,6 +390,92 @@ function pickString(
   return null;
 }
 
+function getWarehouseLocationTagId(location: WarehouseTagLocationItem): string | null {
+  return (
+    getTagKey(location.TagId) ??
+    getTagKey(location.TAG_ID) ??
+    getTagKey(location.TagID) ??
+    null
+  );
+}
+
+function getWarehouseLocationName(location: WarehouseTagLocationItem): string | null {
+  return (
+    pickString(location, ["WareHouseName", "WarehouseName", "warehouseName"]) ??
+    null
+  );
+}
+
+function getWarehouseLocationId(location: WarehouseTagLocationItem): string | null {
+  return (
+    getTagKey(location.WareHouseId) ??
+    getTagKey(location.WarehouseId) ??
+    getTagKey(location.warehouseId) ??
+    null
+  );
+}
+
+function getWarehouseLabel(warehouseId: string, warehouseName?: string | null) {
+  return warehouseName?.trim() || `Warehouse ${warehouseId}`;
+}
+
+async function enrichExtraItemsWithWarehouseOrigin(
+  items: AuditScanItem[],
+  currentWarehouseId: string
+): Promise<AuditScanItem[]> {
+  const extraItems = items.filter((item) => item.tone === "extra");
+
+  if (extraItems.length === 0) {
+    return items;
+  }
+
+  try {
+    const locations = await apiService.getWarehouseIdAccessByTagId(
+      extraItems.map((item) => item.id)
+    );
+    const locationByTag = new Map(
+      locations
+        .map((location) => [getWarehouseLocationTagId(location), location] as const)
+        .filter((entry): entry is [string, WarehouseTagLocationItem] =>
+          Boolean(entry[0])
+        )
+    );
+
+    return items.map((item) => {
+      if (item.tone !== "extra") {
+        return item;
+      }
+
+      const location = locationByTag.get(item.id);
+      if (!location) {
+        return item;
+      }
+
+      const sourceWarehouseId = getWarehouseLocationId(location);
+
+      if (!sourceWarehouseId || sourceWarehouseId === currentWarehouseId) {
+        return item;
+      }
+
+      const sourceLabel = getWarehouseLabel(
+        sourceWarehouseId,
+        getWarehouseLocationName(location)
+      );
+
+      return {
+        ...item,
+        subtitle: `${item.subtitle} - Expected in ${sourceLabel}, found here`,
+      };
+    });
+  } catch (error) {
+    appLogger.warn("AuditScan", "Failed to enrich extra assets with warehouse origin.", {
+      currentWarehouseId,
+      error,
+    });
+    return items;
+  }
+}
+
 // Chooses the most reliable tag id field from a backend report asset and falls back when necessary.
 function getReportAssetTagId(
   asset: AuditReportAsset,
@@ -474,6 +577,48 @@ function formatAuditObservedAt(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function mergeAuditSummaries(reports: LatestAuditReport[]): AuditSummary {
+  return reports.reduce<AuditSummary>(
+    (summary, report) => ({
+      found: summary.found + report.summary.found,
+      missing: summary.missing + report.summary.missing,
+      extra: summary.extra + report.summary.extra,
+      scanned: summary.scanned + report.summary.scanned,
+      expected: (summary.expected ?? 0) + (report.summary.expected ?? 0),
+    }),
+    { found: 0, missing: 0, extra: 0, scanned: 0, expected: 0 }
+  );
+}
+
+function buildCombinedWarehouseReport(
+  reports: LatestAuditReport[],
+  warehouseIds: string[],
+  observedAt: string
+): LatestAuditReport {
+  const locationLabel =
+    warehouseIds.length > 1
+      ? `Warehouses ${warehouseIds.join(", ")}`
+      : reports[0]?.location ?? "Selected warehouse";
+  const referenceIds = reports
+    .map((report) => report.referenceId)
+    .filter((referenceId): referenceId is string => Boolean(referenceId));
+
+  return {
+    title:
+      warehouseIds.length > 1
+        ? "Multi-Warehouse Audit Report"
+        : reports[0]?.title ?? "Audit Report",
+    location: locationLabel,
+    mobileMeta: `${locationLabel} - ${observedAt}`,
+    desktopMeta: `${locationLabel} - ${observedAt}`,
+    status: "Completed",
+    referenceId: referenceIds.length > 0 ? referenceIds.join(", ") : null,
+    observedAt,
+    summary: mergeAuditSummaries(reports),
+    items: reports.flatMap((report) => report.items),
+  };
 }
 
 function buildAuditComparisonReport(
@@ -649,6 +794,14 @@ export function useAuditScanState() {
   const [connectionStatus, setConnectionStatus] =
     useState<MqttConnectionStatus>("idle");
   const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
+  const [auditWarehouseIds, setAuditWarehouseIds] = useState<string[]>([]);
+  const [activeWarehouseIndex, setActiveWarehouseIndex] = useState(0);
+  const [pendingMissingItems, setPendingMissingItems] = useState<
+    PendingMissingAuditItem[]
+  >([]);
+  const [resolvedMisplacedItems, setResolvedMisplacedItems] = useState<
+    ResolvedMisplacedAuditItem[]
+  >([]);
   const [expectedAssetCount, setExpectedAssetCount] = useState(0);
   const [isPreparingWarehouse, setIsPreparingWarehouse] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
@@ -658,6 +811,7 @@ export function useAuditScanState() {
   const auditPhaseRef = useRef<AuditPhase>("idle");
   const scanSessionRef = useRef(0);
   const warehouseLoadRequestRef = useRef(0);
+  const completedWarehouseReportsRef = useRef<LatestAuditReport[]>([]);
 
   // Keeps async callbacks synced with the latest phase without forcing every subscription to re-register.
   useEffect(() => {
@@ -851,11 +1005,22 @@ export function useAuditScanState() {
   }, []);
 
   // Stores the selected warehouse for the audit flow and clears any previous scan session state.
-  const prepareWarehouseAudit = useCallback(async (warehouseId?: string | null) => {
+  const prepareWarehouseAudit = useCallback(async (
+    warehouseId?: string | null,
+    options?: { preserveMultiWarehouseSession?: boolean }
+  ) => {
     warehouseLoadRequestRef.current += 1;
     const requestId = warehouseLoadRequestRef.current;
 
     clearScanSession("idle");
+
+    if (!options?.preserveMultiWarehouseSession) {
+      setAuditWarehouseIds(warehouseId ? [warehouseId] : []);
+      setActiveWarehouseIndex(0);
+      setPendingMissingItems([]);
+      setResolvedMisplacedItems([]);
+      completedWarehouseReportsRef.current = [];
+    }
 
     if (!warehouseId) {
       setAuditWarehouseId(null);
@@ -929,9 +1094,30 @@ export function useAuditScanState() {
     warehouseLoadRequestRef.current += 1;
     clearScanSession("idle");
     setAuditWarehouseId(null);
+    setAuditWarehouseIds([]);
+    setActiveWarehouseIndex(0);
+    setPendingMissingItems([]);
+    setResolvedMisplacedItems([]);
+    completedWarehouseReportsRef.current = [];
     setExpectedAssetCount(0);
     setIsPreparingWarehouse(false);
   }, [clearScanSession]);
+
+  const prepareMultiWarehouseAudit = useCallback(async (warehouseIds: string[]) => {
+    const normalizedWarehouseIds = Array.from(
+      new Set(warehouseIds.map((warehouseId) => warehouseId.trim()).filter(Boolean))
+    );
+
+    setAuditWarehouseIds(normalizedWarehouseIds);
+    setActiveWarehouseIndex(0);
+    setPendingMissingItems([]);
+    setResolvedMisplacedItems([]);
+    completedWarehouseReportsRef.current = [];
+
+    await prepareWarehouseAudit(normalizedWarehouseIds[0] ?? null, {
+      preserveMultiWarehouseSession: true,
+    });
+  }, [prepareWarehouseAudit]);
 
   // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
   // We snapshot the current expectedAssetCount before clearScanSession wipes it to zero, then restore it
@@ -944,6 +1130,7 @@ export function useAuditScanState() {
     const currentExpectedCount = expectedAssetCount;
     clearScanSession("scanning");
     setAuditWarehouseId(warehouseId);
+    setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
 
     if (currentExpectedCount > 0) {
       setExpectedAssetCount(currentExpectedCount);
@@ -982,6 +1169,65 @@ export function useAuditScanState() {
 
     setManualAssetId("");
   }, [auditPhase, manualAssetId, mqttItems]);
+
+  const reconcileReportWithSession = useCallback((
+    normalizedItems: AuditScanItem[],
+    warehouseId: string
+  ) => {
+    const currentWarehouseLabel = getWarehouseLabel(warehouseId);
+    const foundOrExtraItems = normalizedItems.filter((item) => item.tone !== "missing");
+    const foundById = new Map(foundOrExtraItems.map((item) => [item.id, item]));
+    const newlyResolved = pendingMissingItems
+      .filter((missingItem) => foundById.has(missingItem.id))
+      .map((missingItem): ResolvedMisplacedAuditItem => {
+        const scannedItem = foundById.get(missingItem.id);
+        const expectedLabel = getWarehouseLabel(
+          missingItem.expectedWarehouseId,
+          missingItem.expectedWarehouseName
+        );
+
+        return {
+          ...(scannedItem ?? missingItem),
+          tone: "extra",
+          icon: "plus-circle",
+          subtitle: `${missingItem.id} - Expected in ${expectedLabel}, found in ${currentWarehouseLabel}`,
+          expectedWarehouseId: missingItem.expectedWarehouseId,
+          expectedWarehouseName: missingItem.expectedWarehouseName,
+          foundWarehouseId: warehouseId,
+          foundWarehouseName: currentWarehouseLabel,
+        };
+      });
+    const resolvedIds = new Set(newlyResolved.map((item) => item.id));
+    const nextPending = pendingMissingItems.filter(
+      (item) => !resolvedIds.has(item.id)
+    );
+    const currentMissingItems = normalizedItems
+      .filter((item) => item.tone === "missing")
+      .filter((item) => !nextPending.some((pendingItem) => pendingItem.id === item.id))
+      .map((item): PendingMissingAuditItem => ({
+        ...item,
+        subtitle: `${item.subtitle} - Pending search in selected warehouses`,
+        expectedWarehouseId: warehouseId,
+        expectedWarehouseName: currentWarehouseLabel,
+      }));
+
+    setPendingMissingItems([...nextPending, ...currentMissingItems]);
+    setResolvedMisplacedItems((current) => {
+      const existingIds = new Set(current.map((item) => item.id));
+      return [
+        ...current,
+        ...newlyResolved.filter((item) => !existingIds.has(item.id)),
+      ];
+    });
+
+    if (newlyResolved.length === 0) {
+      return normalizedItems;
+    }
+
+    const resolvedById = new Map(newlyResolved.map((item) => [item.id, item]));
+
+    return normalizedItems.map((item) => resolvedById.get(item.id) ?? item);
+  }, [pendingMissingItems]);
 
   // Freezes the current scan set, disconnects MQTT, and submits the final staging payload for the selected warehouse.
   const submitAudit = useCallback(async () => {
@@ -1128,17 +1374,26 @@ export function useAuditScanState() {
         stagingList,
         unmatchedTagIds
       );
+      const currentWarehouseId = String(auditWarehouseId ?? warehouseId);
+      const enrichedItems = await enrichExtraItemsWithWarehouseOrigin(
+        normalizedReport.items,
+        currentWarehouseId
+      );
+      const reconciledItems = reconcileReportWithSession(
+        enrichedItems,
+        currentWarehouseId
+      );
+      const reconciledSummary = {
+        ...normalizedReport.summary,
+        missing: reconciledItems.filter((item) => item.tone === "missing").length,
+        extra: reconciledItems.filter((item) => item.tone === "extra").length,
+        found: reconciledItems.filter((item) => item.tone === "found").length,
+      };
       const observedAt = formatAuditObservedAt(new Date());
       const locationLabel = auditWarehouseId
         ? `Warehouse ${auditWarehouseId}`
         : "Selected warehouse";
-
-      setReportItems(normalizedReport.items);
-      setReportSummary(normalizedReport.summary);
-      setExpectedAssetCount(
-        normalizedReport.summary.expected ?? normalizedReport.warehouseCount
-      );
-      setLatestAuditReport({
+      const currentReport: LatestAuditReport = {
         title: "Audit Report",
         location: locationLabel,
         mobileMeta: `${locationLabel} - ${observedAt}`,
@@ -1146,9 +1401,49 @@ export function useAuditScanState() {
         status: "Completed",
         referenceId,
         observedAt,
-        summary: normalizedReport.summary,
-        items: normalizedReport.items,
-      });
+        summary: reconciledSummary,
+        items: reconciledItems,
+      };
+      const isMultiWarehouseSession = auditWarehouseIds.length > 1;
+      const isFinalWarehouse =
+        activeWarehouseIndex >= auditWarehouseIds.length - 1;
+      let displayReport = currentReport;
+
+      if (isMultiWarehouseSession) {
+        const nextCompletedReports = [...completedWarehouseReportsRef.current];
+        nextCompletedReports[activeWarehouseIndex] = currentReport;
+        completedWarehouseReportsRef.current = nextCompletedReports;
+
+        if (isFinalWarehouse) {
+          displayReport = buildCombinedWarehouseReport(
+            nextCompletedReports.filter(Boolean),
+            auditWarehouseIds,
+            observedAt
+          );
+
+          void saveAuditReportSession({
+            id: `audit-session-${Date.now()}`,
+            userId: user?.employeeId || "",
+            referenceIds: nextCompletedReports
+              .map((report) => report?.referenceId)
+              .filter((referenceId): referenceId is string =>
+                Boolean(referenceId)
+              ),
+            warehouseIds: auditWarehouseIds,
+            observedAt,
+            report: displayReport,
+          });
+        }
+      }
+
+      setReportItems(displayReport.items);
+      setReportSummary(displayReport.summary);
+      setExpectedAssetCount(
+        displayReport.summary.expected ??
+          normalizedReport.summary.expected ??
+          normalizedReport.warehouseCount
+      );
+      setLatestAuditReport(displayReport);
       setAuditPhase("submitted");
     } catch (error) {
       appLogger.error("AuditScan", "Warehouse audit submission flow failed.", {
@@ -1168,16 +1463,45 @@ export function useAuditScanState() {
   }, [
     auditPhase,
     auditWarehouseId,
+    auditWarehouseIds,
+    activeWarehouseIndex,
     frozenItems,
     liveItems,
     submittedMatchedTagIds,
     submittedReferenceId,
     submittedStagingList,
     submittedTagIds,
+    reconcileReportWithSession,
     user?.employeeId,
   ]);
 
   const isScanning = auditPhase === "scanning";
+  const hasNextWarehouse = activeWarehouseIndex < auditWarehouseIds.length - 1;
+  const activeAuditWarehouseId =
+    auditWarehouseIds[activeWarehouseIndex] ?? auditWarehouseId;
+  const proceedToNextWarehouse = useCallback(async () => {
+    if (!hasNextWarehouse || auditPhase === "submitting") {
+      return;
+    }
+
+    const nextIndex = activeWarehouseIndex + 1;
+    const nextWarehouseId = auditWarehouseIds[nextIndex];
+
+    if (!nextWarehouseId) {
+      return;
+    }
+
+    setActiveWarehouseIndex(nextIndex);
+    await prepareWarehouseAudit(nextWarehouseId, {
+      preserveMultiWarehouseSession: true,
+    });
+  }, [
+    activeWarehouseIndex,
+    auditPhase,
+    auditWarehouseIds,
+    hasNextWarehouse,
+    prepareWarehouseAudit,
+  ]);
   const canSubmit =
     (auditPhase === "scanning" && liveItems.length > 0) ||
     (auditPhase === "submitError" && submittedTagIds.length > 0);
@@ -1192,12 +1516,19 @@ export function useAuditScanState() {
     manualAssetId,
     setManualAssetId,
     prepareWarehouseAudit,
+    prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
     submitAudit,
+    proceedToNextWarehouse,
     resetAudit,
     summary,
-    auditWarehouseId,
+    auditWarehouseId: activeAuditWarehouseId,
+    activeWarehouseIndex,
+    auditWarehouseIds,
+    hasNextWarehouse,
+    pendingMissingItems,
+    resolvedMisplacedItems,
     expectedAssetCount,
     isPreparingWarehouse,
   };

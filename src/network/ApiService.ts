@@ -3,6 +3,7 @@ import {
   AuditComparisonResponse,
   AuditSubmitRequest,
   AuditSubmitResponse,
+  WarehouseTagLocationItem,
   WarehouseTagBaselineItem,
 } from "@/features/audits/types/audit";
 import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
@@ -278,6 +279,33 @@ class ApiService {
     >(ENDPOINTS.WAREHOUSE.GET_AUDIT_DATA(referenceId));
 
     return extractResponseData<AuditComparisonResponse>(response.data) ?? {};
+  }
+
+  // Resolves scanned extra tag ids to their current/original warehouse assignment for reconciliation.
+  async getWarehouseIdAccessByTagId(
+    tagIds: (number | string)[]
+  ): Promise<WarehouseTagLocationItem[]> {
+    assertApiBaseUrlConfigured();
+
+    const normalizedTagIds = Array.from(
+      new Set(
+        tagIds
+          .map((tagId) => String(tagId).trim())
+          .filter((tagId) => tagId.length > 0)
+      )
+    );
+
+    if (normalizedTagIds.length === 0) {
+      return [];
+    }
+
+    const response = await this.api.get<
+      | ApiCollectionEnvelope<WarehouseTagLocationItem>
+      | ApiEnvelope<WarehouseTagLocationItem[]>
+      | WarehouseTagLocationItem[]
+    >(ENDPOINTS.WAREHOUSE.GET_ACCESS_BY_TAG_ID(normalizedTagIds.join(",")));
+
+    return extractResponseCollection<WarehouseTagLocationItem>(response.data);
   }
 
   // Loads submitted employee report rows, optionally constrained to a date range.

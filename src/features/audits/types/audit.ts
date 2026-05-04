@@ -85,3 +85,16 @@ export type AuditSubmitResponse = {
   ObservedAt?: string;
 };
 
+export type WarehouseTagLocationItem = {
+  TagId?: number | string;
+  TAG_ID?: string;
+  TagID?: string;
+  ProductId?: number | string;
+  ProductName?: string;
+  WareHouseId?: number | string;
+  WarehouseId?: number | string;
+  warehouseId?: number | string;
+  WareHouseName?: string;
+  WarehouseName?: string;
+  warehouseName?: string;
+} & Record<string, unknown>;

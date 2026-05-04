@@ -70,7 +70,9 @@ export default function AuditSetupPanel({
   organization,
   warehouses,
   selectedWarehouseId,
+  selectedWarehouseIds,
   onSelectWarehouse,
+  onToggleWarehouse,
   isLoading,
   error,
   onRetry,
@@ -79,14 +81,19 @@ export default function AuditSetupPanel({
 }: {
   organization: OrganizationDetails | null;
   warehouses: WarehouseSummary[];
-  selectedWarehouseId: string | null;
-  onSelectWarehouse: (warehouseId: string) => void;
+  selectedWarehouseId?: string | null;
+  selectedWarehouseIds?: string[];
+  onSelectWarehouse?: (warehouseId: string) => void;
+  onToggleWarehouse?: (warehouseId: string) => void;
   isLoading: boolean;
   error: string | null;
   onRetry: () => void;
   primaryColor?: string;
   selectionLocked?: boolean;
 }) {
+  const selectedIds = selectedWarehouseIds ?? (selectedWarehouseId ? [selectedWarehouseId] : []);
+  const isMultiSelect = Boolean(onToggleWarehouse || selectedWarehouseIds);
+
   return (
     <View
       className="rounded-[20px] border p-5"
@@ -96,8 +103,8 @@ export default function AuditSetupPanel({
         Audit Setup
       </Text>
       <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
-        Load the organization context and select the warehouse for this audit. The
-        warehouse inventory API will plug into this same selection in the next step.
+        Load the organization context and select one or more warehouses for this audit.
+        Each selected warehouse can be scanned in the same reconciliation session.
       </Text>
 
       {isLoading ? (
@@ -136,19 +143,25 @@ export default function AuditSetupPanel({
           Warehouses
         </Text>
         <Text className="text-xs" style={{ color: adminTheme.muted }}>
-          {warehouses.length} loaded
+          {selectedIds.length > 0
+            ? `${selectedIds.length} selected`
+            : `${warehouses.length} loaded`}
         </Text>
       </View>
 
       {warehouses.length > 0 ? (
         <View className="mt-3 flex-row flex-wrap gap-3">
           {warehouses.map((warehouse) => {
-            const isSelected = warehouse.id === selectedWarehouseId;
+            const isSelected = selectedIds.includes(warehouse.id);
 
             return (
               <Pressable
                 key={warehouse.id}
-                onPress={() => onSelectWarehouse(warehouse.id)}
+                onPress={() =>
+                  isMultiSelect
+                    ? onToggleWarehouse?.(warehouse.id)
+                    : onSelectWarehouse?.(warehouse.id)
+                }
                 disabled={selectionLocked}
                 className="min-w-[180px] flex-1 rounded-[16px] border px-4 py-4"
                 style={{
@@ -198,10 +211,10 @@ export default function AuditSetupPanel({
       >
         <Text className="text-sm leading-5" style={{ color: adminTheme.warningText }}>
           {selectionLocked
-            ? "Warehouse is locked for the current audit session. Finish or restart the audit before changing it."
-            : selectedWarehouseId
-              ? "Warehouse selection is stored locally and ready for the upcoming inventory-by-warehouse API step."
-              : "Select a warehouse first, then the audit workspace will unlock and scanning can start."}
+            ? "Warehouse selection is locked for the current audit session. Finish or restart the audit before changing it."
+            : selectedIds.length > 0
+              ? "Selected warehouses will be scanned one by one in the same reconciliation session."
+              : "Select at least one warehouse first, then the audit workspace will unlock and scanning can start."}
         </Text>
       </View>
     </View>

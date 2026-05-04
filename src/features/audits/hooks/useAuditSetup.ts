@@ -14,7 +14,7 @@ export function useAuditSetup() {
     refreshWarehouseAccess,
   } = useAuthSession();
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +32,7 @@ export function useAuditSetup() {
 
       if (!resolvedOrganization) {
         setWarehouses([]);
-        setSelectedWarehouseId(null);
+        setSelectedWarehouseIds([]);
         setError("Unable to load organization details for this account.");
         return;
       }
@@ -43,10 +43,10 @@ export function useAuditSetup() {
           : await refreshWarehouseAccess();
 
       setWarehouses(resolvedWarehouseAccess);
-      setSelectedWarehouseId((current) =>
-        current && resolvedWarehouseAccess.some((warehouse) => warehouse.id === current)
-          ? current
-          : null
+      setSelectedWarehouseIds((current) =>
+        current.filter((warehouseId) =>
+          resolvedWarehouseAccess.some((warehouse) => warehouse.id === warehouseId)
+        )
       );
 
       appLogger.info("AuditSetup", "Loaded organization and warehouse setup.", {
@@ -60,7 +60,7 @@ export function useAuditSetup() {
       );
 
       setWarehouses([]);
-      setSelectedWarehouseId(null);
+      setSelectedWarehouseIds([]);
       setError(message);
 
       appLogger.warn("AuditSetup", "Failed to load setup details.", {
@@ -79,16 +79,44 @@ export function useAuditSetup() {
   // Exposes the full selected warehouse object so screens do not have to re-lookup it by id.
   const selectedWarehouse = useMemo(
     () =>
-      warehouses.find((warehouse) => warehouse.id === selectedWarehouseId) ?? null,
-    [selectedWarehouseId, warehouses]
+      warehouses.find((warehouse) => warehouse.id === selectedWarehouseIds[0]) ?? null,
+    [selectedWarehouseIds, warehouses]
   );
+
+  const selectedWarehouses = useMemo(
+    () =>
+      selectedWarehouseIds
+        .map((warehouseId) =>
+          warehouses.find((warehouse) => warehouse.id === warehouseId)
+        )
+        .filter((warehouse): warehouse is WarehouseSummary => Boolean(warehouse)),
+    [selectedWarehouseIds, warehouses]
+  );
+
+  const selectedWarehouseId = selectedWarehouseIds[0] ?? null;
+
+  const setSelectedWarehouseId = useCallback((warehouseId: string | null) => {
+    setSelectedWarehouseIds(warehouseId ? [warehouseId] : []);
+  }, []);
+
+  const toggleSelectedWarehouseId = useCallback((warehouseId: string) => {
+    setSelectedWarehouseIds((current) =>
+      current.includes(warehouseId)
+        ? current.filter((id) => id !== warehouseId)
+        : [...current, warehouseId]
+    );
+  }, []);
 
   return {
     organization,
     warehouses,
     selectedWarehouseId,
+    selectedWarehouseIds,
     selectedWarehouse,
+    selectedWarehouses,
     setSelectedWarehouseId,
+    setSelectedWarehouseIds,
+    toggleSelectedWarehouseId,
     isLoading,
     error,
     refreshSetup: loadAuditSetup,

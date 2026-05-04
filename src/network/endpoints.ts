@@ -30,6 +30,8 @@ export const ENDPOINTS = {
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
     GET_AUDIT_DATA: (referenceId: string) =>
       `/api/warehouse/GetWarehouseAuditData?referanceId=${encodeURIComponent(referenceId)}`,
+    GET_ACCESS_BY_TAG_ID: (tagIds: string) =>
+      `/api/warehouse/GetWarehouseIdAccessByTagId?TagId=${encodeURIComponent(tagIds)}`,
     GET_REPORT_BY_EMPLOYEE: (
       userId: string,
       fromDate?: string,
