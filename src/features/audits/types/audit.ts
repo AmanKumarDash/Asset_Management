@@ -18,6 +18,7 @@ export type AuditSummary = {
 };
 
 export type AuditSubmitRequest = {
+  SessionId: string;
   StagingList: AssetWarehouseStagingItem[];
 };
 
@@ -25,7 +26,7 @@ export type AssetWarehouseStagingItem = {
   TagId: number | string;
   ProductId: number;
   WareHouseId: number;
-  UserId: string;
+  UserId?: string;
 };
 
 export type WarehouseTagBaselineItem = {

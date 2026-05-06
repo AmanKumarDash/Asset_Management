@@ -5,6 +5,7 @@ const STORAGE_KEY = "audit-report-sessions";
 
 export type PersistedAuditReportSession = {
   id: string;
+  sessionId?: string | null;
   userId: string;
   referenceIds: string[];
   warehouseIds: string[];

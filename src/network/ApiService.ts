@@ -89,6 +89,8 @@ export type EmployeeReportApiItem = {
   ProductId: number | string;
   ProductCode?: string | null;
   TagId?: string | number | null;
+  SessionId?: string | null;
+  sessionId?: string | null;
   RefrenceId?: string | null;
   ReferenceId?: string | null;
   ScanningDate?: string | null;
@@ -249,11 +251,13 @@ class ApiService {
 
   // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.
   async submitScannedAuditTags(
+    sessionId: string,
     stagingList: AssetWarehouseStagingItem[]
   ): Promise<string> {
     assertApiBaseUrlConfigured();
 
     const payload: AuditSubmitRequest = {
+      SessionId: sessionId,
       StagingList: stagingList,
     };
 
@@ -314,6 +318,7 @@ class ApiService {
     options?: {
       fromDate?: string;
       toDate?: string;
+      sessionId?: string;
     }
   ): Promise<EmployeeReportApiItem[]> {
     assertApiBaseUrlConfigured();
@@ -324,7 +329,8 @@ class ApiService {
       ENDPOINTS.WAREHOUSE.GET_REPORT_BY_EMPLOYEE(
         userId,
         options?.fromDate,
-        options?.toDate
+        options?.toDate,
+        options?.sessionId
       )
     );
 

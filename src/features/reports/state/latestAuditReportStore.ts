@@ -11,6 +11,7 @@ export type LatestAuditReport = {
   mobileMeta: string;
   desktopMeta: string;
   status: string;
+  sessionId?: string | null;
   referenceId: string | null;
   observedAt: string | null;
   summary: AuditSummary;

@@ -2,6 +2,10 @@ import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
 import { AuditScanItem } from "@/features/audits/data/auditScanData";
 import { LatestAuditReport } from "@/features/reports/state/latestAuditReportStore";
+import {
+  PersistedAuditReportSession,
+  getAuditReportSessionsForUser,
+} from "@/features/reports/state/auditReportSessionStore";
 import { EmployeeReportApiItem, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
@@ -172,6 +176,14 @@ function resolveReferenceId(item: EmployeeReportApiItem, index: number) {
 
   const scannedAt = item.ScanningDate ?? `row-${index}`;
   return `warehouse-${String(item.WareHouseId)}-${scannedAt}`;
+}
+
+function resolveSessionId(item: EmployeeReportApiItem) {
+  const directSessionId =
+    (typeof item.SessionId === "string" && item.SessionId.trim()) ||
+    (typeof item.sessionId === "string" && item.sessionId.trim());
+
+  return directSessionId || null;
 }
 
 function pickString(
@@ -560,22 +572,80 @@ function buildDetailedEmployeeReport(
   };
 }
 
-function buildEmployeeReports(items: EmployeeReportApiItem[]): EmployeeReportSummary[] {
+function splitReferenceIds(value: string | null | undefined) {
+  return Array.from(
+    new Set(
+      value
+        ?.split(",")
+        .map((referenceId) => referenceId.trim())
+        .filter(Boolean) ?? []
+    )
+  );
+}
+
+function buildCombinedDetailedReport(
+  baseReport: LatestAuditReport,
+  reports: LatestAuditReport[]
+): LatestAuditReport {
+  if (reports.length === 0) {
+    return baseReport;
+  }
+
+  const summary = reports.reduce<AuditSummary>(
+    (total, report) => ({
+      found: total.found + report.summary.found,
+      missing: total.missing + report.summary.missing,
+      extra: total.extra + report.summary.extra,
+      scanned: total.scanned + report.summary.scanned,
+      expected: (total.expected ?? 0) + (report.summary.expected ?? 0),
+    }),
+    { found: 0, missing: 0, extra: 0, scanned: 0, expected: 0 }
+  );
+
+  return {
+    ...baseReport,
+    summary,
+    items: reports.flatMap((report) => report.items),
+  };
+}
+
+function buildEmployeeReports(
+  items: EmployeeReportApiItem[],
+  savedSessions: PersistedAuditReportSession[] = [],
+  forcedSessionId?: string | null
+): EmployeeReportSummary[] {
   if (items.length === 0) {
     return [];
   }
 
   const groupedReports = new Map<string, EmployeeReportApiItem[]>();
+  const sessionByReferenceId = new Map<string, PersistedAuditReportSession>();
+
+  savedSessions.forEach((session) => {
+    session.referenceIds.forEach((referenceId) => {
+      const normalizedReferenceId = referenceId.trim();
+
+      if (normalizedReferenceId && session.sessionId?.trim()) {
+        sessionByReferenceId.set(normalizedReferenceId, session);
+      }
+    });
+  });
 
   items.forEach((item, index) => {
     const referenceId = resolveReferenceId(item, index);
-    const existingItems = groupedReports.get(referenceId) ?? [];
+    const savedSession = sessionByReferenceId.get(referenceId);
+    const groupId =
+      forcedSessionId?.trim() ||
+      resolveSessionId(item) ||
+      savedSession?.sessionId?.trim() ||
+      referenceId;
+    const existingItems = groupedReports.get(groupId) ?? [];
     existingItems.push(item);
-    groupedReports.set(referenceId, existingItems);
+    groupedReports.set(groupId, existingItems);
   });
 
   return Array.from(groupedReports.entries())
-    .map(([referenceId, reportItems]) => {
+    .map(([groupId, reportItems]) => {
       const sortedItems = [...reportItems].sort((left, right) => {
         const leftTime = new Date(left.ScanningDate ?? "").getTime() || 0;
         const rightTime = new Date(right.ScanningDate ?? "").getTime() || 0;
@@ -583,6 +653,20 @@ function buildEmployeeReports(items: EmployeeReportApiItem[]): EmployeeReportSum
       });
 
       const latestItem = sortedItems[0];
+      const referenceIds = Array.from(
+        new Set(sortedItems.map((item, index) => resolveReferenceId(item, index)))
+      );
+      const savedSession = referenceIds
+        .map((referenceId) => sessionByReferenceId.get(referenceId))
+        .find((session): session is PersistedAuditReportSession =>
+          Boolean(session?.sessionId?.trim())
+        );
+      const sessionId =
+        forcedSessionId?.trim() ||
+        (latestItem ? resolveSessionId(latestItem) : null) ||
+        savedSession?.sessionId?.trim() ||
+        null;
+      const referenceId = referenceIds.length > 0 ? referenceIds.join(", ") : groupId;
       const observedAt = latestItem?.ScanningDate ?? null;
       const warehouseIds = Array.from(
         new Set(sortedItems.map((item) => String(item.WareHouseId)).filter(Boolean))
@@ -602,6 +686,7 @@ function buildEmployeeReports(items: EmployeeReportApiItem[]): EmployeeReportSum
         mobileMeta: observedAt ? `${location} - ${formatCompactDate(observedAt)}` : location,
         desktopMeta: observedAt ? `${location} - ${formatCompactDate(observedAt)}` : location,
         status: "Submitted",
+        sessionId,
         referenceId,
         observedAt,
         summary: {
@@ -1201,14 +1286,17 @@ export default function EmployeeReportsScreen({
       }
 
       try {
-        const response = await apiService.getReportByEmployee(resolvedSubjectUserId, {
-          fromDate: shouldShowDateRangeFilter
-            ? formatDateForApi(appliedStartDate)
-            : undefined,
-          toDate: shouldShowDateRangeFilter
-            ? formatDateForApi(appliedEndDate)
-            : undefined,
-        });
+        const [response, savedSessions] = await Promise.all([
+          apiService.getReportByEmployee(resolvedSubjectUserId, {
+            fromDate: shouldShowDateRangeFilter
+              ? formatDateForApi(appliedStartDate)
+              : undefined,
+            toDate: shouldShowDateRangeFilter
+              ? formatDateForApi(appliedEndDate)
+              : undefined,
+          }),
+          getAuditReportSessionsForUser(resolvedSubjectUserId),
+        ]);
 
         if (!isMounted) {
           return;
@@ -1218,7 +1306,7 @@ export default function EmployeeReportsScreen({
           ? filterReportsByDateRange(response, appliedStartDate, appliedEndDate)
           : response;
 
-        setReports(buildEmployeeReports(filteredResponse));
+        setReports(buildEmployeeReports(filteredResponse, savedSessions));
       } catch (error) {
         if (!isMounted) {
           return;
@@ -1257,7 +1345,42 @@ export default function EmployeeReportsScreen({
   };
 
   const handleSelectReport = async (report: LatestAuditReport) => {
+    const sessionId = report.sessionId?.trim();
     const referenceId = report.referenceId?.trim();
+    const referenceIds = splitReferenceIds(referenceId);
+
+    if (referenceIds.length > 1) {
+      try {
+        setLoadingReferenceId(sessionId || referenceId || null);
+        const detailedReports = await Promise.all(
+          referenceIds.map(async (currentReferenceId) => {
+            const comparisonResponse = await apiService.getWarehouseAuditData(
+              currentReferenceId
+            );
+
+            return buildDetailedEmployeeReport(
+              {
+                ...report,
+                referenceId: currentReferenceId,
+              },
+              comparisonResponse as Record<string, unknown>
+            );
+          })
+        );
+        const detailedReport = buildCombinedDetailedReport(report, detailedReports);
+
+        onSelectReport(detailedReport);
+      } catch (error) {
+        console.warn("Failed to load multi-reference report details:", error);
+        Alert.alert(
+          "Unable to open report",
+          "We couldn't load the full report details right now. Please try again."
+        );
+      } finally {
+        setLoadingReferenceId(null);
+      }
+      return;
+    }
 
     if (!referenceId) {
       onSelectReport(report);

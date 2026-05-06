@@ -35,7 +35,8 @@ export const ENDPOINTS = {
     GET_REPORT_BY_EMPLOYEE: (
       userId: string,
       fromDate?: string,
-      toDate?: string
+      toDate?: string,
+      sessionId?: string
     ) => {
       const params = [`userid=${encodeURIComponent(userId)}`];
 
@@ -45,6 +46,10 @@ export const ENDPOINTS = {
 
       if (toDate) {
         params.push(`ToDate=${encodeURIComponent(toDate)}`);
+      }
+
+      if (sessionId) {
+        params.push(`SessionId=${encodeURIComponent(sessionId)}`);
       }
 
       return `/api/warehouse/GetReportByEmployee?${params.join("&")}`;
