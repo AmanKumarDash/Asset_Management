@@ -194,10 +194,13 @@ export default function EmployeeDashboardScreen() {
         style={{ borderColor: "#D7EBE4", backgroundColor: "#F5FCF8" }}
       >
         <View
-          className="flex-row items-start justify-between"
-          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 16 }}
+          className="items-start justify-between"
+          style={{
+            flexDirection: isDesktop ? "row" : "column",
+            gap: 16,
+          }}
         >
-          <View className="flex-1">
+          <View style={{ flex: isDesktop ? 1 : undefined, width: isDesktop ? undefined : "100%" }}>
             <View
               className="self-start rounded-full px-3 py-1"
               style={{ backgroundColor: adminTheme.employeePrimarySoft }}
@@ -238,8 +241,11 @@ export default function EmployeeDashboardScreen() {
         </View>
 
         <View
-          className="mt-5 flex-row items-center justify-between"
-          style={{ flexWrap: isDesktop ? "nowrap" : "wrap", rowGap: 12 }}
+          className="mt-5 items-start justify-between"
+          style={{
+            flexDirection: isDesktop ? "row" : "column",
+            gap: 12,
+          }}
         >
           <View>
             <Text className="text-sm font-medium" style={{ color: adminTheme.muted }}>

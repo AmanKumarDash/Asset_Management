@@ -11,6 +11,7 @@ import {
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   LatestAuditReport,
+  LatestAuditReportWarehouseSection,
   setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
@@ -616,6 +617,16 @@ function buildCombinedWarehouseReport(
   const referenceIds = reports
     .map((report) => report.referenceId)
     .filter((referenceId): referenceId is string => Boolean(referenceId));
+  const warehouseSections: LatestAuditReportWarehouseSection[] = reports.map(
+    (report, index) => ({
+      warehouseId: warehouseIds[index] ?? null,
+      warehouseName: report.location,
+      referenceId: report.referenceId,
+      observedAt: report.observedAt,
+      summary: report.summary,
+      items: report.items,
+    })
+  );
 
   return {
     title:
@@ -631,6 +642,7 @@ function buildCombinedWarehouseReport(
     observedAt,
     summary: mergeAuditSummaries(reports),
     items: reports.flatMap((report) => report.items),
+    warehouseSections,
   };
 }
 

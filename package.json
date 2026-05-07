@@ -9,8 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "build:apk": "eas build -p android --profile preview",
-    "build:aab": "eas build -p android --profile production"
+    "build:apk": "npx eas-cli build -p android --profile preview",
+    "build:aab": "npx eas-cli build -p android --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -19,12 +19,12 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "axios": "^1.14.0",
-    "expo": "~54.0.33",
+    "expo": "~54.0.34",
     "expo-constants": "~18.0.13",
-    "expo-file-system": "~19.0.21",
+    "expo-file-system": "~19.0.22",
     "expo-font": "~14.0.11",
     "expo-linear-gradient": "~15.0.8",
-    "expo-linking": "~8.0.11",
+    "expo-linking": "~8.0.12",
     "expo-print": "~15.0.8",
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",

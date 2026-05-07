@@ -2,6 +2,7 @@ import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanDa
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
   LatestAuditReport,
+  LatestAuditReportWarehouseSection,
   setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { UserDetails, apiService } from "@/network/ApiService";
@@ -166,6 +167,77 @@ function filterAuditItems(
 
     return matchesStatus && matchesSearch;
   });
+}
+
+function getReportSections(
+  report: LatestAuditReport
+): LatestAuditReportWarehouseSection[] {
+  if (report.warehouseSections?.length) {
+    return report.warehouseSections;
+  }
+
+  return [
+    {
+      warehouseId: null,
+      warehouseName: report.location,
+      referenceId: report.referenceId,
+      observedAt: report.observedAt,
+      summary: report.summary,
+      items: report.items,
+    },
+  ];
+}
+
+function filterReportSections(
+  report: LatestAuditReport,
+  searchTerm: string,
+  statusFilter: StatusFilter
+) {
+  return getReportSections(report)
+    .map((section) => ({
+      ...section,
+      items: filterAuditItems(section.items, searchTerm, statusFilter),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
+function WarehouseSectionHeader({
+  section,
+  mobile = false,
+}: {
+  section: LatestAuditReportWarehouseSection;
+  mobile?: boolean;
+}) {
+  const expected =
+    section.summary.expected ?? section.summary.found + section.summary.missing;
+
+  return (
+    <View
+      className={`${mobile ? "mb-3" : "mb-4"} rounded-[14px] border px-4 py-3`}
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+    >
+      <View className={`${mobile ? "" : "flex-row items-start justify-between"}`}>
+        <View className="flex-1">
+          <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
+            {section.warehouseName}
+          </Text>
+          {section.referenceId ? (
+            <Text className="mt-1 text-xs" style={{ color: adminTheme.slateSoft }}>
+              Reference: {section.referenceId}
+            </Text>
+          ) : null}
+        </View>
+
+        <Text
+          className={`${mobile ? "mt-2" : ""} text-xs font-medium`}
+          style={{ color: adminTheme.slateSoft }}
+        >
+          Found {section.summary.found} / Missing {section.summary.missing} / Extra{" "}
+          {section.summary.extra} / Expected {expected}
+        </Text>
+      </View>
+    </View>
+  );
 }
 // Constructs display name from user object
 function getUserDisplayName(user: UserDetails) {
@@ -713,6 +785,10 @@ function DesktopReports({
     () => filterAuditItems(report.items, searchTerm, statusFilter),
     [report.items, searchTerm, statusFilter]
   );
+  const filteredSections = useMemo(
+    () => filterReportSections(report, searchTerm, statusFilter),
+    [report, searchTerm, statusFilter]
+  );
   const [startDate, setStartDate] = useState<Date | null>(null);
 const [endDate, setEndDate] = useState<Date | null>(null);
 const [openStart, setOpenStart] = useState(false);
@@ -739,6 +815,7 @@ async function handleFetchReportByDate() {
     const newReport: LatestAuditReport = {
       ...report,
       items,
+      warehouseSections: undefined,
       referenceId: rawData[0]?.ReferenceId ?? null,
       observedAt: rawData[0]?.ScanningDate ?? null,
       summary,
@@ -905,22 +982,32 @@ async function handleFetchReportByDate() {
             totalCount={report.items.length}
           />
 
-          {filteredItems.length > 0 ? (
-            <View
-              className="overflow-hidden rounded-[20px] border bg-white"
-              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-            >
-              {filteredItems.map((item, index) => (
+          {filteredSections.length > 0 ? (
+            <View>
+              {filteredSections.map((section, sectionIndex) => (
                 <View
-                  key={`${item.id}-${index}`}
-                  className={`${index < filteredItems.length - 1 ? "border-b" : ""} px-4 py-3`}
-                  style={
-                    index < filteredItems.length - 1
-                      ? { borderColor: adminTheme.border }
-                      : undefined
-                  }
+                  key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`}
+                  className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}
                 >
-                  <ReportResultItem item={item} />
+                  <WarehouseSectionHeader section={section} />
+                  <View
+                    className="overflow-hidden rounded-[20px] border bg-white"
+                    style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+                  >
+                    {section.items.map((item, index) => (
+                      <View
+                        key={`${item.id}-${index}`}
+                        className={`${index < section.items.length - 1 ? "border-b" : ""} px-4 py-3`}
+                        style={
+                          index < section.items.length - 1
+                            ? { borderColor: adminTheme.border }
+                            : undefined
+                        }
+                      >
+                        <ReportResultItem item={item} />
+                      </View>
+                    ))}
+                  </View>
                 </View>
               ))}
             </View>
@@ -945,6 +1032,10 @@ function MobileReports({
   const filteredItems = useMemo(
     () => filterAuditItems(report.items, searchTerm, statusFilter),
     [report.items, searchTerm, statusFilter]
+  );
+  const filteredSections = useMemo(
+    () => filterReportSections(report, searchTerm, statusFilter),
+    [report, searchTerm, statusFilter]
   );
   const [startDate, setStartDate] = useState<Date | null>(null);
 const [endDate, setEndDate] = useState<Date | null>(null);
@@ -971,6 +1062,7 @@ async function handleFetchReportByDate() {
     const newReport: LatestAuditReport = {
       ...report,
       items,
+      warehouseSections: undefined,
       referenceId: rawData[0]?.ReferenceId ?? null,
       observedAt: rawData[0]?.ScanningDate ?? null,
       summary,
@@ -1122,10 +1214,18 @@ async function handleFetchReportByDate() {
           totalCount={report.items.length}
         />
 
-        {filteredItems.length > 0 ? (
-          filteredItems.map((item, index) => (
-            <View key={`${item.id}-${index}`} className={index < filteredItems.length - 1 ? "mb-3" : ""}>
-              <ReportResultItem item={item} mobile />
+        {filteredSections.length > 0 ? (
+          filteredSections.map((section, sectionIndex) => (
+            <View
+              key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`}
+              className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}
+            >
+              <WarehouseSectionHeader section={section} mobile />
+              {section.items.map((item, index) => (
+                <View key={`${item.id}-${index}`} className={index < section.items.length - 1 ? "mb-3" : ""}>
+                  <ReportResultItem item={item} mobile />
+                </View>
+              ))}
             </View>
           ))
         ) : (

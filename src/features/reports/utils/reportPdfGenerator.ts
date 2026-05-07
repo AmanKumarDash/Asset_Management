@@ -1,4 +1,7 @@
-import { LatestAuditReport } from "@/features/reports/state/latestAuditReportStore";
+import {
+  LatestAuditReport,
+  LatestAuditReportWarehouseSection,
+} from "@/features/reports/state/latestAuditReportStore";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
 import { Platform } from "react-native";
@@ -42,8 +45,27 @@ function getStatusText(tone: string) {
   }
 }
 
-function generateTableRows(report: LatestAuditReport) {
-  return report.items
+function getReportSections(
+  report: LatestAuditReport
+): LatestAuditReportWarehouseSection[] {
+  if (report.warehouseSections?.length) {
+    return report.warehouseSections;
+  }
+
+  return [
+    {
+      warehouseId: null,
+      warehouseName: report.location,
+      referenceId: report.referenceId,
+      observedAt: report.observedAt,
+      summary: report.summary,
+      items: report.items,
+    },
+  ];
+}
+
+function generateTableRows(items: LatestAuditReportWarehouseSection["items"]) {
+  return items
     .filter((item) => item.tone !== "extra")
     .map((item, index) => {
       const statusText = getStatusText(item.tone);
@@ -70,8 +92,8 @@ function generateTableRows(report: LatestAuditReport) {
     .join("");
 }
 
-function generateExtraItems(report: LatestAuditReport) {
-  const extras = report.items.filter((item) => item.tone === "extra");
+function generateExtraItems(items: LatestAuditReportWarehouseSection["items"]) {
+  const extras = items.filter((item) => item.tone === "extra");
 
   if (extras.length === 0) {
     return `
@@ -99,6 +121,68 @@ function generateExtraItems(report: LatestAuditReport) {
     .join("");
 }
 
+function generateWarehouseSections(report: LatestAuditReport) {
+  return getReportSections(report)
+    .map((section) => {
+      const expected =
+        section.summary.expected ?? section.summary.found + section.summary.missing;
+
+      return `
+        <section class="warehouse-section">
+          <div class="warehouse-heading">
+            <div>
+              <h2>${section.warehouseName}</h2>
+              ${
+                section.referenceId
+                  ? `<p>Reference: ${section.referenceId}</p>`
+                  : ""
+              }
+            </div>
+            <div class="warehouse-counts">
+              Found ${section.summary.found} &nbsp; Missing ${section.summary.missing} &nbsp; Extra ${section.summary.extra} &nbsp; Expected ${expected}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 8%;">#</th>
+                <th style="width: 15%;">Asset ID</th>
+                <th style="width: 20%;">Item Name</th>
+                <th style="width: 12%;">Category</th>
+                <th style="width: 12%;">Status</th>
+                <th style="width: 13%;">Scan Time</th>
+                <th style="width: 20%;">Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${generateTableRows(section.items)}
+            </tbody>
+          </table>
+
+          <div class="extra-panel">
+            <h3>Extra Items Found in ${section.warehouseName}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset ID</th>
+                  <th>Item Name</th>
+                  <th>Category</th>
+                  <th>Found At</th>
+                  <th>Scan Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${generateExtraItems(section.items)}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+}
+
 function buildPdfHtml(report: LatestAuditReport, auditedBy: string) {
   const observedAt = report.observedAt
     ? new Date(report.observedAt)
@@ -106,7 +190,6 @@ function buildPdfHtml(report: LatestAuditReport, auditedBy: string) {
   const scanDate = formatDate(observedAt);
   const scanTime = formatTime(observedAt);
   const createdDate = formatDate(new Date());
-  const auditId = report.referenceId || "#AUD-2024-0312";
   const totalExpected =
     report.summary.expected ??
     report.summary.found + report.summary.missing + report.summary.extra;
@@ -237,6 +320,35 @@ function buildPdfHtml(report: LatestAuditReport, auditedBy: string) {
           color: #92400e;
           margin-bottom: 12px;
         }
+        .warehouse-section {
+          margin-bottom: 28px;
+          page-break-inside: avoid;
+        }
+        .warehouse-heading {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          background: #f8f9fa;
+          border: 1px solid #e0e0e0;
+          border-radius: 8px;
+          padding: 14px;
+          margin-bottom: 12px;
+        }
+        .warehouse-heading h2 {
+          margin: 0 0 4px 0;
+        }
+        .warehouse-heading p {
+          font-size: 11px;
+          color: #666;
+        }
+        .warehouse-counts {
+          font-size: 11px;
+          color: #333;
+          font-weight: 600;
+          text-align: right;
+          min-width: 260px;
+        }
         .footer {
           display: flex;
           justify-content: space-between;
@@ -295,40 +407,7 @@ function buildPdfHtml(report: LatestAuditReport, auditedBy: string) {
         </div>
 
         <h2>Audit Results (${report.items.length} items)</h2>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 8%;">#</th>
-              <th style="width: 15%;">Asset ID</th>
-              <th style="width: 20%;">Item Name</th>
-              <th style="width: 12%;">Category</th>
-              <th style="width: 12%;">Status</th>
-              <th style="width: 13%;">Scan Time</th>
-              <th style="width: 20%;">Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${generateTableRows(report)}
-          </tbody>
-        </table>
-
-        <div class="extra-panel">
-          <h3>Extra Items Found (not in expected list)</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Asset ID</th>
-                <th>Item Name</th>
-                <th>Category</th>
-                <th>Found At</th>
-                <th>Scan Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${generateExtraItems(report)}
-            </tbody>
-          </table>
-        </div>
+        ${generateWarehouseSections(report)}
 
         <div class="footer">
           <span>Generated: ${createdDate}</span>

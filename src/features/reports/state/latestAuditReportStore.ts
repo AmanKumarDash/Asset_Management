@@ -16,6 +16,16 @@ export type LatestAuditReport = {
   observedAt: string | null;
   summary: AuditSummary;
   items: AuditScanItem[];
+  warehouseSections?: LatestAuditReportWarehouseSection[];
+};
+
+export type LatestAuditReportWarehouseSection = {
+  warehouseId?: string | null;
+  warehouseName: string;
+  referenceId?: string | null;
+  observedAt?: string | null;
+  summary: AuditSummary;
+  items: AuditScanItem[];
 };
 
 let latestAuditReport: LatestAuditReport | null = null;

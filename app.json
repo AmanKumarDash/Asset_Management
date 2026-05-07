@@ -11,19 +11,17 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {
-      "package": "com.anonymous.assettrackingapp",
-      "jsEngine": "hermes",
-      "enableProguardInReleaseBuilds": true,
-      "enableShrinkResourcesInReleaseBuilds": true,
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "permissions": []
-    },
+   "android": {
+  "package": "com.anonymous.assettrackingapp",
+  "jsEngine": "hermes",
+  "adaptiveIcon": {
+    "backgroundColor": "#E6F4FE",
+    "foregroundImage": "./assets/images/android-icon-foreground.png"
+  },
+  "edgeToEdgeEnabled": true,
+  "predictiveBackGestureEnabled": false,
+  "permissions": []
+},
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"

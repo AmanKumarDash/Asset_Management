@@ -1,7 +1,10 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
 import { AuditScanItem } from "@/features/audits/data/auditScanData";
-import { LatestAuditReport } from "@/features/reports/state/latestAuditReportStore";
+import {
+  LatestAuditReport,
+  LatestAuditReportWarehouseSection,
+} from "@/features/reports/state/latestAuditReportStore";
 import {
   PersistedAuditReportSession,
   getAuditReportSessionsForUser,
@@ -442,7 +445,8 @@ function mapReportAssetToAuditItem(
 
 function buildDetailedEmployeeReport(
   baseReport: LatestAuditReport,
-  comparisonResponse: Record<string, unknown>
+  comparisonResponse: Record<string, unknown>,
+  fallbackLocation?: string | null
 ): LatestAuditReport {
   const responseRecord = comparisonResponse as Record<string, unknown>;
   const explicitFound = filterComparisonAssets(
@@ -559,7 +563,9 @@ function buildDetailedEmployeeReport(
     pickString(responseRecord, ["ObservedAt", "ScanningDate"]) ??
     baseReport.observedAt;
   const location =
-    pickString(responseRecord, ["Location"]) ?? baseReport.location;
+    pickString(responseRecord, ["Location"]) ??
+    fallbackLocation?.trim() ??
+    baseReport.location;
 
   return {
     ...baseReport,
@@ -583,6 +589,36 @@ function splitReferenceIds(value: string | null | undefined) {
   );
 }
 
+function getWarehouseLabelForReference(
+  report: LatestAuditReport,
+  referenceId: string,
+  index: number
+) {
+  const referenceLookup = new Map(
+    report.warehouseSections
+      ?.map((section) => [section.referenceId?.trim(), section.warehouseName] as const)
+      .filter((entry): entry is [string, string] =>
+        Boolean(entry[0] && entry[1]?.trim())
+      ) ?? []
+  );
+  const sectionLabel = referenceLookup.get(referenceId.trim());
+
+  if (sectionLabel) {
+    return sectionLabel;
+  }
+
+  const warehouseId = report.warehouseSections?.[index]?.warehouseId?.trim();
+
+  if (warehouseId) {
+    return `Warehouse ${warehouseId}`;
+  }
+
+  const selectedWarehouseIds = report.location.match(/\d+/g) ?? [];
+  const selectedWarehouseId = selectedWarehouseIds[index];
+
+  return selectedWarehouseId ? `Warehouse ${selectedWarehouseId}` : report.location;
+}
+
 function buildCombinedDetailedReport(
   baseReport: LatestAuditReport,
   reports: LatestAuditReport[]
@@ -601,11 +637,25 @@ function buildCombinedDetailedReport(
     }),
     { found: 0, missing: 0, extra: 0, scanned: 0, expected: 0 }
   );
+  const warehouseSections: LatestAuditReportWarehouseSection[] = reports.map(
+    (report, index) => ({
+      warehouseId:
+        baseReport.warehouseSections?.[index]?.warehouseId ??
+        report.location.match(/\d+/)?.[0] ??
+        null,
+      warehouseName: report.location,
+      referenceId: report.referenceId,
+      observedAt: report.observedAt,
+      summary: report.summary,
+      items: report.items,
+    })
+  );
 
   return {
     ...baseReport,
     summary,
     items: reports.flatMap((report) => report.items),
+    warehouseSections,
   };
 }
 
@@ -1353,17 +1403,26 @@ export default function EmployeeReportsScreen({
       try {
         setLoadingReferenceId(sessionId || referenceId || null);
         const detailedReports = await Promise.all(
-          referenceIds.map(async (currentReferenceId) => {
+          referenceIds.map(async (currentReferenceId, index) => {
             const comparisonResponse = await apiService.getWarehouseAuditData(
               currentReferenceId
+            );
+            const warehouseLabel = getWarehouseLabelForReference(
+              report,
+              currentReferenceId,
+              index
             );
 
             return buildDetailedEmployeeReport(
               {
                 ...report,
                 referenceId: currentReferenceId,
+                location: warehouseLabel,
+                mobileMeta: warehouseLabel,
+                desktopMeta: warehouseLabel,
               },
-              comparisonResponse as Record<string, unknown>
+              comparisonResponse as Record<string, unknown>,
+              warehouseLabel
             );
           })
         );
