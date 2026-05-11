@@ -189,6 +189,20 @@ function resolveSessionId(item: EmployeeReportApiItem) {
   return directSessionId || null;
 }
 
+function resolveFallbackBatchId(item: EmployeeReportApiItem) {
+  const scannedAt = new Date(item.ScanningDate ?? "");
+
+  if (Number.isNaN(scannedAt.getTime())) {
+    return null;
+  }
+
+  const batchDate = formatDateForApi(scannedAt);
+  const batchHour = String(scannedAt.getHours()).padStart(2, "0");
+  const batchMinute = String(Math.floor(scannedAt.getMinutes() / 10) * 10).padStart(2, "0");
+
+  return `batch:${batchDate}T${batchHour}:${batchMinute}`;
+}
+
 function pickString(
   record: Record<string, unknown>,
   keys: string[]
@@ -688,6 +702,7 @@ function buildEmployeeReports(
       forcedSessionId?.trim() ||
       resolveSessionId(item) ||
       savedSession?.sessionId?.trim() ||
+      resolveFallbackBatchId(item) ||
       referenceId;
     const existingItems = groupedReports.get(groupId) ?? [];
     existingItems.push(item);

@@ -116,12 +116,12 @@ export function ActionButton({
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-row items-center justify-center rounded-[16px] border px-4 py-3 ${
-        fullWidth ? "flex-1" : ""
-      }`}
+      className="flex-row items-center justify-center rounded-[16px] border px-4 py-3"
       style={{
         borderColor: filled ? accentColor : adminTheme.border,
         backgroundColor: filled ? accentColor : adminTheme.surface,
+        flexGrow: fullWidth ? 1 : 0,
+        flexBasis: fullWidth ? 0 : undefined,
       }}
     >
       <Feather
@@ -134,6 +134,40 @@ export function ActionButton({
         style={{ color: filled ? "#ffffff" : adminTheme.slate }}
       >
         {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function ProfileShortcut({
+  initials,
+  avatarBg,
+  avatarText,
+  onPress,
+}: {
+  initials: string;
+  avatarBg: string;
+  avatarText: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Open profile"
+      className="flex-row items-center rounded-full border py-1.5 pl-2 pr-3"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <View
+        className="mr-2 h-8 w-8 items-center justify-center rounded-full"
+        style={{ backgroundColor: avatarBg }}
+      >
+        <Text className="text-xs font-bold" style={{ color: avatarText }}>
+          {initials}
+        </Text>
+      </View>
+      <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+        Profile
       </Text>
     </Pressable>
   );

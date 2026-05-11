@@ -16,6 +16,7 @@ import {
   HorizontalBarChart,
   LoadingState,
   PeriodSwitch,
+  ProfileShortcut,
   ProgressInsightCard,
   SectionCard,
 } from "@/features/dashboard/components/DashboardVisuals";
@@ -194,20 +195,29 @@ export default function EmployeeDashboardScreen() {
         style={{ borderColor: "#D7EBE4", backgroundColor: "#F5FCF8" }}
       >
         <View
-          className="items-start justify-between"
+          className="items-start"
           style={{
             flexDirection: isDesktop ? "row" : "column",
             gap: 16,
+            justifyContent: "flex-start",
           }}
         >
           <View style={{ flex: isDesktop ? 1 : undefined, width: isDesktop ? undefined : "100%" }}>
-            <View
-              className="self-start rounded-full px-3 py-1"
-              style={{ backgroundColor: adminTheme.employeePrimarySoft }}
-            >
-              <Text className="text-xs font-medium" style={{ color: adminTheme.employeePrimary }}>
-                Employee dashboard
-              </Text>
+            <View className="flex-row items-center justify-between">
+              <View
+                className="self-start rounded-full px-3 py-1"
+                style={{ backgroundColor: adminTheme.employeePrimarySoft }}
+              >
+                <Text className="text-xs font-medium" style={{ color: adminTheme.employeePrimary }}>
+                  Employee dashboard
+                </Text>
+              </View>
+              <ProfileShortcut
+                initials={user.initials}
+                avatarBg={user.avatarBg}
+                avatarText={user.avatarText}
+                onPress={() => router.push("/profile")}
+              />
             </View>
             <Text className="mt-4 text-[30px] font-semibold" style={{ color: adminTheme.slate }}>
               Welcome back, {user.name}
@@ -241,10 +251,11 @@ export default function EmployeeDashboardScreen() {
         </View>
 
         <View
-          className="mt-5 items-start justify-between"
+          className="mt-5 items-start"
           style={{
             flexDirection: isDesktop ? "row" : "column",
             gap: 12,
+            justifyContent: "flex-start",
           }}
         >
           <View>
