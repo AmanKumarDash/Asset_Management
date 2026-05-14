@@ -38,6 +38,8 @@ type FieldProps = {
   keyboardType?: "default" | "email-address" | "phone-pad";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
   editable?: boolean;
+  error?: string;
+  onBlur?: () => void;
 };
 
 type EmployeeFormValues = {
@@ -311,6 +313,8 @@ function Field({
   keyboardType = "default",
   autoCapitalize = "sentences",
   editable = true,
+  error,
+  onBlur,
 }: FieldProps) {
   return (
     <View className="flex-1">
@@ -321,20 +325,26 @@ function Field({
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={error || placeholder}
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
         editable={editable}
-        placeholderTextColor={adminTheme.muted}
+        placeholderTextColor={error ? "#DC2626" : adminTheme.muted}
+        onBlur={onBlur}
         className="rounded-[14px] border px-4 py-3.5 text-base"
         style={{
-          borderColor: adminTheme.border,
+          borderColor: error ? "#DC2626" : adminTheme.border,
           backgroundColor: editable ? adminTheme.surface : adminTheme.surfaceAlt,
           color: adminTheme.slate,
           opacity: editable ? 1 : 0.75,
         }}
       />
+      {error ? (
+        <Text className="mt-2 text-xs" style={{ color: "#DC2626" }}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -632,6 +642,7 @@ export default function AddEmployeeScreen() {
   const [lastName, setLastName] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [mobile, setMobile] = useState("");
   const [userType, setUserType] = useState<UserTypeValue>(3);
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
@@ -648,6 +659,7 @@ export default function AddEmployeeScreen() {
   const resetFeedback = () => {
     setSubmitError("");
     setSubmitSuccess("");
+    setEmailError("");
   };
 
   const applyFormValues = (values: EmployeeFormValues) => {
@@ -656,6 +668,7 @@ export default function AddEmployeeScreen() {
     setLastName(values.lastName);
     setEmployeeId(values.employeeId);
     setEmail(values.email);
+    setEmailError("");
     setMobile(values.mobile);
     setUserType(values.userType);
     setSelectedWarehouseIds(values.selectedWarehouseIds);
@@ -733,6 +746,20 @@ export default function AddEmployeeScreen() {
     resetFeedback();
   };
 
+  const normalizeNameInput = (value: string) => value.replace(/[^A-Za-z\s'-]/g, "");
+  const normalizeMobileInput = (value: string) => value.replace(/\D/g, "").slice(0, 10);
+  const normalizeEmailInput = (value: string) => {
+    const filtered = value.replace(/[^A-Za-z0-9@._+-]/g, "");
+    const parts = filtered.split("@");
+    if (parts.length <= 2) {
+      return filtered;
+    }
+    return `${parts[0]}@${parts.slice(1).join("")}`;
+  };
+
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
   const handleSubmit = async () => {
     const values: EmployeeFormValues = {
       firstName: firstName.trim(),
@@ -755,6 +782,11 @@ export default function AddEmployeeScreen() {
       return;
     }
 
+    if (/[0-9]/.test(values.firstName) || /[0-9]/.test(values.lastName) || /[0-9]/.test(values.middleName)) {
+      setSubmitError("Name fields cannot contain numbers.");
+      return;
+    }
+
     if (!values.employeeId) {
       setSubmitError("Employee ID is required.");
       return;
@@ -762,6 +794,17 @@ export default function AddEmployeeScreen() {
 
     if (!values.mobile) {
       setSubmitError("Mobile is required.");
+      return;
+    }
+
+    if (!/^[0-9]{10}$/.test(values.mobile)) {
+      setSubmitError("Mobile must be a valid 10-digit number.");
+      return;
+    }
+
+    if (values.email && !isValidEmail(values.email)) {
+      setEmailError("Enter a valid email address.");
+      setSubmitError("Enter a valid email address.");
       return;
     }
 
@@ -935,35 +978,35 @@ export default function AddEmployeeScreen() {
             <Field
               label="First Name"
               value={firstName}
-              placeholder="Narendra"
+              placeholder="Enter first name"
               required
               editable={!isEditMode}
               autoCapitalize="words"
               onChangeText={(value) => {
-                setFirstName(value);
+                setFirstName(normalizeNameInput(value));
                 resetFeedback();
               }}
             />
             <Field
               label="Middle Name"
               value={middleName}
-              placeholder="Kumar"
+              placeholder="Enter middle name (optional)"
               editable={!isEditMode}
               autoCapitalize="words"
               onChangeText={(value) => {
-                setMiddleName(value);
+                setMiddleName(normalizeNameInput(value));
                 resetFeedback();
               }}
             />
             <Field
               label="Last Name"
               value={lastName}
-              placeholder="Sharma"
+              placeholder="Enter last name"
               required
               editable={!isEditMode}
               autoCapitalize="words"
               onChangeText={(value) => {
-                setLastName(value);
+                setLastName(normalizeNameInput(value));
                 resetFeedback();
               }}
             />
@@ -973,7 +1016,7 @@ export default function AddEmployeeScreen() {
             <Field
               label="Employee ID"
               value={employeeId}
-              placeholder="EMP-0042"
+              placeholder="Enter employee ID"
               required
               editable={!isEditMode}
               autoCapitalize="characters"
@@ -985,13 +1028,26 @@ export default function AddEmployeeScreen() {
             <Field
               label="Email"
               value={email}
-              placeholder="narendra@company.com"
+              placeholder="Enter email address"
+              required={false}
               editable={!isEditMode}
               keyboardType="email-address"
               autoCapitalize="none"
+              error={emailError}
               onChangeText={(value) => {
-                setEmail(value);
+                const normalized = normalizeEmailInput(value);
+                setEmail(normalized);
+                setEmailError(
+                  normalized && !isValidEmail(normalized)
+                    ? "Enter a valid email address."
+                    : ""
+                );
                 resetFeedback();
+              }}
+              onBlur={() => {
+                if (email && !isValidEmail(email)) {
+                  setEmailError("Enter a valid email address.");
+                }
               }}
             />
           </View>
@@ -1000,13 +1056,13 @@ export default function AddEmployeeScreen() {
             <Field
               label="Mobile"
               value={mobile}
-              placeholder="9876543210"
+              placeholder="Enter 10-digit mobile number"
               required
               editable={!isEditMode}
               keyboardType="phone-pad"
               autoCapitalize="none"
               onChangeText={(value) => {
-                setMobile(value);
+                setMobile(normalizeMobileInput(value));
                 resetFeedback();
               }}
             />

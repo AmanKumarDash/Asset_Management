@@ -14,6 +14,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!isHydrated) {
     return null;
@@ -57,24 +58,26 @@ export default function LoginScreen() {
         </View>
 
         <Text className="mb-1 text-2xl font-semibold text-gray-800">
-          Welcome back
+          Welcome 
         </Text>
         <Text className="mb-6 text-gray-500">
           Sign in to your account to continue
         </Text>
 
         <AuthInput
-          label="Employee ID or email"
-          placeholder="aman@company.com"
+          label="Email ID"
+          placeholder="Enter your email ID"
           value={identifier}
           onChangeText={setIdentifier}
         />
         <AuthInput
           label="Password"
-          placeholder="********"
-          secureTextEntry
+          placeholder="Enter your password"
+          secureTextEntry={!showPassword}
           value={password}
           onChangeText={setPassword}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
         />
 
         <TouchableOpacity className="mb-4 items-end">
