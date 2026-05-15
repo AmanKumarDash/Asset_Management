@@ -724,7 +724,19 @@ export default function AddEmployeeScreen() {
           return;
         }
 
-        applyFormValues(mapUserDetailsToFormValues(employee));
+        // Load warehouse access for the employee
+        let warehouseAccess: string[] = [];
+        try {
+          const accessItems = await apiService.getWarehouseAccessByUser(editingUserId);
+          warehouseAccess = accessItems.map((item) => String(item.WareHouseId || item.WarehouseId));
+        } catch (accessError) {
+          // If warehouse access fails to load, continue with empty access
+          console.warn("Failed to load warehouse access:", accessError);
+        }
+
+        const formValues = mapUserDetailsToFormValues(employee);
+        formValues.selectedWarehouseIds = warehouseAccess;
+        applyFormValues(formValues);
       } catch (error) {
         setSubmitError(
           getApiErrorMessage(error, "Unable to load employee details right now.")
@@ -819,7 +831,7 @@ export default function AddEmployeeScreen() {
     try {
       if (isEditMode) {
         await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
-        setSubmitSuccess("Employee access updated successfully.");
+        setSubmitSuccess("Employee warehouse access updated successfully. Note: Employee details cannot be modified through this interface.");
       } else {
         await apiService.createUser(buildEmployeePayload(values));
         try {
@@ -860,7 +872,7 @@ export default function AddEmployeeScreen() {
     ? "Update employee warehouse access"
     : "Create a user and assign warehouse access";
   const infoMessage = isEditMode
-    ? "Only warehouse access is updated here because the backend currently provides the WarehouseAccess API for edits."
+    ? "Employee details are displayed for reference. Only warehouse access can be updated here because the backend currently provides the WarehouseAccess API for edits."
     : "Required fields are First Name, Last Name, Employee ID, Mobile, User Type, and at least one warehouse access selection.";
 
   return (
@@ -980,7 +992,7 @@ export default function AddEmployeeScreen() {
               value={firstName}
               placeholder="Enter first name"
               required
-              editable={!isEditMode}
+              editable
               autoCapitalize="words"
               onChangeText={(value) => {
                 setFirstName(normalizeNameInput(value));
@@ -991,7 +1003,7 @@ export default function AddEmployeeScreen() {
               label="Middle Name"
               value={middleName}
               placeholder="Enter middle name (optional)"
-              editable={!isEditMode}
+              editable
               autoCapitalize="words"
               onChangeText={(value) => {
                 setMiddleName(normalizeNameInput(value));
@@ -1003,7 +1015,7 @@ export default function AddEmployeeScreen() {
               value={lastName}
               placeholder="Enter last name"
               required
-              editable={!isEditMode}
+              editable
               autoCapitalize="words"
               onChangeText={(value) => {
                 setLastName(normalizeNameInput(value));
@@ -1058,7 +1070,7 @@ export default function AddEmployeeScreen() {
               value={mobile}
               placeholder="Enter 10-digit mobile number"
               required
-              editable={!isEditMode}
+              editable
               keyboardType="phone-pad"
               autoCapitalize="none"
               onChangeText={(value) => {
@@ -1070,7 +1082,7 @@ export default function AddEmployeeScreen() {
               value={userType}
               isOpen={userTypeOpen}
               isMobile={isMobile}
-              editable={!isEditMode}
+              editable
               onToggle={() => {
                 setUserTypeOpen((current) => !current);
                 resetFeedback();
