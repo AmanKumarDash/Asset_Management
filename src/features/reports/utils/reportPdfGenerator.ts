@@ -1,6 +1,6 @@
 import {
-  LatestAuditReport,
-  LatestAuditReportWarehouseSection,
+    LatestAuditReport,
+    LatestAuditReportWarehouseSection,
 } from "@/features/reports/state/latestAuditReportStore";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";

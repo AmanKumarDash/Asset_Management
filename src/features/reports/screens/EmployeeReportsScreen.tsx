@@ -1,31 +1,31 @@
-import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
 import { AuditScanItem } from "@/features/audits/data/auditScanData";
-import { WarehouseSummary } from "@/models/warehouse";
+import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
-  LatestAuditReport,
-  LatestAuditReportWarehouseSection,
-} from "@/features/reports/state/latestAuditReportStore";
-import {
-  PersistedAuditReportSession,
-  getAuditReportSessionsForUser,
+    PersistedAuditReportSession,
+    getAuditReportSessionsForUser,
 } from "@/features/reports/state/auditReportSessionStore";
+import {
+    LatestAuditReport,
+    LatestAuditReportWarehouseSection,
+} from "@/features/reports/state/latestAuditReportStore";
+import { WarehouseSummary } from "@/models/warehouse";
 import { EmployeeReportApiItem, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { ReactNode, useEffect, useMemo, useState } from "react";
-import DatePicker from "react-native-date-picker";
+import { ReactNode, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-  useWindowDimensions,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+    useWindowDimensions,
 } from "react-native";
+import DatePicker from "react-native-date-picker";
 
 type EmployeeReportSummary = {
   id: string;
