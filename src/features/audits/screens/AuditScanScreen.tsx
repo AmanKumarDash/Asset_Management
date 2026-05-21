@@ -481,12 +481,12 @@ function ManualEntryRow({
             : adminTheme.mutedBg,
         }}
       >
-        <Text
+        {/* <Text
           className="text-base font-semibold"
           style={{ color: isScanning ? "#FFFFFF" : adminTheme.mutedText }}
         >
           {mobile ? "Add" : "Add Asset"}
-        </Text>
+        </Text> */}
       </Pressable>
     </View>
   );
@@ -985,24 +985,13 @@ function MobileAuditScan() {
           </View>
 
           <View className="px-4 pt-3">
-            <View className="mb-3 flex-row items-center justify-between">
+            <View className="mb-3">
               <Text
                 className="text-[18px] font-semibold"
                 style={{ color: adminTheme.slate }}
               >
                 {getListHeading(auditPhase)}
               </Text>
-              <View
-                className="rounded-full px-3 py-1"
-                style={{ backgroundColor: adminTheme.infoBg }}
-              >
-                <Text
-                  className="text-sm font-medium"
-                  style={{ color: adminTheme.primary }}
-                >
-                  {summary.scanned} / {totalAssets}
-                </Text>
-              </View>
             </View>
 
             <View className="mb-4">
@@ -1237,9 +1226,6 @@ function DesktopAuditScan({ width }: { width: number }) {
               : auditScanOverview.desktopMeta}
           </Text>
         </View>
-        <Text className="text-[16px]" style={{ color: adminTheme.slateSoft }}>
-          {summary.scanned} / {totalAssets} scanned
-        </Text>
       </View>
 
       {!hasSelectedWarehouse ? (
@@ -1354,17 +1340,6 @@ function DesktopAuditScan({ width }: { width: number }) {
                   >
                     {getListHeading(auditPhase)}
                   </Text>
-                  <View
-                    className="rounded-full px-3 py-1"
-                    style={{ backgroundColor: adminTheme.infoBg }}
-                  >
-                    <Text
-                      className="text-sm font-medium"
-                      style={{ color: adminTheme.primary }}
-                    >
-                      {summary.scanned} / {totalAssets}
-                    </Text>
-                  </View>
                 </View>
 
                 <View className="mb-4">

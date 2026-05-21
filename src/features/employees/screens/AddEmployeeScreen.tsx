@@ -876,13 +876,7 @@ export default function AddEmployeeScreen() {
     : "Required fields are First Name, Last Name, Employee ID, Mobile, User Type, and at least one warehouse access selection.";
 
   return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={
-        isMobile ? { paddingBottom: 24 } : { paddingHorizontal: 20, paddingVertical: 20 }
-      }
-      showsVerticalScrollIndicator={false}
-    >
+    <View className="flex-1">
       {isMobile ? (
         <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
           <View className="mb-4 items-center">
@@ -961,7 +955,14 @@ export default function AddEmployeeScreen() {
         </View>
       )}
 
-      <View className={isMobile ? "px-4 pt-4" : ""}>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={
+          isMobile ? { paddingBottom: 24 } : { paddingHorizontal: 20, paddingVertical: 20 }
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <View className={isMobile ? "px-4 pt-4" : ""}>
         <View
           className="rounded-[18px] border bg-white p-5"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
@@ -1140,6 +1141,7 @@ export default function AddEmployeeScreen() {
           </Pressable>
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

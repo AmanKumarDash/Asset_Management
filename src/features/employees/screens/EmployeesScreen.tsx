@@ -224,9 +224,7 @@ function EmployeeTable({
         <Text className="flex-[1.1] text-xs font-medium" style={{ color: adminTheme.muted }}>
           Employee ID
         </Text>
-        <Text className="flex-[0.9] text-xs font-medium" style={{ color: adminTheme.muted }}>
-          Status
-        </Text>
+        {/* Status column hidden for now */}
         {canEdit ? (
           <Text className="flex-[0.9] text-right text-xs font-medium" style={{ color: adminTheme.muted }}>
             Actions
@@ -269,9 +267,7 @@ function EmployeeTable({
             <Text className="flex-[1.1] text-sm" style={{ color: adminTheme.slate }}>
               {employee.userId}
             </Text>
-            <View className="flex-[0.9]">
-              <StatusPill label={employee.status} tone={employee.statusTone} />
-            </View>
+            {/* Status column hidden for now */}
             {canEdit ? (
               <View className="flex-[0.9] items-end">
                 <Text className="text-sm font-medium" style={{ color: adminTheme.primary }}>
@@ -387,7 +383,7 @@ function MobileEmployees({
               backgroundColor: adminTheme.surface,
             }}
           >
-            <View className="mb-4 flex-row items-start justify-between gap-3">
+              <View className="mb-4 flex-row items-start justify-between gap-3">
               <View className="flex-1 flex-row items-center">
                 <View
                   className="mr-3 h-12 w-12 items-center justify-center rounded-full"
@@ -411,7 +407,7 @@ function MobileEmployees({
                 </View>
               </View>
 
-              <StatusPill label={employee.status} tone={employee.statusTone} />
+              {/* Status pill hidden for now */}
             </View>
 
             <View style={{ gap: 12 }}>
@@ -462,7 +458,6 @@ function DesktopEmployees({
         </View>
 
         <View className="flex-row gap-3">
-          <SectionButton title={`${employees.length} Total`} />
           {canAdd ? (
             <SectionButton title="Add Employee" icon="plus" filled onPress={onAdd} />
           ) : null}
