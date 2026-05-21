@@ -11,7 +11,7 @@ export type AuditScanItem = {
 export const auditScanOverview = {
   title: "Scan Assets",
   subtitle: "Server Room - Equipment",
-  desktopMeta: "Server Room - Equipment - Block C - 28 assets",
+  desktopMeta: "",
   totalAssets: 28,
 } as const;
 

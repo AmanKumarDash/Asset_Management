@@ -14,11 +14,11 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { AuditItemTone, AuditScanItem } from "../data/auditScanData";
 import {
   employeeInitialScanItems,
   employeeScanOverview,
 } from "../data/employeeAuditData";
-import { AuditItemTone, AuditScanItem } from "../data/auditScanData";
 
 function getToneStyles(tone: AuditItemTone) {
   switch (tone) {
@@ -316,7 +316,7 @@ function WarehouseSelectionNotice({
       style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
     >
       <View className="flex-row items-center justify-between" style={{ gap: 16 }}>
-        <View className="flex-1 flex-row items-center">
+        {/* <View className="flex-1 flex-row items-center">
           <View
             className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
             style={{ backgroundColor: adminTheme.employeePrimarySoft }}
@@ -335,7 +335,7 @@ function WarehouseSelectionNotice({
                 : "Choose a warehouse first. After that, only the scanning screen will be shown."}
             </Text>
           </View>
-        </View>
+        </View> */}
 
         {warehouseName && onBack ? (
           <Pressable

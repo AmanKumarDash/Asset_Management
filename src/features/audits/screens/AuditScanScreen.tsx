@@ -502,17 +502,17 @@ function AuditScanList({ items }: { items: AuditScanItem[] }) {
         return (
           <View
             key={`${item.id}-${index}`}
-            className={`flex-row items-center rounded-[18px] border bg-white px-4 py-4 ${
+            className={`flex-row items-center rounded-[18px] border px-4 py-4 ${
               index < items.length - 1 ? "mb-3" : ""
             }`}
             style={{
-              borderColor: adminTheme.border,
-              backgroundColor: adminTheme.surface,
+              borderColor: styles.dot,
+              backgroundColor: styles.iconBg,
             }}
           >
             <View
               className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
-              style={{ backgroundColor: styles.iconBg }}
+              style={{ backgroundColor: adminTheme.surface }}
             >
               <Feather name={item.icon} size={18} color={styles.icon} />
             </View>
@@ -740,7 +740,7 @@ function WarehouseSelectionNotice({
       }}
     >
       <View className="flex-row items-center justify-between" style={{ gap: 16 }}>
-        <View className="flex-1 flex-row items-center">
+        {/* <View className="flex-1 flex-row items-center">
           <View
             className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
             style={{ backgroundColor: adminTheme.infoBg }}
@@ -759,7 +759,7 @@ function WarehouseSelectionNotice({
                 : "Choose a warehouse first. After that, only the scanning screen will be shown."}
             </Text>
           </View>
-        </View>
+        </View> */}
 
         {warehouseName && onBack ? (
           <Pressable
