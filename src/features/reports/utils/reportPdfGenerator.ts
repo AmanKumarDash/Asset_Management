@@ -78,7 +78,6 @@ function generateTableRows(items: LatestAuditReportWarehouseSection["items"]) {
           <td style="padding: 12px 8px; text-align: center; font-size: 12px;">${index + 1}</td>
           <td style="padding: 12px 8px; font-size: 12px;">${item.id}</td>
           <td style="padding: 12px 8px; font-size: 12px;">${item.title}</td>
-          <td style="padding: 12px 8px; font-size: 12px;">Equipment</td>
           <td style="padding: 12px 8px; text-align: center;">
             <span style="background-color: ${statusBg}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">
               ${statusText}
@@ -112,7 +111,6 @@ function generateExtraItems(items: LatestAuditReportWarehouseSection["items"]) {
       <tr>
         <td style="padding: 12px 8px; font-size: 12px;">${item.id}</td>
         <td style="padding: 12px 8px; font-size: 12px;">${item.title}</td>
-        <td style="padding: 12px 8px; font-size: 12px;">Equipment</td>
         <td style="padding: 12px 8px; font-size: 12px;">Warehouse</td>
         <td style="padding: 12px 8px; font-size: 12px;">10:${time} AM</td>
       </tr>
@@ -132,11 +130,6 @@ function generateWarehouseSections(report: LatestAuditReport) {
           <div class="warehouse-heading">
             <div>
               <h2>${section.warehouseName}</h2>
-              ${
-                section.referenceId
-                  ? `<p>Reference: ${section.referenceId}</p>`
-                  : ""
-              }
             </div>
             <div class="warehouse-counts">
               Found ${section.summary.found} &nbsp; Missing ${section.summary.missing} &nbsp; Extra ${section.summary.extra} &nbsp; Expected ${expected}
@@ -148,11 +141,10 @@ function generateWarehouseSections(report: LatestAuditReport) {
               <tr>
                 <th style="width: 8%;">#</th>
                 <th style="width: 15%;">Asset ID</th>
-                <th style="width: 20%;">Item Name</th>
-                <th style="width: 12%;">Category</th>
-                <th style="width: 12%;">Status</th>
-                <th style="width: 13%;">Scan Time</th>
-                <th style="width: 20%;">Remarks</th>
+                <th style="width: 25%;">Item Name</th>
+                <th style="width: 15%;">Status</th>
+                <th style="width: 15%;">Scan Time</th>
+                <th style="width: 22%;">Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -167,7 +159,6 @@ function generateWarehouseSections(report: LatestAuditReport) {
                 <tr>
                   <th>Asset ID</th>
                   <th>Item Name</th>
-                  <th>Category</th>
                   <th>Found At</th>
                   <th>Scan Time</th>
                 </tr>

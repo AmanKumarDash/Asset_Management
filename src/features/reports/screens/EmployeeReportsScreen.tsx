@@ -1,6 +1,7 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
 import { AuditScanItem } from "@/features/audits/data/auditScanData";
+import { WarehouseSummary } from "@/models/warehouse";
 import {
   LatestAuditReport,
   LatestAuditReportWarehouseSection,
@@ -621,6 +622,12 @@ function getWarehouseLabelForReference(
     return sectionLabel;
   }
 
+  const sectionWarehouseName = report.warehouseSections?.[index]?.warehouseName?.trim();
+
+  if (sectionWarehouseName) {
+    return sectionWarehouseName;
+  }
+
   const warehouseId = report.warehouseSections?.[index]?.warehouseId?.trim();
 
   if (warehouseId) {
@@ -673,9 +680,41 @@ function buildCombinedDetailedReport(
   };
 }
 
+function resolveWarehouseName(
+  warehouseId: string | number | null | undefined,
+  warehouses: WarehouseSummary[]
+) {
+  if (warehouseId === null || warehouseId === undefined) {
+    return null;
+  }
+
+  const normalizedId = String(warehouseId).trim();
+
+  if (!normalizedId) {
+    return null;
+  }
+
+  return (
+    warehouses.find(
+      (warehouse) => String(warehouse.id).trim() === normalizedId
+    )?.name?.trim() ?? null
+  );
+}
+
+function getWarehouseLabels(
+  warehouseIds: string[],
+  warehouses: WarehouseSummary[]
+) {
+  return warehouseIds.map((warehouseId) => {
+    const warehouseName = resolveWarehouseName(warehouseId, warehouses);
+    return warehouseName ?? `Warehouse ${warehouseId}`;
+  });
+}
+
 function buildEmployeeReports(
   items: EmployeeReportApiItem[],
   savedSessions: PersistedAuditReportSession[] = [],
+  accessibleWarehouses: WarehouseSummary[] = [],
   forcedSessionId?: string | null
 ): EmployeeReportSummary[] {
   if (items.length === 0) {
@@ -736,15 +775,17 @@ function buildEmployeeReports(
       const warehouseIds = Array.from(
         new Set(sortedItems.map((item) => String(item.WareHouseId)).filter(Boolean))
       );
+      const warehouseLabels = getWarehouseLabels(warehouseIds, accessibleWarehouses);
       const location =
-        warehouseIds.length === 1
-          ? `Warehouse ${warehouseIds[0]}`
-          : `Warehouses ${warehouseIds.join(", ")}`;
+        warehouseLabels.length === 1
+          ? warehouseLabels[0]
+          : warehouseLabels.length > 1
+          ? `Warehouses ${warehouseLabels.join(", ")}`
+          : "Unknown warehouse";
       const title =
-        warehouseIds.length === 1
-          ? `Warehouse ${warehouseIds[0]} Report`
-          : "Employee Audit Report";
-
+        warehouseLabels.length === 1
+          ? `${warehouseLabels[0]} Report`
+          : `Warehouses ${warehouseLabels.join(", ")} Report`;
       const report: LatestAuditReport = {
         title,
         location,
@@ -981,7 +1022,6 @@ function DateRangeControls({
 
 function DesktopEmployeeReports({
   reports,
-  totalScanned,
   isLoading,
   errorMessage,
   loadingReferenceId,
@@ -999,7 +1039,6 @@ function DesktopEmployeeReports({
   retryButtonColor,
 }: {
   reports: EmployeeReportSummary[];
-  totalScanned: number;
   isLoading: boolean;
   errorMessage: string | null;
   loadingReferenceId: string | null;
@@ -1045,9 +1084,9 @@ function DesktopEmployeeReports({
 
       {headerControls ? <View className="mb-5">{headerControls}</View> : null}
 
-      <View className="mb-5 flex-row gap-3">
+      <View className="mb-5">
         <View
-          className="flex-1 rounded-[18px] border px-4 py-4"
+          className="rounded-[18px] border px-4 py-4"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
           <Text className="text-[28px] font-semibold" style={{ color: accentColor }}>
@@ -1055,17 +1094,6 @@ function DesktopEmployeeReports({
           </Text>
           <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
             Submitted reports
-          </Text>
-        </View>
-        <View
-          className="flex-1 rounded-[18px] border px-4 py-4"
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
-        >
-          <Text className="text-[28px] font-semibold" style={{ color: adminTheme.successText }}>
-            {totalScanned}
-          </Text>
-          <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-            Total scanned assets
           </Text>
         </View>
       </View>
@@ -1090,16 +1118,13 @@ function DesktopEmployeeReports({
         >
           <View className="border-b px-4 py-3" style={{ borderColor: adminTheme.border }}>
             <View className="flex-row">
-              <Text className="flex-[1.8] text-xs font-medium" style={{ color: adminTheme.muted }}>
+              <Text className="flex-[2] text-xs font-medium" style={{ color: adminTheme.muted }}>
                 Report
               </Text>
-              <Text className="flex-[2] text-xs font-medium" style={{ color: adminTheme.muted }}>
-                Reference
-              </Text>
-              <Text className="flex-[1.2] text-xs font-medium" style={{ color: adminTheme.muted }}>
+              <Text className="flex-[1.8] text-xs font-medium" style={{ color: adminTheme.muted }}>
                 Location
               </Text>
-              <Text className="flex-[1.3] text-xs font-medium" style={{ color: adminTheme.muted }}>
+              <Text className="flex-[1.4] text-xs font-medium" style={{ color: adminTheme.muted }}>
                 Submitted
               </Text>
               <Text className="flex-[1] text-xs font-medium" style={{ color: adminTheme.muted }}>
@@ -1127,16 +1152,13 @@ function DesktopEmployeeReports({
               })}
             >
               <View className="flex-row items-center">
-                <Text className="flex-[1.8] text-sm font-medium" style={{ color: adminTheme.slate }}>
+                <Text className="flex-[2] text-sm font-medium" style={{ color: adminTheme.slate }}>
                   {report.title}
                 </Text>
-                <Text className="flex-[2] text-sm" style={{ color: adminTheme.slate }}>
-                  {report.referenceId}
-                </Text>
-                <Text className="flex-[1.2] text-sm" style={{ color: adminTheme.slate }}>
+                <Text className="flex-[1.8] text-sm" style={{ color: adminTheme.slate }}>
                   {report.location}
                 </Text>
-                <Text className="flex-[1.3] text-sm" style={{ color: adminTheme.slate }}>
+                <Text className="flex-[1.4] text-sm" style={{ color: adminTheme.slate }}>
                   {report.completedAt}
                 </Text>
                 <Text className="flex-[1] text-sm" style={{ color: adminTheme.slate }}>
@@ -1259,18 +1281,6 @@ function MobileEmployeeReports({
               <Text className="mt-4 text-sm" style={{ color: adminTheme.slateSoft }}>
                 {report.location}
               </Text>
-              <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-                {report.referenceId}
-              </Text>
-
-              <View className="mt-4 flex-row items-center justify-between">
-                <Text className="text-sm" style={{ color: adminTheme.slateSoft }}>
-                  Assets scanned
-                </Text>
-                <Text className="text-sm font-medium" style={{ color: adminTheme.successText }}>
-                  {report.scannedLabel}
-                </Text>
-              </View>
             </Pressable>
           ))
         )}
@@ -1293,7 +1303,7 @@ export default function EmployeeReportsScreen({
   retryButtonColor,
 }: EmployeeReportsScreenProps) {
   const { width } = useWindowDimensions();
-  const { user } = useAuthSession();
+  const { user, accessibleWarehouses } = useAuthSession();
   const resolvedSubjectUserId = subjectUserId ?? user?.employeeId ?? null;
   const shouldShowDateRangeFilter = Boolean(user);
   const [reports, setReports] = useState<EmployeeReportSummary[]>([]);
@@ -1371,7 +1381,9 @@ export default function EmployeeReportsScreen({
           ? filterReportsByDateRange(response, appliedStartDate, appliedEndDate)
           : response;
 
-        setReports(buildEmployeeReports(filteredResponse, savedSessions));
+        setReports(
+          buildEmployeeReports(filteredResponse, savedSessions, accessibleWarehouses)
+        );
       } catch (error) {
         if (!isMounted) {
           return;
@@ -1399,11 +1411,6 @@ export default function EmployeeReportsScreen({
     resolvedSubjectUserId,
     shouldShowDateRangeFilter,
   ]);
-
-  const totalScanned = useMemo(
-    () => reports.reduce((sum, report) => sum + report.report.summary.scanned, 0),
-    [reports]
-  );
 
   const handleRetry = () => {
     setReloadCount((current) => current + 1);
@@ -1523,7 +1530,6 @@ export default function EmployeeReportsScreen({
   ) : (
     <DesktopEmployeeReports
       reports={reports}
-      totalScanned={totalScanned}
       isLoading={isLoading}
       errorMessage={errorMessage}
       loadingReferenceId={loadingReferenceId}

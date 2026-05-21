@@ -221,11 +221,6 @@ function WarehouseSectionHeader({
           <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
             {section.warehouseName}
           </Text>
-          {section.referenceId ? (
-            <Text className="mt-1 text-xs" style={{ color: adminTheme.slateSoft }}>
-              Reference: {section.referenceId}
-            </Text>
-          ) : null}
         </View>
 
         <Text
@@ -416,12 +411,6 @@ function SummaryCard({
           </Text>
         </View>
       </View>
-
-      {report.referenceId ? (
-        <Text className="mb-4 text-sm" style={{ color: adminTheme.slateSoft }}>
-          Reference: {report.referenceId}
-        </Text>
-      ) : null}
 
       <View className={`${mobile ? "flex-row items-center" : "items-center"}`}>
         <View className={mobile ? "mr-5" : ""}>
@@ -832,11 +821,7 @@ async function handleFetchReportByDate() {
 
 
   return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 20 }}
-      showsVerticalScrollIndicator={false}
-    >
+    <View className="flex-1" style={{ paddingHorizontal: 20, paddingVertical: 20, minHeight: 0 }}>
       <View className="mb-5 flex-row items-start justify-between">
         <View>
           <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
@@ -853,170 +838,174 @@ async function handleFetchReportByDate() {
             icon="arrow-left"
             onPress={onBack ?? handleDefaultBackNavigation}
           />
-          <SectionButton 
+          <SectionButton
             title={isExporting ? "Exporting..." : "Export PDF"}
-            icon="download" 
-            filled 
+            icon="download"
+            filled
             onPress={onExportPdf}
           />
         </View>
       </View>
 
-      <View className="flex-row" style={{ gap: 18, alignItems: "flex-start" }}>
-        <View style={{ width: 300 }}>
-          <SummaryCard report={report} />
-        </View>
-
-        <View className="flex-1">
-          <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            Audit results ({report.items.length})
-          </Text>
-          {showDateFilters ? (
-            <>
-          <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
-
-  {/* ✅ MOBILE BUTTONS */}
-<View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
-  {/* Mobile: Pressable + Modal DatePicker */}
-  {Platform.OS !== "web" && (
-    <>
-      <Pressable
-        onPress={() => setOpenStart(true)}
-        className="rounded-xl border px-3 py-2"
-        style={{ borderColor: adminTheme.border }}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 20, minHeight: 0 }}
+        showsVerticalScrollIndicator={false}
       >
-        <Text>
-          {startDate ? startDate.toDateString() : "Start Date"}
-        </Text>
-      </Pressable>
+        <View className="flex-row" style={{ gap: 18, alignItems: "flex-start", minHeight: 0 }}>
+          <View style={{ width: 300 }}>
+            <SummaryCard report={report} />
+          </View>
 
-      <Pressable
-        onPress={() => setOpenEnd(true)}
-        className="rounded-xl border px-3 py-2"
-        style={{ borderColor: adminTheme.border }}
-      >
-        <Text>
-          {endDate ? endDate.toDateString() : "End Date"}
-        </Text>
-      </Pressable>
-    </>
-  )}
+          <View className="flex-1 flex-col" style={{ minHeight: 0 }}>
+            <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+              Audit results ({report.items.length})
+            </Text>
+            {showDateFilters ? (
+              <>
+                <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+                  {/* ✅ MOBILE BUTTONS */}
+                  <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+                    {/* Mobile: Pressable + Modal DatePicker */}
+                    {Platform.OS !== "web" && (
+                      <>
+                        <Pressable
+                          onPress={() => setOpenStart(true)}
+                          className="rounded-xl border px-3 py-2"
+                          style={{ borderColor: adminTheme.border }}
+                        >
+                          <Text>
+                            {startDate ? startDate.toDateString() : "Start Date"}
+                          </Text>
+                        </Pressable>
 
-  {/* Web: Native date inputs (no time) */}
-  {Platform.OS === "web" && (
-    <>
-      <input
-        type="date"
-        onChange={(e) => setStartDate(new Date(e.target.value))}
-        style={{
-          padding: '8px 12px',
-          borderRadius: '12px',
-          border: `1px solid ${adminTheme.border}`,
-          backgroundColor: adminTheme.surface,
-          color: adminTheme.slate,
-        }}
-      />
-      <input
-        type="date"
-        onChange={(e) => setEndDate(new Date(e.target.value))}
-        style={{
-          padding: '8px 12px',
-          borderRadius: '12px',
-          border: `1px solid ${adminTheme.border}`,
-          backgroundColor: adminTheme.surface,
-          color: adminTheme.slate,
-        }}
-      />
-    </>
-  )}
+                        <Pressable
+                          onPress={() => setOpenEnd(true)}
+                          className="rounded-xl border px-3 py-2"
+                          style={{ borderColor: adminTheme.border }}
+                        >
+                          <Text>
+                            {endDate ? endDate.toDateString() : "End Date"}
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
 
-  {/* Go Button */}
-  <Pressable
-    onPress={handleFetchReportByDate}
-    className="rounded-xl px-4 py-2"
-    style={{ backgroundColor: adminTheme.primary }}
-  >
-    <Text style={{ color: "#fff" }}>
-      {loadingReport ? "Loading..." : "Go"}
-    </Text>
-  </Pressable>
-</View>
+                    {/* Web: Native date inputs (no time) */}
+                    {Platform.OS === "web" && (
+                      <>
+                        <input
+                          type="date"
+                          onChange={(e) => setStartDate(new Date(e.target.value))}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '12px',
+                            border: `1px solid ${adminTheme.border}`,
+                            backgroundColor: adminTheme.surface,
+                            color: adminTheme.slate,
+                          }}
+                        />
+                        <input
+                          type="date"
+                          onChange={(e) => setEndDate(new Date(e.target.value))}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '12px',
+                            border: `1px solid ${adminTheme.border}`,
+                            backgroundColor: adminTheme.surface,
+                            color: adminTheme.slate,
+                          }}
+                        />
+                      </>
+                    )}
 
-
-</View>
-{Platform.OS !== "web" && (
-  <>
-    <DatePicker
-      modal
-      open={openStart}
-      date={startDate || new Date()}
-      mode="date"
-      onConfirm={(date) => {
-        setOpenStart(false);
-        setStartDate(date);
-      }}
-      onCancel={() => setOpenStart(false)}
-    />
-
-    <DatePicker
-      modal
-      open={openEnd}
-      date={endDate || new Date()}
-      mode="date"
-      onConfirm={(date) => {
-        setOpenEnd(false);
-        setEndDate(date);
-      }}
-      onCancel={() => setOpenEnd(false)}
-    />
-  </>
-)}
-            </>
-          ) : null}
-          <FilterBar
-            searchTerm={searchTerm}
-            onChangeSearchTerm={setSearchTerm}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            filteredCount={filteredItems.length}
-            totalCount={report.items.length}
-          />
-
-          {filteredSections.length > 0 ? (
-            <View>
-              {filteredSections.map((section, sectionIndex) => (
-                <View
-                  key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`}
-                  className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}
-                >
-                  <WarehouseSectionHeader section={section} />
-                  <View
-                    className="overflow-hidden rounded-[20px] border bg-white"
-                    style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-                  >
-                    {section.items.map((item, index) => (
-                      <View
-                        key={`${item.id}-${index}`}
-                        className={`${index < section.items.length - 1 ? "border-b" : ""} px-4 py-3`}
-                        style={
-                          index < section.items.length - 1
-                            ? { borderColor: adminTheme.border }
-                            : undefined
-                        }
-                      >
-                        <ReportResultItem item={item} />
-                      </View>
-                    ))}
+                    {/* Go Button */}
+                    <Pressable
+                      onPress={handleFetchReportByDate}
+                      className="rounded-xl px-4 py-2"
+                      style={{ backgroundColor: adminTheme.primary }}
+                    >
+                      <Text style={{ color: "#fff" }}>
+                        {loadingReport ? "Loading..." : "Go"}
+                      </Text>
+                    </Pressable>
                   </View>
                 </View>
-              ))}
-            </View>
-          ) : (
-            <EmptyResults />
-          )}
+                {Platform.OS !== "web" && (
+                  <>
+                    <DatePicker
+                      modal
+                      open={openStart}
+                      date={startDate || new Date()}
+                      mode="date"
+                      onConfirm={(date) => {
+                        setOpenStart(false);
+                        setStartDate(date);
+                      }}
+                      onCancel={() => setOpenStart(false)}
+                    />
+
+                    <DatePicker
+                      modal
+                      open={openEnd}
+                      date={endDate || new Date()}
+                      mode="date"
+                      onConfirm={(date) => {
+                        setOpenEnd(false);
+                        setEndDate(date);
+                      }}
+                      onCancel={() => setOpenEnd(false)}
+                    />
+                  </>
+                )}
+              </>
+            ) : null}
+
+            <FilterBar
+              searchTerm={searchTerm}
+              onChangeSearchTerm={setSearchTerm}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              filteredCount={filteredItems.length}
+              totalCount={report.items.length}
+            />
+
+            {filteredSections.length > 0 ? (
+              <View>
+                {filteredSections.map((section, sectionIndex) => (
+                  <View
+                    key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`}
+                    className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}
+                  >
+                    <WarehouseSectionHeader section={section} />
+                    <View
+                      className="overflow-hidden rounded-[20px] border bg-white"
+                      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+                    >
+                      {section.items.map((item, index) => (
+                        <View
+                          key={`${item.id}-${index}`}
+                          className={`${index < section.items.length - 1 ? "border-b" : ""} px-4 py-3`}
+                          style={
+                            index < section.items.length - 1
+                              ? { borderColor: adminTheme.border }
+                              : undefined
+                          }
+                        >
+                          <ReportResultItem item={item} />
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <EmptyResults />
+            )}
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1078,11 +1067,7 @@ async function handleFetchReportByDate() {
 }
 
   return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingBottom: 20 }}
-      showsVerticalScrollIndicator={false}
-    >
+    <View className="flex-1" style={{ minHeight: 0 }}>
       <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
         <View className="flex-row items-start">
           <Pressable
@@ -1107,145 +1092,148 @@ async function handleFetchReportByDate() {
         </View>
       </View>
 
-      <View className="px-4 pt-4">
-        <SummaryCard report={report} mobile />
-      </View>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="px-4 pt-4">
+          <SummaryCard report={report} mobile />
+        </View>
 
-      <View className="px-4 pt-4">
-        <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-          Audit results ({report.items.length})
-        </Text>
-        {showDateFilters ? (
-          <>
-        <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
-
-  <Pressable
-    onPress={() => setOpenStart(true)}
-    className="rounded-xl border px-3 py-2"
-    style={{ borderColor: adminTheme.border }}
-  >
-    <Text>
-      {startDate ? startDate.toDateString() : "Start Date"}
-    </Text>
-  </Pressable>
-
-  <Pressable
-    onPress={() => setOpenEnd(true)}
-    className="rounded-xl border px-3 py-2"
-    style={{ borderColor: adminTheme.border }}
-  >
-    <Text>
-      {endDate ? endDate.toDateString() : "End Date"}
-    </Text>
-  </Pressable>
-  {Platform.OS === "web" && (
-    <View style={{ flexDirection: "row", gap: 10 }}>
-      <input
-        type="date"
-        onChange={(e) => setStartDate(new Date(e.target.value))}
-        style={{
-          padding: "8px 12px",
-          borderRadius: "12px",
-          border: `1px solid ${adminTheme.border}`,
-          backgroundColor: adminTheme.surface,
-          color: adminTheme.slate,
-        }}
-      />
-      <input
-        type="date"
-        onChange={(e) => setEndDate(new Date(e.target.value))}
-        style={{
-          padding: "8px 12px",
-          borderRadius: "12px",
-          border: `1px solid ${adminTheme.border}`,
-          backgroundColor: adminTheme.surface,
-          color: adminTheme.slate,
-        }}
-      />
-    </View>
-)}
-
-  <Pressable
-    onPress={handleFetchReportByDate}
-    className="rounded-xl px-4 py-2"
-    style={{ backgroundColor: adminTheme.primary }}
-  >
-    <Text style={{ color: "#fff" }}>
-      {loadingReport ? "Loading..." : "Go"}
-    </Text>
-  </Pressable>
-</View>
-            {Platform.OS !== "web" && (
-              <>
-                <DatePicker
-                  modal
-                  open={openStart}
-                  date={startDate || new Date()}
-                  mode="date"
-                  onConfirm={(date) => {
-                    setOpenStart(false);
-                    setStartDate(date);
-                  }}
-                  onCancel={() => setOpenStart(false)}
-                />
-
-                <DatePicker
-                  modal
-                  open={openEnd}
-                  date={endDate || new Date()}
-                  mode="date"
-                  onConfirm={(date) => {
-                    setOpenEnd(false);
-                    setEndDate(date);
-                  }}
-                  onCancel={() => setOpenEnd(false)}
-                />
-              </>
-            )}
-          </>
-        ) : null}
-
-        <FilterBar
-          searchTerm={searchTerm}
-          onChangeSearchTerm={setSearchTerm}
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          filteredCount={filteredItems.length}
-          totalCount={report.items.length}
-        />
-
-        {filteredSections.length > 0 ? (
-          filteredSections.map((section, sectionIndex) => (
-            <View
-              key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`}
-              className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}
-            >
-              <WarehouseSectionHeader section={section} mobile />
-              {section.items.map((item, index) => (
-                <View key={`${item.id}-${index}`} className={index < section.items.length - 1 ? "mb-3" : ""}>
-                  <ReportResultItem item={item} mobile />
-                </View>
-              ))}
-            </View>
-          ))
-        ) : (
-          <EmptyResults />
-        )}
-      </View>
-
-      <View className="px-4 pt-4">
-        <Pressable
-          onPress={onExportPdf}
-          className="flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
-          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
-        >
-          <Feather name="download" size={18} color={adminTheme.slateSoft} />
-          <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-            {isExporting ? "Exporting..." : "Export Report (PDF)"}
+        <View className="flex-1 px-4 pt-4" style={{ minHeight: 0 }}>
+          <Text className="mb-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+            Audit results ({report.items.length})
           </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+          {showDateFilters ? (
+            <>
+              <View className="mb-4 flex-row flex-wrap items-center" style={{ gap: 10 }}>
+
+                <Pressable
+                  onPress={() => setOpenStart(true)}
+                  className="rounded-xl border px-3 py-2"
+                  style={{ borderColor: adminTheme.border }}
+                >
+                  <Text>
+                    {startDate ? startDate.toDateString() : "Start Date"}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setOpenEnd(true)}
+                  className="rounded-xl border px-3 py-2"
+                  style={{ borderColor: adminTheme.border }}
+                >
+                  <Text>
+                    {endDate ? endDate.toDateString() : "End Date"}
+                  </Text>
+                </Pressable>
+                {Platform.OS === "web" && (
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <input
+                      type="date"
+                      onChange={(e) => setStartDate(new Date(e.target.value))}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "12px",
+                        border: `1px solid ${adminTheme.border}`,
+                        backgroundColor: adminTheme.surface,
+                        color: adminTheme.slate,
+                      }}
+                    />
+                    <input
+                      type="date"
+                      onChange={(e) => setEndDate(new Date(e.target.value))}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "12px",
+                        border: `1px solid ${adminTheme.border}`,
+                        backgroundColor: adminTheme.surface,
+                        color: adminTheme.slate,
+                      }}
+                    />
+                  </View>
+                )}
+
+                <Pressable
+                  onPress={handleFetchReportByDate}
+                  className="rounded-xl px-4 py-2"
+                  style={{ backgroundColor: adminTheme.primary }}
+                >
+                  <Text style={{ color: "#fff" }}>
+                    {loadingReport ? "Loading..." : "Go"}
+                  </Text>
+                </Pressable>
+              </View>
+              {Platform.OS !== "web" && (
+                <>
+                  <DatePicker
+                    modal
+                    open={openStart}
+                    date={startDate || new Date()}
+                    mode="date"
+                    onConfirm={(date) => {
+                      setOpenStart(false);
+                      setStartDate(date);
+                    }}
+                    onCancel={() => setOpenStart(false)}
+                  />
+
+                  <DatePicker
+                    modal
+                    open={openEnd}
+                    date={endDate || new Date()}
+                    mode="date"
+                    onConfirm={(date) => {
+                      setOpenEnd(false);
+                      setEndDate(date);
+                    }}
+                    onCancel={() => setOpenEnd(false)}
+                  />
+                </>
+              )}
+            </>
+          ) : null}
+
+          <FilterBar
+            searchTerm={searchTerm}
+            onChangeSearchTerm={setSearchTerm}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            filteredCount={filteredItems.length}
+            totalCount={report.items.length}
+          />
+
+          {filteredSections.length > 0 ? (
+            filteredSections.map((section, sectionIndex) => (
+              <View key={`${section.warehouseId ?? section.warehouseName}-${sectionIndex}`} className={sectionIndex < filteredSections.length - 1 ? "mb-5" : ""}>
+                <WarehouseSectionHeader section={section} mobile />
+                {section.items.map((item, index) => (
+                  <View key={`${item.id}-${index}`} className={index < section.items.length - 1 ? "mb-3" : ""}>
+                    <ReportResultItem item={item} mobile />
+                  </View>
+                ))}
+              </View>
+            ))
+          ) : (
+            <EmptyResults />
+          )}
+
+          <View className="pt-4">
+            <Pressable
+              onPress={onExportPdf}
+              className="flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            >
+              <Feather name="download" size={18} color={adminTheme.slateSoft} />
+              <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                {isExporting ? "Exporting..." : "Export Report (PDF)"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
