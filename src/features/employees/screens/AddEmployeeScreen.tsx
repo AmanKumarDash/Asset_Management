@@ -278,8 +278,7 @@ function getDefaultUserAddress(): NonNullable<CreateUserRequest["Address"]> {
 }
 
 function buildEmployeePayload(values: EmployeeFormValues): CreateUserRequest {
-  return {
-    UserId: values.employeeId,
+  const payload: CreateUserRequest = {
     FirstName: values.firstName,
     MiddleName: values.middleName || undefined,
     LastName: values.lastName,
@@ -290,6 +289,37 @@ function buildEmployeePayload(values: EmployeeFormValues): CreateUserRequest {
     GSTTypeID: 2,
     GSTType: "Un-Register",
   };
+
+  if (values.employeeId) {
+    payload.UserId = values.employeeId;
+  }
+
+  return payload;
+}
+
+function resolveCreatedUserId(response: unknown): string | null {
+  if (typeof response === "string") {
+    const trimmed = response.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (!response || typeof response !== "object") {
+    return null;
+  }
+
+  return pickId(response as Record<string, unknown>, [
+    "NewUserId",
+    "UserId",
+    "UserID",
+    "Id",
+    "ID",
+    "EmployeeId",
+    "EmployeeID",
+    "userId",
+    "id",
+    "employeeId",
+    "employeeID",
+  ]);
 }
 
 function buildWarehouseAccessRequest(values: EmployeeFormValues) {
@@ -799,7 +829,7 @@ export default function AddEmployeeScreen() {
       return;
     }
 
-    if (!values.employeeId) {
+    if (isEditMode && !values.employeeId) {
       setSubmitError("Employee ID is required.");
       return;
     }
@@ -833,9 +863,26 @@ export default function AddEmployeeScreen() {
         await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
         setSubmitSuccess("Employee warehouse access updated successfully. Note: Employee details cannot be modified through this interface.");
       } else {
-        await apiService.createUser(buildEmployeePayload(values));
+        const createResponse = await apiService.createUser(buildEmployeePayload(values));
+        const createdUserId = resolveCreatedUserId(createResponse);
+
+        if (!createdUserId) {
+          if (values.selectedWarehouseIds.length > 0) {
+            setSubmitError(
+              "Employee was created, but the new employee ID could not be determined to assign warehouse access."
+            );
+            return;
+          }
+
+          setSubmitSuccess("Employee created successfully.");
+          applyFormValues(EMPTY_FORM_VALUES);
+          return;
+        }
+
         try {
-          await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
+          await apiService.updateWarehouseAccess(
+            buildWarehouseAccessRequest({ ...values, employeeId: createdUserId })
+          );
         } catch (warehouseAccessError) {
           setSubmitError(
             getApiErrorMessage(
@@ -873,7 +920,7 @@ export default function AddEmployeeScreen() {
     : "Create a user and assign warehouse access";
   const infoMessage = isEditMode
     ? "Employee details are displayed for reference. Only warehouse access can be updated here because the backend currently provides the WarehouseAccess API for edits."
-    : "Required fields are First Name, Last Name, Employee ID, Mobile, User Type, and at least one warehouse access selection.";
+    : "Required fields are First Name, Last Name, Mobile, User Type, and at least one warehouse access selection.";
 
   return (
     <View className="flex-1">
@@ -1026,18 +1073,19 @@ export default function AddEmployeeScreen() {
           </View>
 
           <View className="mb-5 flex-row gap-4" style={{ flexWrap: isWide ? "nowrap" : "wrap" }}>
-            <Field
-              label="Employee ID"
-              value={employeeId}
-              placeholder="Enter employee ID"
-              required
-              editable={!isEditMode}
-              autoCapitalize="characters"
-              onChangeText={(value) => {
-                setEmployeeId(value);
-                resetFeedback();
-              }}
-            />
+            {isEditMode ? (
+              <Field
+                label="Employee ID"
+                value={employeeId}
+                required
+                editable={!isEditMode}
+                autoCapitalize="characters"
+                onChangeText={(value) => {
+                  setEmployeeId(value);
+                  resetFeedback();
+                }}
+              />
+            ) : null}
             <Field
               label="Email"
               value={email}
