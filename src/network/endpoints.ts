@@ -23,6 +23,8 @@ export const ENDPOINTS = {
     GET_BY_ORG: (pageNo = 1, rowCount = 50) =>
       `/api/warehouse/getwarehousebyOrg?pageNo=${pageNo}&rowCount=${rowCount}`,
     ACCESS: "/api/warehouse/WarehouseAccess",
+    DELETE_EMPLOYEE_WAREHOUSE: (userId: string) =>
+      `/api/warehouse/deleteemployeewarehouse?UserId=${encodeURIComponent(userId)}`,
     GET_ACCESS_BY_USER: (userId: string) =>
       `/api/warehouse/GetWarehouseAccessByUser?UserId=${encodeURIComponent(userId)}`,
     GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>

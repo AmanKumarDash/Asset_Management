@@ -194,6 +194,17 @@ class ApiService {
     return extractResponseData<unknown>(response.data);
   }
 
+  // Deletes an employee warehouse assignment/user through the warehouse delete API.
+  async deleteEmployeeWarehouse(userId: string): Promise<unknown> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.post<ApiEnvelope<unknown> | unknown>(
+      ENDPOINTS.WAREHOUSE.DELETE_EMPLOYEE_WAREHOUSE(userId)
+    );
+
+    return extractResponseData<unknown>(response.data);
+  }
+
   // Loads the warehouse list assigned to a specific user so audit access can be limited per login.
   async getWarehouseAccessByUser(
     userId: string
