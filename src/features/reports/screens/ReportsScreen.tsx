@@ -1,9 +1,9 @@
 import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanData";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
-    LatestAuditReport,
-    LatestAuditReportWarehouseSection,
-    setLatestAuditReport,
+  LatestAuditReport,
+  LatestAuditReportWarehouseSection,
+  setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { UserDetails, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
@@ -11,15 +11,15 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
-    useWindowDimensions,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
 import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
