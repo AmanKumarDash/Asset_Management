@@ -140,7 +140,7 @@ function generateWarehouseSections(report: LatestAuditReport) {
             <thead>
               <tr>
                 <th style="width: 8%;">#</th>
-                <th style="width: 15%;">Asset ID</th>
+                <th style="width: 15%;">Tag ID</th>
                 <th style="width: 25%;">Item Name</th>
                 <th style="width: 15%;">Status</th>
                 <th style="width: 15%;">Scan Time</th>
@@ -157,7 +157,7 @@ function generateWarehouseSections(report: LatestAuditReport) {
             <table>
               <thead>
                 <tr>
-                  <th>Asset ID</th>
+                  <th>Tag ID</th>
                   <th>Item Name</th>
                   <th>Found At</th>
                   <th>Scan Time</th>

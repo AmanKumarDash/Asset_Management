@@ -73,9 +73,9 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
     if (isScanned) {
       const scanInfo = scannedMap.get(whItem.ProductId)!;
       items.push({
-        id: whItem.TagId, // full RFID
+        id: whItem.TagId, // full RFID Tag ID (consistent format)
         title: whItem.ProductName,
-        subtitle: `Short Tag ${scanInfo.shortTag} • ${scanInfo.refId}`,
+        subtitle: `Scanned as ${scanInfo.shortTag} • ${scanInfo.refId}`,
         tone: "found" as const,
         icon: "plus-circle"
       });
@@ -83,7 +83,7 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
     } else {
       // Missing
       items.push({
-        id: whItem.TagId,
+        id: whItem.TagId, // full RFID Tag ID (consistent format)
         title: whItem.ProductName,
         subtitle: `Expected but not scanned`,
         tone: "missing" as const,
@@ -98,7 +98,7 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
     if (!warehouseItems.some(w => w.ProductId === pid)) {
       const scanInfo = scannedMap.get(pid)!;
       items.push({
-        id: scanInfo.shortTag,
+        id: scanInfo.shortTag, // Use scan TagId for extra items (only source available)
         title: scanInfo.code || "Unknown Product",
         subtitle: scanInfo.refId,
         tone: "extra" as const,
