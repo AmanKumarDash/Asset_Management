@@ -1,19 +1,19 @@
 import {
-    AssetWarehouseStagingItem,
-    AuditComparisonAsset,
-    AuditComparisonResponse,
-    AuditPhase,
-    AuditReportAsset,
-    AuditReportTone,
-    AuditSummary,
-    WarehouseTagLocationItem,
+  AssetWarehouseStagingItem,
+  AuditComparisonAsset,
+  AuditComparisonResponse,
+  AuditPhase,
+  AuditReportAsset,
+  AuditReportTone,
+  AuditSummary,
+  WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
 import {
-    LatestAuditReport,
-    LatestAuditReportWarehouseSection,
-    setLatestAuditReport,
+  LatestAuditReport,
+  LatestAuditReportWarehouseSection,
+  setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
