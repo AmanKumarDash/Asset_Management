@@ -5,7 +5,6 @@ import { WarehouseSummary } from "@/models/warehouse";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -853,55 +852,6 @@ function MobileAuditScan() {
       contentContainerStyle={{ paddingBottom: 20 }}
       showsVerticalScrollIndicator={false}
     >
-      <View
-        className="border-b px-4 pb-4 pt-3"
-        style={{ borderColor: adminTheme.border }}
-      >
-        <View className="flex-row items-start">
-          <Pressable
-            onPress={() => {
-              if (hasSelectedWarehouse) {
-                goBackToWarehouseSelection();
-                return;
-              }
-
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push("/dashboard");
-              }
-            }}
-            className="mr-3 mt-1 h-9 w-9 items-center justify-center rounded-[12px] border"
-            style={{
-              borderColor: adminTheme.border,
-              backgroundColor: adminTheme.surface,
-            }}
-          >
-            <Feather
-              name="chevron-left"
-              size={18}
-              color={adminTheme.slateSoft}
-            />
-          </Pressable>
-
-          <View className="flex-1">
-            <Text
-              className="text-[18px] font-semibold"
-              style={{ color: adminTheme.slate }}
-            >
-              {hasSelectedWarehouse
-                ? activeWarehouse?.name ?? auditScanOverview.title
-                : auditScanOverview.title}
-            </Text>
-            <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
-              {hasSelectedWarehouse
-                ? "Warehouse scan"
-                : auditScanOverview.subtitle}
-            </Text>
-          </View>
-        </View>
-      </View>
-
       {!hasSelectedWarehouse ? (
         <>
           <View className="px-4 pt-4">
@@ -971,16 +921,6 @@ function MobileAuditScan() {
                 }
               }}
               submitError={submitError}
-            />
-          </View>
-
-          <View className="px-4 pt-3">
-            <ManualEntryRow
-              value={manualAssetId}
-              onChange={setManualAssetId}
-              onAdd={addManualAsset}
-              isScanning={isScanning}
-              mobile
             />
           </View>
 
@@ -1315,15 +1255,6 @@ function DesktopAuditScan({ width }: { width: number }) {
                 onProceedNextWarehouse={proceedToNextWarehouse}
               />
             </View>
-          </View>
-
-          <View className="mb-5">
-            <ManualEntryRow
-              value={manualAssetId}
-              onChange={setManualAssetId}
-              onAdd={addManualAsset}
-              isScanning={isScanning}
-            />
           </View>
 
           <View className="mb-3">

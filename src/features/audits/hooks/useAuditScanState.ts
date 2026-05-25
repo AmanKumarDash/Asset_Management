@@ -429,7 +429,7 @@ function getLiveSummaryFromItems(
   return {
     ...summary,
     missing,
-    scanned: summary.found + missing + summary.extra,
+    scanned: summary.found + summary.extra,
     expected: expectedCount,
   };
 }
