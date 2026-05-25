@@ -1,20 +1,20 @@
 import {
-  AssetWarehouseStagingItem,
-  AuditComparisonAsset,
-  AuditComparisonResponse,
-  AuditPhase,
-  AuditReportAsset,
-  AuditReportTone,
-  AuditSummary,
-  WarehouseTagLocationItem,
+    AssetWarehouseStagingItem,
+    AuditComparisonAsset,
+    AuditComparisonResponse,
+    AuditPhase,
+    AuditReportAsset,
+    AuditReportTone,
+    AuditSummary,
+    WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import {
-  LatestAuditReport,
-  LatestAuditReportWarehouseSection,
-  setLatestAuditReport,
-} from "@/features/reports/state/latestAuditReportStore";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
+import {
+    LatestAuditReport,
+    LatestAuditReportWarehouseSection,
+    setLatestAuditReport,
+} from "@/features/reports/state/latestAuditReportStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
 import { appLogger } from "@/utils/appLogger";
@@ -154,14 +154,36 @@ function mapInventoryToAuditItem(
   };
 }
 
-// Extracts the numeric tag and product ids needed by the warehouse staging API.
-// The inventory lookup returns the scanned RFID value as TagId for display, but
-// the staging endpoint expects the numeric tag record id, which comes back as ID.
+function applyWarehouseExpectationToItem(
+  item: AuditScanItem,
+  expectedTagIds: Set<string>
+): AuditScanItem {
+  if (item.tone !== "found") {
+    return item;
+  }
+
+  const itemTagId = getTagKey(item.id);
+
+  if (itemTagId && expectedTagIds.has(itemTagId)) {
+    return item;
+  }
+
+  return {
+    ...item,
+    tone: "extra",
+    icon: "plus-circle",
+    subtitle: item.subtitle
+      ? `${item.subtitle} - Found during audit but not expected in this warehouse`
+      : `${item.id} - Found during audit but not expected in this warehouse`,
+  };
+}
+
+// Extracts the scanned RFID tag and product id needed by the warehouse staging API.
 function mapInventoryToStagedLookup(
   tagId: string,
   asset: InventoryBarcodeScanDetail | null
 ): StagedAssetLookup | null {
-  const resolvedTagId = getTagKey(asset?.ID ?? asset?.TagId ?? tagId);
+  const resolvedTagId = getTagKey(asset?.TagId ?? tagId);
   const productId = parseNumericId(asset?.ProductId);
 
   if (resolvedTagId === null || productId === null) {
@@ -211,6 +233,16 @@ function getComparisonKey(
     parseNumericId((asset as AuditComparisonAsset).ProductId) ??
     parseNumericId((asset as AuditComparisonAsset).ProductID) ??
     parseNumericId((asset as AuditComparisonAsset).productId);
+
+  // Include WarehouseId in the comparison key to ensure items are only matched within the same warehouse
+  const warehouseId =
+    parseNumericId((asset as AuditComparisonAsset).WarehouseId) ??
+    parseNumericId((asset as AuditComparisonAsset).WareHouseId) ??
+    parseNumericId((asset as AuditComparisonAsset).warehouseId);
+
+  if (productId !== null && warehouseId !== null) {
+    return `warehouse:${warehouseId}:product:${productId}`;
+  }
 
   if (productId !== null) {
     return `product:${productId}`;
@@ -383,6 +415,22 @@ function getSummaryFromItems(
     missing,
     extra,
     scanned: scannedOverride ?? items.length,
+  };
+}
+
+function getLiveSummaryFromItems(
+  items: AuditScanItem[],
+  expectedCount: number,
+  scannedOverride?: number
+): AuditSummary {
+  const summary = getSummaryFromItems(items, scannedOverride);
+  const missing = Math.max(summary.missing, expectedCount - summary.found, 0);
+
+  return {
+    ...summary,
+    missing,
+    scanned: summary.found + missing + summary.extra,
+    expected: expectedCount,
   };
 }
 
@@ -834,6 +882,7 @@ export function useAuditScanState() {
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
   const stagedLookupsRef = useRef(new Map<string, StagedAssetLookup>());
   const scannedTagIdsRef = useRef(new Set<string>());
+  const expectedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
   const scanSessionRef = useRef(0);
   const warehouseLoadRequestRef = useRef(0);
@@ -862,7 +911,10 @@ export function useAuditScanState() {
       .searchInventoryBarcodeScanMode(tagId)
       .then((results) => {
         const asset = results[0] ?? null;
-        const item = mapInventoryToAuditItem(tagId, asset);
+        const item = applyWarehouseExpectationToItem(
+          mapInventoryToAuditItem(tagId, asset),
+          expectedTagIdsRef.current
+        );
         const stagedLookup = mapInventoryToStagedLookup(tagId, asset);
 
         if (stagedLookup) {
@@ -998,14 +1050,22 @@ export function useAuditScanState() {
     }
 
     if (auditPhase === "submitting" || auditPhase === "submitError") {
-      return getSummaryFromItems(
+      return getLiveSummaryFromItems(
         frozenItems,
+        expectedAssetCount,
         submittedTagIds.length || frozenItems.length
       );
     }
 
-    return getSummaryFromItems(liveItems);
-  }, [auditPhase, frozenItems, liveItems, reportSummary, submittedTagIds]);
+    return getLiveSummaryFromItems(liveItems, expectedAssetCount);
+  }, [
+    auditPhase,
+    expectedAssetCount,
+    frozenItems,
+    liveItems,
+    reportSummary,
+    submittedTagIds,
+  ]);
 
   const clearScanSession = useCallback((nextPhase: AuditPhase = "idle") => {
     scanSessionRef.current += 1;
@@ -1025,6 +1085,7 @@ export function useAuditScanState() {
     setSubmittedReferenceId(null);
     setReportSummary({ found: 0, missing: 0, extra: 0, scanned: 0 });
     setExpectedAssetCount(0);
+    expectedTagIdsRef.current = new Set<string>();
     setSubmitError(null);
     setConnectionStatus("idle");
     setAuditPhase(nextPhase);
@@ -1090,6 +1151,7 @@ export function useAuditScanState() {
         return count + 1;
       }, 0);
 
+      expectedTagIdsRef.current = seen;
       setExpectedAssetCount(expectedCount);
       setSubmitError(null);
       appLogger.info("AuditScan", "Loaded warehouse asset count for audit progress.", {
@@ -1157,7 +1219,9 @@ export function useAuditScanState() {
     }
 
     const currentExpectedCount = expectedAssetCount;
+    const currentExpectedTagIds = new Set(expectedTagIdsRef.current);
     clearScanSession("scanning");
+    expectedTagIdsRef.current = currentExpectedTagIds;
     setAuditWarehouseId(warehouseId);
     setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
     setAuditApiSessionId((current) =>

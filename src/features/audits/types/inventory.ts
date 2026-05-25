@@ -18,4 +18,5 @@ export type InventoryBarcodeScanDetail = {
   Sale_Price?: number;
   Sale_BasePrice?: number;
   ActualSellPrice?: number;
+  WarehouseId?: number | string;
 };
