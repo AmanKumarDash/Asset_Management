@@ -317,10 +317,26 @@ class ApiService {
     const response = await this.api.get<
       | ApiCollectionEnvelope<WarehouseTagLocationItem>
       | ApiEnvelope<WarehouseTagLocationItem[]>
+      | ApiEnvelope<WarehouseTagLocationItem>
       | WarehouseTagLocationItem[]
+      | WarehouseTagLocationItem
     >(ENDPOINTS.WAREHOUSE.GET_ACCESS_BY_TAG_ID(normalizedTagIds.join(",")));
 
-    return extractResponseCollection<WarehouseTagLocationItem>(response.data);
+    const collection = extractResponseCollection<WarehouseTagLocationItem>(
+      response.data as ApiCollectionEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem[]
+    );
+
+    if (collection.length > 0) {
+      return collection;
+    }
+
+    const singleItem = extractResponseData<WarehouseTagLocationItem>(
+      response.data as ApiEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem
+    );
+
+    return singleItem && typeof singleItem === "object" && !Array.isArray(singleItem)
+      ? [singleItem]
+      : [];
   }
 
   // Loads submitted employee report rows, optionally constrained to a date range.

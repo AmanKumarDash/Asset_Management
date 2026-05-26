@@ -455,13 +455,23 @@ function getWarehouseLocationTagId(location: WarehouseTagLocationItem): string |
     getTagKey(location.TagId) ??
     getTagKey(location.TAG_ID) ??
     getTagKey(location.TagID) ??
+    getTagKey(location.tagId) ??
+    getTagKey(location.tagid) ??
+    getTagKey(location.RFIDTagId) ??
+    getTagKey(location.RFIDTagID) ??
     null
   );
 }
 
 function getWarehouseLocationName(location: WarehouseTagLocationItem): string | null {
   return (
-    pickString(location, ["WareHouseName", "WarehouseName", "warehouseName"]) ??
+    pickString(location, [
+      "WareHouseName",
+      "WarehouseName",
+      "warehouseName",
+      "ExpectedWarehouseName",
+      "OriginalWarehouseName",
+    ]) ??
     null
   );
 }
@@ -469,8 +479,12 @@ function getWarehouseLocationName(location: WarehouseTagLocationItem): string | 
 function getWarehouseLocationId(location: WarehouseTagLocationItem): string | null {
   return (
     getTagKey(location.WareHouseId) ??
+    getTagKey(location.WareHouseID) ??
     getTagKey(location.WarehouseId) ??
+    getTagKey(location.WarehouseID) ??
     getTagKey(location.warehouseId) ??
+    getTagKey(location.ExpectedWarehouseId) ??
+    getTagKey(location.OriginalWarehouseId) ??
     null
   );
 }
@@ -479,9 +493,27 @@ function getWarehouseLabel(warehouseId: string, warehouseName?: string | null) {
   return warehouseName?.trim() || `Warehouse ${warehouseId}`;
 }
 
+function appendWarehouseOriginSubtitle(
+  item: AuditScanItem,
+  sourceLabel: string,
+  currentWarehouseLabel: string
+): AuditScanItem {
+  const originMessage = `Expected in ${sourceLabel}, found in ${currentWarehouseLabel}`;
+
+  if (item.subtitle.includes(originMessage)) {
+    return item;
+  }
+
+  return {
+    ...item,
+    subtitle: `${item.subtitle} - ${originMessage}`,
+  };
+}
+
 async function enrichExtraItemsWithWarehouseOrigin(
   items: AuditScanItem[],
-  currentWarehouseId: string
+  currentWarehouseId: string,
+  currentWarehouseName?: string | null
 ): Promise<AuditScanItem[]> {
   const extraItems = items.filter((item) => item.tone === "extra");
 
@@ -506,7 +538,7 @@ async function enrichExtraItemsWithWarehouseOrigin(
         return item;
       }
 
-      const location = locationByTag.get(item.id);
+      const location = locationByTag.get(item.id) ?? locationByTag.get(String(item.id).trim());
       if (!location) {
         return item;
       }
@@ -521,11 +553,9 @@ async function enrichExtraItemsWithWarehouseOrigin(
         sourceWarehouseId,
         getWarehouseLocationName(location)
       );
+      const currentLabel = getWarehouseLabel(currentWarehouseId, currentWarehouseName);
 
-      return {
-        ...item,
-        subtitle: `${item.subtitle} - Expected in ${sourceLabel}, found here`,
-      };
+      return appendWarehouseOriginSubtitle(item, sourceLabel, currentLabel);
     });
   } catch (error) {
     appLogger.warn("AuditScan", "Failed to enrich extra assets with warehouse origin.", {
@@ -884,6 +914,7 @@ export function useAuditScanState() {
   const scannedTagIdsRef = useRef(new Set<string>());
   const expectedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
+  const auditWarehouseIdRef = useRef<string | null>(null);
   const scanSessionRef = useRef(0);
   const warehouseLoadRequestRef = useRef(0);
   const completedWarehouseReportsRef = useRef<LatestAuditReport[]>([]);
@@ -892,6 +923,10 @@ export function useAuditScanState() {
   useEffect(() => {
     auditPhaseRef.current = auditPhase;
   }, [auditPhase]);
+
+  useEffect(() => {
+    auditWarehouseIdRef.current = auditWarehouseId;
+  }, [auditWarehouseId]);
 
   // Resolves one scanned tag into a UI item and caches the result to avoid duplicate lookup calls.
   const resolveAuditItem = useCallback(async (tagId: string) => {
@@ -963,7 +998,20 @@ export function useAuditScanState() {
 
       void Promise.all(
         tagIds.map((tagId) => resolveAuditItem(tagId as string))
-      ).then((resolvedItems) => {
+      )
+        .then((resolvedItems) => {
+          const currentWarehouseId = auditWarehouseIdRef.current;
+
+          if (!currentWarehouseId) {
+            return resolvedItems;
+          }
+
+          return enrichExtraItemsWithWarehouseOrigin(
+            resolvedItems,
+            currentWarehouseId
+          );
+        })
+        .then((resolvedItems) => {
         if (
           auditPhaseRef.current !== "scanning" ||
           sessionId !== scanSessionRef.current
