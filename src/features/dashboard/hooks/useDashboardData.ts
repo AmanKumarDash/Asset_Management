@@ -1,5 +1,6 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { UserDetails, apiService, EmployeeReportApiItem } from "@/network/ApiService";
+import { AuditComparisonResponse } from "@/features/audits/types/audit";
 import { WarehouseSummary } from "@/models/warehouse";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -24,14 +25,35 @@ export type DashboardEmployeeActivity = {
   lastSubmittedAt: string | null;
 };
 
+export type DashboardAssetStatusSummary = {
+  found: number;
+  missing: number;
+  extra: number;
+};
+
+export type DashboardWarehouseDistributionItem = {
+  id: string;
+  name: string;
+  assetCount: number;
+  auditCount: number;
+  status: DashboardAssetStatusSummary;
+};
+
 export type AdminDashboardData = {
   employeeCount: number;
   activeAuditorCount: number;
   submittedAuditCount: number;
   scannedAssetCount: number;
+  warehouseCount: number;
+  totalAssetCount: number;
+  missingAssetCount: number;
+  extraAssetCount: number;
+  pendingAuditCount: number;
   locationCount: number;
   recentAudits: DashboardAuditRow[];
   teamActivity: DashboardEmployeeActivity[];
+  warehouseDistribution: DashboardWarehouseDistributionItem[];
+  assetStatus: DashboardAssetStatusSummary;
 };
 
 export type EmployeeDashboardData = {
@@ -224,6 +246,106 @@ function sumScannedAssets(rows: DashboardAuditRow[]) {
   return rows.reduce((sum, row) => sum + row.scannedCount, 0);
 }
 
+function pickWarehouseId(record: Record<string, unknown>, fallback: string) {
+  const id =
+    record.Id ??
+    record.ID ??
+    record.WarehouseId ??
+    record.WareHouseId ??
+    record.warehouseId;
+
+  return id === null || id === undefined || String(id).trim().length === 0
+    ? fallback
+    : String(id).trim();
+}
+
+function pickWarehouseName(record: Record<string, unknown>, fallback: string) {
+  const name =
+    record.WareHouseName ??
+    record.WarehouseName ??
+    record.Name ??
+    record.name ??
+    record.Title ??
+    record.title;
+
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : fallback;
+}
+
+function getComparisonArrayCount(response: AuditComparisonResponse, keys: string[]) {
+  for (const key of keys) {
+    const value = response[key];
+
+    if (Array.isArray(value)) {
+      return value.length;
+    }
+  }
+
+  return 0;
+}
+
+function getComparisonNumericCount(response: AuditComparisonResponse, keys: string[]) {
+  for (const key of keys) {
+    const value = response[key];
+    const numberValue =
+      typeof value === "number"
+        ? value
+        : typeof value === "string"
+          ? Number(value)
+          : Number.NaN;
+
+    if (Number.isFinite(numberValue)) {
+      return numberValue;
+    }
+  }
+
+  return null;
+}
+
+function getComparisonCount(
+  response: AuditComparisonResponse,
+  countKeys: string[],
+  arrayKeys: string[]
+) {
+  return getComparisonNumericCount(response, countKeys) ?? getComparisonArrayCount(response, arrayKeys);
+}
+
+function getAuditStatusCounts(row: DashboardAuditRow, response: AuditComparisonResponse) {
+  const extra = getComparisonCount(
+    response,
+    ["ExtraCount", "extraCount"],
+    ["ExtraAssets", "ExtraItems", "Extra", "extraAssets", "extraItems", "extra"]
+  );
+  const missing = getComparisonCount(
+    response,
+    ["MissingCount", "missingCount"],
+    ["MissingAssets", "MissingItems", "Missing", "missingAssets", "missingItems", "missing"]
+  );
+  const foundArrayCount = getComparisonArrayCount(response, [
+    "FoundAssets",
+    "FoundItems",
+    "Found",
+    "foundAssets",
+    "foundItems",
+    "found",
+  ]);
+  const found =
+    getComparisonNumericCount(response, ["FoundCount", "foundCount"]) ??
+    (foundArrayCount > 0 ? foundArrayCount : Math.max(row.scannedCount - extra, 0));
+
+  return { found, missing, extra };
+}
+
+function addAssetStatus(
+  current: DashboardAssetStatusSummary,
+  next: DashboardAssetStatusSummary
+) {
+  return {
+    found: current.found + next.found,
+    missing: current.missing + next.missing,
+    extra: current.extra + next.extra,
+  };
+}
+
 export function useEmployeeDashboardData(period: DashboardPeriod) {
   const { user, accessibleWarehouses } = useAuthSession();
   const [recentAudits, setRecentAudits] = useState<DashboardAuditRow[]>([]);
@@ -314,9 +436,16 @@ export function useAdminDashboardData(period: DashboardPeriod) {
     activeAuditorCount: 0,
     submittedAuditCount: 0,
     scannedAssetCount: 0,
+    warehouseCount: 0,
+    totalAssetCount: 0,
+    missingAssetCount: 0,
+    extraAssetCount: 0,
+    pendingAuditCount: 0,
     locationCount: 0,
     recentAudits: [],
     teamActivity: [],
+    warehouseDistribution: [],
+    assetStatus: { found: 0, missing: 0, extra: 0 },
   });
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -335,9 +464,16 @@ export function useAdminDashboardData(period: DashboardPeriod) {
             activeAuditorCount: 0,
             submittedAuditCount: 0,
             scannedAssetCount: 0,
+            warehouseCount: 0,
+            totalAssetCount: 0,
+            missingAssetCount: 0,
+            extraAssetCount: 0,
+            pendingAuditCount: 0,
             locationCount: 0,
             recentAudits: [],
             teamActivity: [],
+            warehouseDistribution: [],
+            assetStatus: { found: 0, missing: 0, extra: 0 },
           });
           setErrorMessage(null);
           setIsLoading(false);
@@ -356,9 +492,10 @@ export function useAdminDashboardData(period: DashboardPeriod) {
           fromDate: formatDateForApi(startDate),
           toDate: formatDateForApi(endDate),
         };
-        const [employees, adminReports] = await Promise.all([
+        const [employees, adminReports, warehouseRecords] = await Promise.all([
           apiService.getUserDetails(""),
           apiService.getReportByEmployee(user.employeeId.trim(), dateOptions).catch(() => []),
+          apiService.getWarehouses(1, 200).catch(() => []),
         ]);
         const filteredEmployees = employees.filter(
           (employee) => employee.UserId?.trim() && employee.UserId?.trim() !== user.employeeId.trim()
@@ -407,15 +544,105 @@ export function useAdminDashboardData(period: DashboardPeriod) {
         const allAuditRows = [...teamAuditRows, ...adminAuditRows].sort(
           (left, right) => getSortableTime(right.completedAt) - getSortableTime(left.completedAt)
         );
+        const warehouseSummaries = Array.from(
+          warehouseRecords
+            .reduce((map, record, index) => {
+              const id = pickWarehouseId(record, `warehouse-${index}`);
 
+              if (!map.has(id)) {
+                map.set(id, {
+                  id,
+                  name: pickWarehouseName(record, `Warehouse ${id}`),
+                });
+              }
+
+              return map;
+            }, new Map<string, { id: string; name: string }>())
+            .values()
+        );
+        const [assetDistribution, auditComparisons]: [
+          DashboardWarehouseDistributionItem[],
+          AuditComparisonResponse[],
+        ] =
+          await Promise.all([
+          Promise.all(
+            warehouseSummaries.map(async (warehouse) => {
+              const baseline = await apiService.getWarehouseTagBaseline(warehouse.id).catch(() => []);
+              const assetCount = new Set(
+                baseline
+                  .map((asset) => String(asset.TagId ?? "").trim())
+                  .filter(Boolean)
+              ).size;
+
+              return {
+                ...warehouse,
+                assetCount,
+                auditCount: 0,
+                status: { found: 0, missing: 0, extra: 0 },
+              };
+            })
+          ),
+          Promise.all(
+            allAuditRows.map((audit) =>
+              apiService.getWarehouseAuditData(audit.referenceId).catch(() => ({}))
+            )
+          ),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        const activeAuditorCount = teamActivity.filter((item) => item.reportCount > 0).length;
+        const auditStatusRows = allAuditRows.map((row, index) => ({
+          row,
+          status: getAuditStatusCounts(row, auditComparisons[index] ?? {}),
+        }));
+        const assetStatus = auditStatusRows.reduce(
+          (summary, item) => addAssetStatus(summary, item.status),
+          { found: 0, missing: 0, extra: 0 }
+        );
+        const auditCountByWarehouse = allAuditRows.reduce((map, audit) => {
+          audit.warehouseIds.forEach((warehouseId) => {
+            map.set(warehouseId, (map.get(warehouseId) ?? 0) + 1);
+          });
+
+          return map;
+        }, new Map<string, number>());
+        const warehouseDistribution = assetDistribution
+          .map((warehouse) => ({
+            ...warehouse,
+            auditCount: auditCountByWarehouse.get(warehouse.id) ?? 0,
+            status: auditStatusRows.reduce(
+              (summary, item) =>
+                item.row.warehouseIds.includes(warehouse.id)
+                  ? addAssetStatus(summary, item.status)
+                  : summary,
+              { found: 0, missing: 0, extra: 0 }
+            ),
+          }))
+          .sort((left, right) => {
+            if (right.assetCount !== left.assetCount) {
+              return right.assetCount - left.assetCount;
+            }
+
+            return right.auditCount - left.auditCount;
+          });
         setData({
           employeeCount: filteredEmployees.length,
-          activeAuditorCount: teamActivity.filter((item) => item.reportCount > 0).length,
+          activeAuditorCount,
           submittedAuditCount: allAuditRows.length,
           scannedAssetCount: sumScannedAssets(allAuditRows),
+          warehouseCount: warehouseSummaries.length,
+          totalAssetCount: warehouseDistribution.reduce((sum, warehouse) => sum + warehouse.assetCount, 0),
+          missingAssetCount: assetStatus.missing,
+          extraAssetCount: assetStatus.extra,
+          pendingAuditCount: Math.max(filteredEmployees.length - activeAuditorCount, 0),
           locationCount: new Set(allAuditRows.flatMap((audit) => audit.warehouseIds)).size,
           recentAudits: allAuditRows.slice(0, 6),
           teamActivity: teamActivity.slice(0, 6),
+          warehouseDistribution,
+          assetStatus,
         });
       } catch (error) {
         if (!isMounted) {
@@ -428,9 +655,16 @@ export function useAdminDashboardData(period: DashboardPeriod) {
           activeAuditorCount: 0,
           submittedAuditCount: 0,
           scannedAssetCount: 0,
+          warehouseCount: 0,
+          totalAssetCount: 0,
+          missingAssetCount: 0,
+          extraAssetCount: 0,
+          pendingAuditCount: 0,
           locationCount: 0,
           recentAudits: [],
           teamActivity: [],
+          warehouseDistribution: [],
+          assetStatus: { found: 0, missing: 0, extra: 0 },
         });
         setErrorMessage("Unable to load the dashboard right now.");
       } finally {
