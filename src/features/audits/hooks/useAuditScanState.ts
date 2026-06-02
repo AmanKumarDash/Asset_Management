@@ -77,6 +77,46 @@ function getTagId(entry: unknown): string | null {
     : null;
 }
 
+function getTagIdsFromPayloadArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => getTagId(entry))
+    .filter((tagId): tagId is string => Boolean(tagId));
+}
+
+// Supports both the legacy scanner stream and the newer multi-machine ESP32 payload:
+// { current_tags: [...], last_added: [...], last_removed: [...], weight_kg, total_count }
+function getMqttTagIds(payload: unknown): string[] {
+  if (Array.isArray(payload)) {
+    return Array.from(new Set(getTagIdsFromPayloadArray(payload)));
+  }
+
+  const directTagId = getTagId(payload);
+
+  if (!payload || typeof payload !== "object") {
+    return directTagId ? [directTagId] : [];
+  }
+
+  const record = payload as Record<string, unknown>;
+  const tagIds = [
+    directTagId,
+    ...getTagIdsFromPayloadArray(record.current_tags),
+    ...getTagIdsFromPayloadArray(record.currentTags),
+    ...getTagIdsFromPayloadArray(record.tags),
+    ...getTagIdsFromPayloadArray(record.tag_ids),
+    ...getTagIdsFromPayloadArray(record.tagIds),
+    ...getTagIdsFromPayloadArray(record.last_added),
+    ...getTagIdsFromPayloadArray(record.lastAdded),
+    ...getTagIdsFromPayloadArray(record.added_tags),
+    ...getTagIdsFromPayloadArray(record.addedTags),
+  ].filter((tagId): tagId is string => Boolean(tagId));
+
+  return Array.from(new Set(tagIds));
+}
+
 // Normalizes mixed API ids into numbers because the staging endpoint expects numeric ids.
 function parseNumericId(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -982,11 +1022,7 @@ export function useAuditScanState() {
 
       const sessionId = scanSessionRef.current;
       const isArrayPayload = Array.isArray(payload);
-      const tagIds = isArrayPayload
-        ? Array.from(
-            new Set(payload.map((entry) => getTagId(entry)).filter(Boolean))
-          )
-        : [getTagId(payload)].filter(Boolean);
+      const tagIds = getMqttTagIds(payload);
 
       // For array payloads, always update UI even if empty (to reflect websocket state)
       // For single payloads, only update if we have a tag

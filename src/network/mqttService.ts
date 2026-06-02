@@ -2,10 +2,16 @@ import { appLogger } from "@/utils/appLogger";
 import mqtt from "mqtt";
 
 // These are the MQTT connection details used to receive scanned tag data.
-const MQTT_BROKER = "wss://no-counter.smaketsolutions.com:9002";
-const MQTT_TOPIC = "SMDEV-001p";
-const MQTT_USERNAME = "smaket";
-const MQTT_PASSWORD = "smaket123";
+const MQTT_BROKER =
+  process.env.EXPO_PUBLIC_MQTT_BROKER ?? "wss://no-counter.smaketsolutions.com:9002";
+const MQTT_TOPICS = (
+  process.env.EXPO_PUBLIC_MQTT_TOPICS ?? "SMDEV-001p"
+)
+  .split(",")
+  .map((topic) => topic.trim())
+  .filter(Boolean);
+const MQTT_USERNAME = process.env.EXPO_PUBLIC_MQTT_USERNAME ?? "smaket";
+const MQTT_PASSWORD = process.env.EXPO_PUBLIC_MQTT_PASSWORD ?? "smaket123";
 
 export type MqttConnectionStatus =
   | "idle"
@@ -40,7 +46,7 @@ class MQTTService {
     this.status = status;
     appLogger.info("MQTT", "Connection status changed.", {
       status,
-      topic: MQTT_TOPIC,
+      topics: MQTT_TOPICS,
       broker: MQTT_BROKER,
       listenerCount: this.statusListeners.size,
     });
@@ -92,7 +98,7 @@ class MQTTService {
 
     appLogger.info("MQTT", "Opening MQTT connection.", {
       broker: MQTT_BROKER,
-      topic: MQTT_TOPIC,
+      topics: MQTT_TOPICS,
       username: MQTT_USERNAME,
     });
     this.emitStatus("connecting");
@@ -107,23 +113,23 @@ class MQTTService {
     this.client.on("connect", () => {
       appLogger.info("MQTT", "Connected to MQTT broker.", {
         broker: MQTT_BROKER,
-        topic: MQTT_TOPIC,
+        topics: MQTT_TOPICS,
       });
       this.emitStatus("connected");
 
-      // Once connected, start listening to the configured topic.
-      this.client?.subscribe(MQTT_TOPIC, (error) => {
+      // Once connected, start listening to every configured scanner topic.
+      this.client?.subscribe(MQTT_TOPICS, (error) => {
         if (error) {
-          appLogger.error("MQTT", "Failed to subscribe to MQTT topic.", {
-            topic: MQTT_TOPIC,
+          appLogger.error("MQTT", "Failed to subscribe to MQTT topics.", {
+            topics: MQTT_TOPICS,
             error,
           });
           this.emitStatus("error");
           return;
         }
 
-        appLogger.info("MQTT", "Subscribed to MQTT topic.", {
-          topic: MQTT_TOPIC,
+        appLogger.info("MQTT", "Subscribed to MQTT topics.", {
+          topics: MQTT_TOPICS,
         });
       });
     });
@@ -149,7 +155,7 @@ class MQTTService {
     this.client.on("reconnect", () => {
       appLogger.warn("MQTT", "Reconnecting to MQTT broker.", {
         broker: MQTT_BROKER,
-        topic: MQTT_TOPIC,
+        topics: MQTT_TOPICS,
       });
       this.emitStatus("reconnecting");
     });
@@ -158,7 +164,7 @@ class MQTTService {
     this.client.on("close", () => {
       appLogger.warn("MQTT", "MQTT connection closed.", {
         broker: MQTT_BROKER,
-        topic: MQTT_TOPIC,
+        topics: MQTT_TOPICS,
       });
       this.client = null;
       this.emitStatus("closed");
@@ -168,7 +174,7 @@ class MQTTService {
     this.client.on("error", (error) => {
       appLogger.error("MQTT", "MQTT client error.", {
         broker: MQTT_BROKER,
-        topic: MQTT_TOPIC,
+        topics: MQTT_TOPICS,
         error,
       });
       this.emitStatus("error");
@@ -180,7 +186,7 @@ class MQTTService {
     if (this.client) {
       appLogger.info("MQTT", "Closing MQTT connection by request.", {
         broker: MQTT_BROKER,
-        topic: MQTT_TOPIC,
+        topics: MQTT_TOPICS,
       });
       this.client.end(true);
       this.client = null;
