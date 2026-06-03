@@ -87,24 +87,51 @@ function getTagIdsFromPayloadArray(value: unknown): string[] {
     .filter((tagId): tagId is string => Boolean(tagId));
 }
 
-// Supports both the legacy scanner stream and the newer multi-machine ESP32 payload:
-// { current_tags: [...], last_added: [...], last_removed: [...], weight_kg, total_count }
-function getMqttTagIds(payload: unknown): string[] {
+type MqttTagSnapshot = {
+  tagIds: string[];
+  replacesCurrentList: boolean;
+};
+
+function uniqueTagIds(tagIds: string[]): string[] {
+  return Array.from(new Set(tagIds));
+}
+
+// Supports both the legacy scanner stream and the newer multi-machine ESP32 payload.
+// For ESP32 snapshots, current_tags is authoritative; last_added/last_removed are event metadata.
+function getMqttTagSnapshot(payload: unknown): MqttTagSnapshot {
   if (Array.isArray(payload)) {
-    return Array.from(new Set(getTagIdsFromPayloadArray(payload)));
+    return {
+      tagIds: uniqueTagIds(getTagIdsFromPayloadArray(payload)),
+      replacesCurrentList: true,
+    };
   }
 
   const directTagId = getTagId(payload);
 
   if (!payload || typeof payload !== "object") {
-    return directTagId ? [directTagId] : [];
+    return {
+      tagIds: directTagId ? [directTagId] : [],
+      replacesCurrentList: false,
+    };
   }
 
   const record = payload as Record<string, unknown>;
-  const tagIds = [
-    directTagId,
+  const currentTagIds = [
     ...getTagIdsFromPayloadArray(record.current_tags),
     ...getTagIdsFromPayloadArray(record.currentTags),
+  ];
+  const hasCurrentTagsSnapshot =
+    Array.isArray(record.current_tags) || Array.isArray(record.currentTags);
+
+  if (hasCurrentTagsSnapshot) {
+    return {
+      tagIds: uniqueTagIds(currentTagIds),
+      replacesCurrentList: true,
+    };
+  }
+
+  const tagIds = [
+    directTagId,
     ...getTagIdsFromPayloadArray(record.tags),
     ...getTagIdsFromPayloadArray(record.tag_ids),
     ...getTagIdsFromPayloadArray(record.tagIds),
@@ -114,7 +141,10 @@ function getMqttTagIds(payload: unknown): string[] {
     ...getTagIdsFromPayloadArray(record.addedTags),
   ].filter((tagId): tagId is string => Boolean(tagId));
 
-  return Array.from(new Set(tagIds));
+  return {
+    tagIds: uniqueTagIds(tagIds),
+    replacesCurrentList: false,
+  };
 }
 
 // Normalizes mixed API ids into numbers because the staging endpoint expects numeric ids.
@@ -1021,19 +1051,20 @@ export function useAuditScanState() {
       }
 
       const sessionId = scanSessionRef.current;
-      const isArrayPayload = Array.isArray(payload);
-      const tagIds = getMqttTagIds(payload);
+      const { tagIds, replacesCurrentList } = getMqttTagSnapshot(payload);
 
-      // For array payloads, always update UI even if empty (to reflect websocket state)
-      // For single payloads, only update if we have a tag
-      if (!isArrayPayload && tagIds.length === 0) {
+      // Snapshot payloads replace the live RFID list, including an empty current_tags array.
+      // Event payloads without a tag do not change the UI.
+      if (!replacesCurrentList && tagIds.length === 0) {
         return;
       }
 
-      tagIds.forEach((tagId) => scannedTagIdsRef.current.add(tagId as string));
+      scannedTagIdsRef.current = replacesCurrentList
+        ? new Set(tagIds)
+        : new Set([...scannedTagIdsRef.current, ...tagIds]);
 
       void Promise.all(
-        tagIds.map((tagId) => resolveAuditItem(tagId as string))
+        tagIds.map((tagId) => resolveAuditItem(tagId))
       )
         .then((resolvedItems) => {
           const currentWarehouseId = auditWarehouseIdRef.current;
@@ -1055,8 +1086,7 @@ export function useAuditScanState() {
           return;
         }
 
-        if (isArrayPayload) {
-          // Always replace entire list with websocket data (including empty arrays)
+        if (replacesCurrentList) {
           setMqttItems(resolvedItems);
           return;
         }
