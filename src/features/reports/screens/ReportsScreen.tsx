@@ -221,6 +221,11 @@ function WarehouseSectionHeader({
           <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
             {section.warehouseName}
           </Text>
+          {section.referenceId ? (
+            <Text className="mt-1 text-xs font-medium" style={{ color: adminTheme.slateSoft }}>
+              Reference ID: {section.referenceId}
+            </Text>
+          ) : null}
         </View>
 
         <Text

@@ -23,6 +23,10 @@ import { AuditScanItem } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
 
 type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId" | "UserId">;
+type WarehouseAuditSelection = {
+  id: string;
+  name?: string | null;
+};
 
 type PendingMissingAuditItem = AuditScanItem & {
   expectedWarehouseId: string;
@@ -563,6 +567,17 @@ function getWarehouseLabel(warehouseId: string, warehouseName?: string | null) {
   return warehouseName?.trim() || `Warehouse ${warehouseId}`;
 }
 
+function getStoredWarehouseLabel(
+  warehouseId: string | null | undefined,
+  labels: Map<string, string>
+) {
+  if (!warehouseId) {
+    return "Selected warehouse";
+  }
+
+  return getWarehouseLabel(warehouseId, labels.get(warehouseId));
+}
+
 function appendWarehouseOriginSubtitle(
   item: AuditScanItem,
   sourceLabel: string,
@@ -755,12 +770,15 @@ function mergeAuditSummaries(reports: LatestAuditReport[]): AuditSummary {
 function buildCombinedWarehouseReport(
   reports: LatestAuditReport[],
   warehouseIds: string[],
+  warehouseLabels: Map<string, string>,
   observedAt: string,
   sessionId?: string | null
 ): LatestAuditReport {
   const locationLabel =
     warehouseIds.length > 1
-      ? `Warehouses ${warehouseIds.join(", ")}`
+      ? warehouseIds
+          .map((warehouseId) => getStoredWarehouseLabel(warehouseId, warehouseLabels))
+          .join(", ")
       : reports[0]?.location ?? "Selected warehouse";
   const referenceIds = reports
     .map((report) => report.referenceId)
@@ -768,7 +786,7 @@ function buildCombinedWarehouseReport(
   const warehouseSections: LatestAuditReportWarehouseSection[] = reports.map(
     (report, index) => ({
       warehouseId: warehouseIds[index] ?? null,
-      warehouseName: report.location,
+      warehouseName: getStoredWarehouseLabel(warehouseIds[index], warehouseLabels),
       referenceId: report.referenceId,
       observedAt: report.observedAt,
       summary: report.summary,
@@ -985,6 +1003,7 @@ export function useAuditScanState() {
   const expectedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
   const auditWarehouseIdRef = useRef<string | null>(null);
+  const auditWarehouseLabelsRef = useRef(new Map<string, string>());
   const scanSessionRef = useRef(0);
   const warehouseLoadRequestRef = useRef(0);
   const completedWarehouseReportsRef = useRef<LatestAuditReport[]>([]);
@@ -1087,7 +1106,21 @@ export function useAuditScanState() {
         }
 
         if (replacesCurrentList) {
-          setMqttItems(resolvedItems);
+          setMqttItems((current) => {
+            const snapshotIds = new Set(tagIds);
+            const currentIds = new Set(current.map((item) => item.id));
+            const resolvedById = new Map(
+              resolvedItems.map((item) => [item.id, item])
+            );
+            const newlyScannedItems = resolvedItems
+              .filter((item) => !currentIds.has(item.id))
+              .reverse();
+            const retainedItems = current
+              .filter((item) => snapshotIds.has(item.id))
+              .map((item) => resolvedById.get(item.id) ?? item);
+
+            return [...newlyScannedItems, ...retainedItems];
+          });
           return;
         }
 
@@ -1222,6 +1255,7 @@ export function useAuditScanState() {
       setPendingMissingItems([]);
       setResolvedMisplacedItems([]);
       completedWarehouseReportsRef.current = [];
+      auditWarehouseLabelsRef.current = new Map<string, string>();
     }
 
     if (!warehouseId) {
@@ -1303,13 +1337,24 @@ export function useAuditScanState() {
     setPendingMissingItems([]);
     setResolvedMisplacedItems([]);
     completedWarehouseReportsRef.current = [];
+    auditWarehouseLabelsRef.current = new Map<string, string>();
     setExpectedAssetCount(0);
     setIsPreparingWarehouse(false);
   }, [clearScanSession]);
 
-  const prepareMultiWarehouseAudit = useCallback(async (warehouseIds: string[]) => {
+  const prepareMultiWarehouseAudit = useCallback(async (
+    warehouseIds: string[],
+    warehouses: WarehouseAuditSelection[] = warehouseIds.map((id) => ({ id }))
+  ) => {
     const normalizedWarehouseIds = Array.from(
       new Set(warehouseIds.map((warehouseId) => warehouseId.trim()).filter(Boolean))
+    );
+    auditWarehouseLabelsRef.current = new Map(
+      warehouses
+        .map((warehouse) => [warehouse.id.trim(), warehouse.name?.trim()] as const)
+        .filter((entry): entry is [string, string] =>
+          Boolean(entry[0] && entry[1])
+        )
     );
 
     setAuditApiSessionId(createAuditSessionId());
@@ -1586,6 +1631,10 @@ export function useAuditScanState() {
 
       if (referenceId) {
         const comparisonResponse = await apiService.getWarehouseAuditData(referenceId);
+        const currentWarehouseLabel = getStoredWarehouseLabel(
+          currentWarehouseId,
+          auditWarehouseLabelsRef.current
+        );
         normalizedReport = buildAuditComparisonReport(
           comparisonResponse,
           snapshotItems,
@@ -1596,7 +1645,8 @@ export function useAuditScanState() {
         );
         const enrichedItems = await enrichExtraItemsWithWarehouseOrigin(
           normalizedReport.items,
-          currentWarehouseId
+          currentWarehouseId,
+          currentWarehouseLabel
         );
         const reconciledItems = reconcileReportWithSession(
           enrichedItems,
@@ -1608,9 +1658,7 @@ export function useAuditScanState() {
           extra: reconciledItems.filter((item) => item.tone === "extra").length,
           found: reconciledItems.filter((item) => item.tone === "found").length,
         };
-        const locationLabel = auditWarehouseId
-          ? `Warehouse ${auditWarehouseId}`
-          : "Selected warehouse";
+        const locationLabel = currentWarehouseLabel;
 
         currentReport = {
           title: "Audit Report",
@@ -1643,6 +1691,7 @@ export function useAuditScanState() {
           displayReport = buildCombinedWarehouseReport(
             nextCompletedReports.filter(Boolean),
             auditWarehouseIds,
+            auditWarehouseLabelsRef.current,
             observedAt,
             sessionId
           );

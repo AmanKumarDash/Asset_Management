@@ -838,7 +838,13 @@ function MobileAuditScan() {
   };
 
   const startSelectedWarehouseSession = () => {
-    void prepareMultiWarehouseAudit(selectedWarehouseIds);
+    void prepareMultiWarehouseAudit(
+      selectedWarehouseIds,
+      selectedWarehouseIds.map((warehouseId) => ({
+        id: warehouseId,
+        name: getWarehouseById(warehouses, warehouseId)?.name,
+      }))
+    );
   };
 
   const goBackToWarehouseSelection = () => {
@@ -1136,7 +1142,13 @@ function DesktopAuditScan({ width }: { width: number }) {
   };
 
   const startSelectedWarehouseSession = () => {
-    void prepareMultiWarehouseAudit(selectedWarehouseIds);
+    void prepareMultiWarehouseAudit(
+      selectedWarehouseIds,
+      selectedWarehouseIds.map((warehouseId) => ({
+        id: warehouseId,
+        name: getWarehouseById(warehouses, warehouseId)?.name,
+      }))
+    );
   };
 
   const goBackToWarehouseSelection = () => {

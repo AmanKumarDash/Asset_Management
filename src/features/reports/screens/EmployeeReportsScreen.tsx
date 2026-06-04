@@ -581,6 +581,11 @@ function buildDetailedEmployeeReport(
     pickString(responseRecord, ["Location"]) ??
     fallbackLocation?.trim() ??
     baseReport.location;
+  const detailItems = [...foundItems, ...missingItems, ...extraItems];
+  const matchingSection = baseReport.warehouseSections?.find(
+    (section) =>
+      section.referenceId?.trim() === baseReport.referenceId?.trim()
+  );
 
   return {
     ...baseReport,
@@ -589,7 +594,17 @@ function buildDetailedEmployeeReport(
     desktopMeta: observedAt ? `${location} - ${formatCompactDate(observedAt)}` : location,
     observedAt,
     summary,
-    items: [...foundItems, ...missingItems, ...extraItems],
+    items: detailItems,
+    warehouseSections: [
+      {
+        warehouseId: matchingSection?.warehouseId ?? null,
+        warehouseName: location,
+        referenceId: baseReport.referenceId,
+        observedAt,
+        summary,
+        items: detailItems,
+      },
+    ],
   };
 }
 
@@ -711,6 +726,31 @@ function getWarehouseLabels(
   });
 }
 
+function getReportItemWarehouseLabel(
+  reportItems: EmployeeReportApiItem[],
+  warehouses: WarehouseSummary[]
+) {
+  const warehouseIds = Array.from(
+    new Set(reportItems.map((item) => String(item.WareHouseId)).filter(Boolean))
+  );
+  const warehouseLabels = getWarehouseLabels(warehouseIds, warehouses);
+
+  if (warehouseLabels.length === 1) {
+    return {
+      warehouseId: warehouseIds[0] ?? null,
+      warehouseName: warehouseLabels[0],
+    };
+  }
+
+  return {
+    warehouseId: warehouseIds.length === 1 ? warehouseIds[0] : null,
+    warehouseName:
+      warehouseLabels.length > 1
+        ? `Warehouses ${warehouseLabels.join(", ")}`
+        : "Unknown warehouse",
+  };
+}
+
 function buildEmployeeReports(
   items: EmployeeReportApiItem[],
   savedSessions: PersistedAuditReportSession[] = [],
@@ -786,6 +826,31 @@ function buildEmployeeReports(
         warehouseLabels.length === 1
           ? `${warehouseLabels[0]} Report`
           : `Warehouses ${warehouseLabels.join(", ")} Report`;
+      const warehouseSections: LatestAuditReportWarehouseSection[] =
+        referenceIds.map((currentReferenceId) => {
+          const referenceItems = sortedItems.filter(
+            (item, index) => resolveReferenceId(item, index) === currentReferenceId
+          );
+          const { warehouseId, warehouseName } = getReportItemWarehouseLabel(
+            referenceItems,
+            accessibleWarehouses
+          );
+
+          return {
+            warehouseId,
+            warehouseName,
+            referenceId: currentReferenceId,
+            observedAt: referenceItems[0]?.ScanningDate ?? observedAt,
+            summary: {
+              found: referenceItems.length,
+              missing: 0,
+              extra: 0,
+              scanned: referenceItems.length,
+              expected: referenceItems.length,
+            },
+            items: [],
+          };
+        });
       const report: LatestAuditReport = {
         title,
         location,
@@ -814,6 +879,7 @@ function buildEmployeeReports(
             icon: "plus-square",
           };
         }),
+        warehouseSections,
       };
 
       return {
@@ -1471,9 +1537,17 @@ export default function EmployeeReportsScreen({
     try {
       setLoadingReferenceId(referenceId);
       const comparisonResponse = await apiService.getWarehouseAuditData(referenceId);
+      const warehouseLabel = getWarehouseLabelForReference(report, referenceId, 0);
       const detailedReport = buildDetailedEmployeeReport(
-        report,
-        comparisonResponse as Record<string, unknown>
+        {
+          ...report,
+          referenceId,
+          location: warehouseLabel,
+          mobileMeta: warehouseLabel,
+          desktopMeta: warehouseLabel,
+        },
+        comparisonResponse as Record<string, unknown>,
+        warehouseLabel
       );
 
       onSelectReport(detailedReport);
