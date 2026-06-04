@@ -39,26 +39,28 @@ export type UserDetails = {
   GSTNo?: string;
 } & Record<string, unknown>;
 
+export type UserAddressRequest = {
+  Id: number;
+  Address1: string;
+  Address2: string;
+  City: number;
+  CityName: string;
+  DistrictId: number;
+  DistrictName: string;
+  StateId: number;
+  StateName: string;
+  CountryId: number;
+  CountryName: string;
+  Pin: number;
+};
+
 export type CreateUserRequest = {
   UserId?: string;
   FirstName: string;
   MiddleName?: string;
   LastName: string;
   UserType: number;
-  Address?: {
-    Id: number;
-    Address1: string;
-    Address2: string;
-    City: number;
-    CityName: string;
-    DistrictId: number;
-    DistrictName: string;
-    StateId: number;
-    StateName: string;
-    CountryId: number;
-    CountryName: string;
-    Pin: number;
-  };
+  Address?: UserAddressRequest;
   EmailId?: string;
   Mobile: string;
   CompanyName?: string;
@@ -67,6 +69,11 @@ export type CreateUserRequest = {
   GSTTypeID?: number;
   GSTType?: string; // 
   Offline_Id?: string;
+};
+
+export type UpdateUserDataRequest = CreateUserRequest & {
+  UserId: string;
+  OrgId: number;
 };
 
 export type WarehouseAccessRequest = {
@@ -176,6 +183,21 @@ class ApiService {
 
     const response = await this.api.post<ApiEnvelope<unknown> | unknown>(
       ENDPOINTS.ADMIN.CREATE_USER,
+      payload
+    );
+
+    return extractResponseData<unknown>(response.data);
+  }
+
+  // Updates an existing admin/employee profile through the Account API.
+  async updateUserData(
+    userId: string,
+    payload: UpdateUserDataRequest
+  ): Promise<unknown> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.post<ApiEnvelope<unknown> | unknown>(
+      ENDPOINTS.AUTH.UPDATE_USER_DATA(userId),
       payload
     );
 

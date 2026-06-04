@@ -3,6 +3,7 @@ import { OrganizationAddress } from "@/models/organization";
 import { WarehouseSummary } from "@/models/warehouse";
 import {
   CreateUserRequest,
+  UpdateUserDataRequest,
   UserDetails,
   WarehouseApiRecord,
   apiService,
@@ -50,6 +51,7 @@ type EmployeeFormValues = {
   email: string;
   mobile: string;
   userType: UserTypeValue;
+  orgId?: number;
   selectedWarehouseIds: string[];
 };
 
@@ -61,6 +63,7 @@ const EMPTY_FORM_VALUES: EmployeeFormValues = {
   email: "",
   mobile: "",
   userType: 3,
+  orgId: undefined,
   selectedWarehouseIds: [],
 };
 
@@ -86,6 +89,26 @@ function pickId(record: Record<string, unknown>, keys: string[]) {
 
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function pickNumber(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const numericValue = Number(value.trim());
+
+      if (Number.isFinite(numericValue)) {
+        return numericValue;
+      }
     }
   }
 
@@ -248,6 +271,8 @@ function normalizeUserType(userType: unknown): UserTypeValue {
 }
 
 function mapUserDetailsToFormValues(user: UserDetails): EmployeeFormValues {
+  const userRecord = user as Record<string, unknown>;
+
   return {
     firstName: typeof user.FirstName === "string" ? user.FirstName : "",
     middleName: typeof user.MiddleName === "string" ? user.MiddleName : "",
@@ -256,6 +281,14 @@ function mapUserDetailsToFormValues(user: UserDetails): EmployeeFormValues {
     email: typeof user.EmailId === "string" ? user.EmailId : "",
     mobile: typeof user.Mobile === "string" ? user.Mobile : "",
     userType: normalizeUserType(user.UserType),
+    orgId: pickNumber(userRecord, [
+      "OrgId",
+      "OrgID",
+      "OrganizationId",
+      "OrganizationID",
+      "orgId",
+      "organizationId",
+    ]) ?? undefined,
     selectedWarehouseIds: extractAssignedWarehouseIds(user),
   };
 }
@@ -295,6 +328,17 @@ function buildEmployeePayload(values: EmployeeFormValues): CreateUserRequest {
   }
 
   return payload;
+}
+
+function buildEmployeeUpdatePayload(
+  values: EmployeeFormValues,
+  orgId: number
+): UpdateUserDataRequest {
+  return {
+    ...buildEmployeePayload(values),
+    UserId: values.employeeId,
+    OrgId: orgId,
+  };
 }
 
 function resolveCreatedUserId(response: unknown): string | null {
@@ -675,6 +719,7 @@ export default function AddEmployeeScreen() {
   const [emailError, setEmailError] = useState("");
   const [mobile, setMobile] = useState("");
   const [userType, setUserType] = useState<UserTypeValue>(3);
+  const [loadedOrgId, setLoadedOrgId] = useState<number | null>(null);
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
   const [warehouseError, setWarehouseError] = useState<string | null>(null);
@@ -701,6 +746,7 @@ export default function AddEmployeeScreen() {
     setEmailError("");
     setMobile(values.mobile);
     setUserType(values.userType);
+    setLoadedOrgId(values.orgId ?? null);
     setSelectedWarehouseIds(values.selectedWarehouseIds);
   };
 
@@ -811,6 +857,7 @@ export default function AddEmployeeScreen() {
       email: email.trim(),
       mobile: mobile.trim(),
       userType,
+      orgId: loadedOrgId ?? undefined,
       selectedWarehouseIds,
     };
 
@@ -860,8 +907,20 @@ export default function AddEmployeeScreen() {
 
     try {
       if (isEditMode) {
+        const resolvedOrgId =
+          values.orgId ?? organization?.Id ?? (await refreshOrganization())?.Id;
+
+        if (!resolvedOrgId) {
+          setSubmitError("Organization ID is required to update employee details.");
+          return;
+        }
+
+        await apiService.updateUserData(
+          values.employeeId,
+          buildEmployeeUpdatePayload(values, resolvedOrgId)
+        );
         await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
-        setSubmitSuccess("Employee warehouse access updated successfully. Note: Employee details cannot be modified through this interface.");
+        setSubmitSuccess("Employee details and warehouse access updated successfully.");
       } else {
         const createResponse = await apiService.createUser(buildEmployeePayload(values));
         const createdUserId = resolveCreatedUserId(createResponse);
@@ -916,10 +975,10 @@ export default function AddEmployeeScreen() {
 
   const title = isEditMode ? "Edit Employee" : "Add Employee";
   const subtitle = isEditMode
-    ? "Update employee warehouse access"
+    ? "Update employee details and warehouse access"
     : "Create a user and assign warehouse access";
   const infoMessage = isEditMode
-    ? "Employee details are displayed for reference. Only warehouse access can be updated here because the backend currently provides the WarehouseAccess API for edits."
+    ? "Update employee account details and assigned warehouse access."
     : "Required fields are First Name, Last Name, Mobile, User Type, and at least one warehouse access selection.";
 
   return (

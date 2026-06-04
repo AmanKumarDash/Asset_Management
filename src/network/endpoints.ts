@@ -5,6 +5,8 @@ export const ENDPOINTS = {
   AUTH: {
     LOGIN: "/api/Account/validatelogin",
     REFRESH: "/api/Account/RefreshToken",
+    UPDATE_USER_DATA: (userId: string) =>
+      `/api/Account/UpdateUserData?UserId=${encodeURIComponent(userId)}`,
     GET_USER_DETAILS: (
       userId = "",
       pageNo = 1,

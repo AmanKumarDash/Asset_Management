@@ -2,6 +2,7 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -13,6 +14,8 @@ import { ROLE_BADGES, USER_ROLES } from "@/constants/auth";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { OrganizationDetails } from "@/models/organization";
 import { AppUser } from "@/models/user";
+import { apiService } from "@/network/ApiService";
+import { getApiErrorMessage } from "@/network/responses";
 import { adminTheme } from "@/theme/adminTheme";
 
 const emptyUser: AppUser = {
@@ -123,6 +126,85 @@ function getOrganizationContactName(organization: OrganizationDetails | null) {
   return fullName || organization?.ContactPerson?.trim() || "";
 }
 
+function splitDisplayName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const firstName = parts.shift() ?? "";
+  const lastName = parts.length > 0 ? parts.join(" ") : firstName;
+
+  return { firstName, lastName };
+}
+
+function getProfileUserType(user: AppUser) {
+  return user.role === USER_ROLES.ADMIN ? 1 : 3;
+}
+
+function normalizePhoneInput(value: string) {
+  return value.replace(/\D/g, "").slice(0, 10);
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function saveProfileToApi({
+  user,
+  organization,
+  refreshOrganization,
+  fields,
+}: {
+  user: AppUser;
+  organization: OrganizationDetails | null;
+  refreshOrganization: () => Promise<OrganizationDetails | null>;
+  fields: {
+    name: string;
+    email: string;
+    employeeId: string;
+    phone: string;
+  };
+}) {
+  const endpointUserId = user.employeeId.trim();
+  const payloadUserId = fields.employeeId.trim() || endpointUserId;
+  const mobile = fields.phone.trim();
+  const email = fields.email.trim();
+  const { firstName, lastName } = splitDisplayName(fields.name);
+
+  if (!endpointUserId) {
+    throw new Error("User ID is required to update profile details.");
+  }
+
+  if (!firstName || !lastName) {
+    throw new Error("Full name is required.");
+  }
+
+  if (!mobile) {
+    throw new Error("Phone is required.");
+  }
+
+  if (!/^[0-9]{10}$/.test(mobile)) {
+    throw new Error("Phone must be a valid 10-digit number.");
+  }
+
+  if (email && !isValidEmail(email)) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  const resolvedOrganization = organization ?? (await refreshOrganization());
+
+  if (!resolvedOrganization?.Id) {
+    throw new Error("Organization ID is required to update profile details.");
+  }
+
+  await apiService.updateUserData(endpointUserId, {
+    UserId: payloadUserId,
+    FirstName: firstName,
+    LastName: lastName,
+    UserType: getProfileUserType(user),
+    EmailId: email || undefined,
+    Mobile: mobile,
+    OrgId: resolvedOrganization.Id,
+  });
+}
+
 function useProfileForm(user: AppUser) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
@@ -210,8 +292,10 @@ function OrganizationSection({ organization }: { organization: OrganizationDetai
 }
 
 function MobileProfile() {
-  const { user, organization, updateUser, signOut } = useAuthSession();
+  const { user, organization, updateUser, refreshOrganization, signOut } = useAuthSession();
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const profileUser = user ?? emptyUser;
   const roleColors = getRoleColors(profileUser);
   const { fields, setters } = useProfileForm(profileUser);
@@ -220,16 +304,27 @@ function MobileProfile() {
     return null;
   }
 
-  const handleSave = () => {
-    updateUser({
-      name: fields.name,
-      email: fields.email,
-      employeeId: fields.employeeId,
-      department: fields.department,
-      phone: fields.phone,
-      location: fields.location,
-    });
-    setSaved(true);
+  const handleSave = async () => {
+    setSaved(false);
+    setSaveError("");
+    setIsSaving(true);
+
+    try {
+      await saveProfileToApi({ user, organization, refreshOrganization, fields });
+      updateUser({
+        name: fields.name.trim(),
+        email: fields.email.trim(),
+        employeeId: fields.employeeId.trim() || user.employeeId,
+        department: fields.department,
+        phone: fields.phone.trim(),
+        location: fields.location,
+      });
+      setSaved(true);
+    } catch (error) {
+      setSaveError(getApiErrorMessage(error, "Unable to update profile right now."));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -282,7 +377,20 @@ function MobileProfile() {
           >
             <Feather name="check-circle" size={18} color={adminTheme.successText} />
             <Text className="ml-3 text-sm font-medium" style={{ color: adminTheme.successText }}>
-              Profile changes saved locally
+              Profile changes saved successfully
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      {saveError ? (
+        <View className="px-4 pt-4">
+          <View
+            className="rounded-[16px] border px-4 py-3"
+            style={{ borderColor: "#F5C2C7", backgroundColor: "#FFF5F5" }}
+          >
+            <Text className="text-sm font-medium" style={{ color: "#A83D3D" }}>
+              {saveError}
             </Text>
           </View>
         </View>
@@ -314,7 +422,11 @@ function MobileProfile() {
           />
         </View>
         <View className="mb-4">
-          <ProfileField label="Phone" value={fields.phone} onChangeText={setters.setPhone} />
+          <ProfileField
+            label="Phone"
+            value={fields.phone}
+            onChangeText={(value) => setters.setPhone(normalizePhoneInput(value))}
+          />
         </View>
         <ProfileField
           label="Location"
@@ -330,10 +442,15 @@ function MobileProfile() {
       <View className="px-4 pt-5">
         <Pressable
           onPress={handleSave}
+          disabled={isSaving}
           className="items-center rounded-[18px] px-5 py-4"
-          style={{ backgroundColor: roleColors.primary }}
+          style={{ backgroundColor: roleColors.primary, opacity: isSaving ? 0.7 : 1 }}
         >
-          <Text className="text-base font-semibold text-white">Save Changes</Text>
+          {isSaving ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text className="text-base font-semibold text-white">Save Changes</Text>
+          )}
         </Pressable>
       </View>
 
@@ -354,8 +471,10 @@ function MobileProfile() {
 }
 
 function DesktopProfile() {
-  const { user, organization, updateUser, signOut } = useAuthSession();
+  const { user, organization, updateUser, refreshOrganization, signOut } = useAuthSession();
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const profileUser = user ?? emptyUser;
   const roleColors = getRoleColors(profileUser);
   const { fields, setters } = useProfileForm(profileUser);
@@ -364,16 +483,27 @@ function DesktopProfile() {
     return null;
   }
 
-  const handleSave = () => {
-    updateUser({
-      name: fields.name,
-      email: fields.email,
-      employeeId: fields.employeeId,
-      department: fields.department,
-      phone: fields.phone,
-      location: fields.location,
-    });
-    setSaved(true);
+  const handleSave = async () => {
+    setSaved(false);
+    setSaveError("");
+    setIsSaving(true);
+
+    try {
+      await saveProfileToApi({ user, organization, refreshOrganization, fields });
+      updateUser({
+        name: fields.name.trim(),
+        email: fields.email.trim(),
+        employeeId: fields.employeeId.trim() || user.employeeId,
+        department: fields.department,
+        phone: fields.phone.trim(),
+        location: fields.location,
+      });
+      setSaved(true);
+    } catch (error) {
+      setSaveError(getApiErrorMessage(error, "Unable to update profile right now."));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -400,10 +530,15 @@ function DesktopProfile() {
         <View className="flex-row" style={{ gap: 12 }}>
           <Pressable
             onPress={handleSave}
+            disabled={isSaving}
             className="rounded-xl px-5 py-2.5"
-            style={{ backgroundColor: roleColors.primary }}
+            style={{ backgroundColor: roleColors.primary, opacity: isSaving ? 0.7 : 1 }}
           >
-            <Text className="text-sm font-semibold text-white">Save Changes</Text>
+            {isSaving ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text className="text-sm font-semibold text-white">Save Changes</Text>
+            )}
           </Pressable>
           <Pressable
             onPress={handleLogout}
@@ -424,7 +559,18 @@ function DesktopProfile() {
         >
           <Feather name="check-circle" size={18} color={adminTheme.successText} />
           <Text className="ml-3 text-sm font-medium" style={{ color: adminTheme.successText }}>
-            Profile changes saved locally
+            Profile changes saved successfully
+          </Text>
+        </View>
+      ) : null}
+
+      {saveError ? (
+        <View
+          className="mb-4 rounded-[16px] border px-4 py-3"
+          style={{ borderColor: "#F5C2C7", backgroundColor: "#FFF5F5" }}
+        >
+          <Text className="text-sm font-medium" style={{ color: "#A83D3D" }}>
+            {saveError}
           </Text>
         </View>
       ) : null}
@@ -484,7 +630,11 @@ function DesktopProfile() {
         </View>
 
         <View className="flex-row gap-4">
-          <ProfileField label="Phone" value={fields.phone} onChangeText={setters.setPhone} />
+          <ProfileField
+            label="Phone"
+            value={fields.phone}
+            onChangeText={(value) => setters.setPhone(normalizePhoneInput(value))}
+          />
           <ProfileField
             label="Location"
             value={fields.location}
