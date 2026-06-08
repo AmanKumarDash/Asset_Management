@@ -16,6 +16,7 @@ export type LatestAuditReport = {
   observedAt: string | null;
   summary: AuditSummary;
   items: AuditScanItem[];
+  excelRows?: LatestAuditReportExcelRow[];
   warehouseSections?: LatestAuditReportWarehouseSection[];
 };
 
@@ -26,6 +27,21 @@ export type LatestAuditReportWarehouseSection = {
   observedAt?: string | null;
   summary: AuditSummary;
   items: AuditScanItem[];
+  excelRows?: LatestAuditReportExcelRow[];
+};
+
+export type LatestAuditReportExcelRow = {
+  sno: number;
+  newCostCentre: string;
+  costCentreDescription: string;
+  newFunctionalLocation: string;
+  assetNo: string;
+  plantNo: string;
+  plantIdentification: string;
+  rfidTaggingPosition: string;
+  quantity: string;
+  auditStart: string;
+  auditEnd: string;
 };
 
 let latestAuditReport: LatestAuditReport | null = null;

@@ -22,6 +22,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
+import { exportAuditReportAsExcel } from "../utils/reportExcelExporter";
 import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
@@ -752,8 +753,10 @@ function AdminReportControls({
 
 type ReportDetailProps = {
   report: LatestAuditReport;
+  onExportExcel: () => void;
   onExportPdf: () => void;
-  isExporting: boolean;
+  isExportingExcel: boolean;
+  isExportingPdf: boolean;
   onBack?: () => void;
   showDateFilters?: boolean;
 };
@@ -768,8 +771,10 @@ function handleDefaultBackNavigation() {
 
 function DesktopReports({
   report,
+  onExportExcel,
   onExportPdf,
-  isExporting,
+  isExportingExcel,
+  isExportingPdf,
   onBack,
   showDateFilters = true,
 }: ReportDetailProps) {
@@ -844,7 +849,12 @@ async function handleFetchReportByDate() {
             onPress={onBack ?? handleDefaultBackNavigation}
           />
           <SectionButton
-            title={isExporting ? "Exporting..." : "Export PDF"}
+            title={isExportingExcel ? "Exporting..." : "Export Excel"}
+            icon="download"
+            onPress={onExportExcel}
+          />
+          <SectionButton
+            title={isExportingPdf ? "Exporting..." : "Export PDF"}
             icon="download"
             filled
             onPress={onExportPdf}
@@ -1016,8 +1026,10 @@ async function handleFetchReportByDate() {
 
 function MobileReports({
   report,
+  onExportExcel,
   onExportPdf,
-  isExporting,
+  isExportingExcel,
+  isExportingPdf,
   onBack,
   showDateFilters = true,
 }: ReportDetailProps) {
@@ -1226,13 +1238,23 @@ async function handleFetchReportByDate() {
 
           <View className="pt-4">
             <Pressable
+              onPress={onExportExcel}
+              className="mb-3 flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            >
+              <Feather name="download" size={18} color={adminTheme.slateSoft} />
+              <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                {isExportingExcel ? "Exporting..." : "Export Report (Excel)"}
+              </Text>
+            </Pressable>
+            <Pressable
               onPress={onExportPdf}
               className="flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
               style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
             >
               <Feather name="download" size={18} color={adminTheme.slateSoft} />
               <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
-                {isExporting ? "Exporting..." : "Export Report (PDF)"}
+                {isExportingPdf ? "Exporting..." : "Export Report (PDF)"}
               </Text>
             </Pressable>
           </View>
@@ -1245,7 +1267,8 @@ async function handleFetchReportByDate() {
 export default function ReportsScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
-  const [isExporting, setIsExporting] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectedEmployeeReport, setSelectedEmployeeReport] =
     useState<LatestAuditReport | null>(null);
   const [selectedAdminReport, setSelectedAdminReport] =
@@ -1316,7 +1339,7 @@ export default function ReportsScreen() {
       return;
     }
 
-    setIsExporting(true);
+    setIsExportingPdf(true);
     try {
       // Calls utility to generate and download PDF based on report data and user info
       await exportAuditReportAsPdf(activeReport, user.name);
@@ -1330,7 +1353,29 @@ export default function ReportsScreen() {
         );
       }
     } finally {
-      setIsExporting(false);
+      setIsExportingPdf(false);
+    }
+  }
+
+  async function handleExportExcel() {
+    if (!activeReport) {
+      return;
+    }
+
+    setIsExportingExcel(true);
+    try {
+      await exportAuditReportAsExcel(activeReport);
+    } catch (error) {
+      console.warn("Failed to export Excel:", error);
+
+      if (Platform.OS !== "web") {
+        Alert.alert(
+          "Export failed",
+          "We couldn't generate the Excel report. Please try again."
+        );
+      }
+    } finally {
+      setIsExportingExcel(false);
     }
   }
 
@@ -1387,16 +1432,20 @@ export default function ReportsScreen() {
     return isMobile ? (
       <MobileReports
         report={activeReport}
+        onExportExcel={handleExportExcel}
         onExportPdf={handleExportPdf}
-        isExporting={isExporting}
+        isExportingExcel={isExportingExcel}
+        isExportingPdf={isExportingPdf}
         onBack={() => setSelectedEmployeeReport(null)}
         showDateFilters={false}
       />
     ) : (
       <DesktopReports
         report={activeReport}
+        onExportExcel={handleExportExcel}
         onExportPdf={handleExportPdf}
-        isExporting={isExporting}
+        isExportingExcel={isExportingExcel}
+        isExportingPdf={isExportingPdf}
         onBack={() => setSelectedEmployeeReport(null)}
         showDateFilters={false}
       />
@@ -1435,16 +1484,20 @@ export default function ReportsScreen() {
   return isMobile ? (
     <MobileReports
       report={activeReport}
+      onExportExcel={handleExportExcel}
       onExportPdf={handleExportPdf}
-      isExporting={isExporting}
+      isExportingExcel={isExportingExcel}
+      isExportingPdf={isExportingPdf}
       onBack={() => setSelectedAdminReport(null)}
       showDateFilters={false}
     />
   ) : (
     <DesktopReports
       report={activeReport}
+      onExportExcel={handleExportExcel}
       onExportPdf={handleExportPdf}
-      isExporting={isExporting}
+      isExportingExcel={isExportingExcel}
+      isExportingPdf={isExportingPdf}
       onBack={() => setSelectedAdminReport(null)}
       showDateFilters={false}
     />

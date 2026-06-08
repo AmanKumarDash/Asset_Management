@@ -557,6 +557,7 @@ function getWarehouseLocationId(location: WarehouseTagLocationItem): string | nu
     getTagKey(location.WarehouseId) ??
     getTagKey(location.WarehouseID) ??
     getTagKey(location.warehouseId) ??
+    getTagKey(location.warehouseid) ??
     getTagKey(location.ExpectedWarehouseId) ??
     getTagKey(location.OriginalWarehouseId) ??
     null
@@ -580,25 +581,52 @@ function getStoredWarehouseLabel(
 
 function appendWarehouseOriginSubtitle(
   item: AuditScanItem,
-  sourceLabel: string,
-  currentWarehouseLabel: string
+  sourceLabel: string
 ): AuditScanItem {
-  const originMessage = `Expected in ${sourceLabel}, found in ${currentWarehouseLabel}`;
+  const originMessage = `Found here, expected in ${sourceLabel}`;
+  const baseSubtitle = item.subtitle
+    .replace(/\s+-\s+Found during audit but not expected in this warehouse/g, "")
+    .replace(/\s+-\s+Found during audit but not expected/g, "");
 
-  if (item.subtitle.includes(originMessage)) {
+  if (baseSubtitle.includes(originMessage)) {
     return item;
   }
 
   return {
     ...item,
-    subtitle: `${item.subtitle} - ${originMessage}`,
+    subtitle: baseSubtitle ? `${baseSubtitle} - ${originMessage}` : originMessage,
   };
+}
+
+function getWarehouseOriginLabelsForTag(
+  locations: WarehouseTagLocationItem[],
+  currentWarehouseId: string
+) {
+  const location = locations.find((entry) => {
+    const sourceWarehouseId = getWarehouseLocationId(entry);
+
+    return Boolean(sourceWarehouseId && sourceWarehouseId !== currentWarehouseId);
+  });
+
+  if (!location) {
+    return "";
+  }
+
+  const sourceWarehouseId = getWarehouseLocationId(location);
+
+  if (!sourceWarehouseId) {
+    return "";
+  }
+
+  return getWarehouseLabel(
+    sourceWarehouseId,
+    getWarehouseLocationName(location)
+  );
 }
 
 async function enrichExtraItemsWithWarehouseOrigin(
   items: AuditScanItem[],
-  currentWarehouseId: string,
-  currentWarehouseName?: string | null
+  currentWarehouseId: string
 ): Promise<AuditScanItem[]> {
   const extraItems = items.filter((item) => item.tone === "extra");
 
@@ -610,37 +638,39 @@ async function enrichExtraItemsWithWarehouseOrigin(
     const locations = await apiService.getWarehouseIdAccessByTagId(
       extraItems.map((item) => item.id)
     );
-    const locationByTag = new Map(
-      locations
-        .map((location) => [getWarehouseLocationTagId(location), location] as const)
-        .filter((entry): entry is [string, WarehouseTagLocationItem] =>
-          Boolean(entry[0])
-        )
-    );
+    const locationsByTag = locations.reduce<
+      Map<string, WarehouseTagLocationItem[]>
+    >((lookup, location) => {
+      const tagId = getWarehouseLocationTagId(location);
+
+      if (!tagId) {
+        return lookup;
+      }
+
+      const existingLocations = lookup.get(tagId) ?? [];
+      lookup.set(tagId, [...existingLocations, location]);
+      return lookup;
+    }, new Map());
 
     return items.map((item) => {
       if (item.tone !== "extra") {
         return item;
       }
 
-      const location = locationByTag.get(item.id) ?? locationByTag.get(String(item.id).trim());
-      if (!location) {
-        return item;
-      }
-
-      const sourceWarehouseId = getWarehouseLocationId(location);
-
-      if (!sourceWarehouseId || sourceWarehouseId === currentWarehouseId) {
-        return item;
-      }
-
-      const sourceLabel = getWarehouseLabel(
-        sourceWarehouseId,
-        getWarehouseLocationName(location)
+      const matchingLocations =
+        locationsByTag.get(item.id) ??
+        locationsByTag.get(String(item.id).trim()) ??
+        [];
+      const sourceLabel = getWarehouseOriginLabelsForTag(
+        matchingLocations,
+        currentWarehouseId
       );
-      const currentLabel = getWarehouseLabel(currentWarehouseId, currentWarehouseName);
 
-      return appendWarehouseOriginSubtitle(item, sourceLabel, currentLabel);
+      if (!sourceLabel) {
+        return item;
+      }
+
+      return appendWarehouseOriginSubtitle(item, sourceLabel);
     });
   } catch (error) {
     appLogger.warn("AuditScan", "Failed to enrich extra assets with warehouse origin.", {
@@ -1645,8 +1675,7 @@ export function useAuditScanState() {
         );
         const enrichedItems = await enrichExtraItemsWithWarehouseOrigin(
           normalizedReport.items,
-          currentWarehouseId,
-          currentWarehouseLabel
+          currentWarehouseId
         );
         const reconciledItems = reconcileReportWithSession(
           enrichedItems,

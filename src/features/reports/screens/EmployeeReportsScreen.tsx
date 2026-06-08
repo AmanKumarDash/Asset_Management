@@ -1,5 +1,9 @@
 import { AuditScanItem } from "@/features/audits/data/auditScanData";
-import { AuditReportTone, AuditSummary } from "@/features/audits/types/audit";
+import {
+    AuditReportTone,
+    AuditSummary,
+    WarehouseTagLocationItem,
+} from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
     PersistedAuditReportSession,
@@ -458,11 +462,141 @@ function mapReportAssetToAuditItem(
   };
 }
 
-function buildDetailedEmployeeReport(
+function getWarehouseLocationTagId(location: WarehouseTagLocationItem): string | null {
+  return (
+    getTagKey(location.TagId) ??
+    getTagKey(location.TAG_ID) ??
+    getTagKey(location.TagID) ??
+    getTagKey(location.tagId) ??
+    getTagKey(location.tagid) ??
+    getTagKey(location.RFIDTagId) ??
+    getTagKey(location.RFIDTagID) ??
+    null
+  );
+}
+
+function getWarehouseLocationId(location: WarehouseTagLocationItem): string | null {
+  return (
+    getTagKey(location.WareHouseId) ??
+    getTagKey(location.WareHouseID) ??
+    getTagKey(location.WarehouseId) ??
+    getTagKey(location.WarehouseID) ??
+    getTagKey(location.warehouseId) ??
+    getTagKey(location.warehouseid) ??
+    getTagKey(location.ExpectedWarehouseId) ??
+    getTagKey(location.OriginalWarehouseId) ??
+    null
+  );
+}
+
+function getWarehouseLocationName(location: WarehouseTagLocationItem): string | null {
+  return (
+    pickString(location, [
+      "WareHouseName",
+      "WarehouseName",
+      "warehouseName",
+      "ExpectedWarehouseName",
+      "OriginalWarehouseName",
+    ]) ?? null
+  );
+}
+
+function getWarehouseOriginLabel(
+  locations: WarehouseTagLocationItem[],
+  currentWarehouseId?: string | null
+) {
+  const location = locations.find((entry) => {
+    const warehouseId = getWarehouseLocationId(entry);
+
+    return Boolean(warehouseId && warehouseId !== currentWarehouseId);
+  });
+
+  if (!location) {
+    return "";
+  }
+
+  const warehouseId = getWarehouseLocationId(location);
+
+  if (!warehouseId) {
+    return "";
+  }
+
+  return getWarehouseLocationName(location) ?? `Warehouse ${warehouseId}`;
+}
+
+function replaceGenericExtraSubtitle(item: AuditScanItem, sourceLabel: string) {
+  const originMessage = `Found here, expected in ${sourceLabel}`;
+  const baseSubtitle = item.subtitle
+    .replace(/\s+-\s+Found during audit but not expected in this warehouse/g, "")
+    .replace(/\s+-\s+Found during audit but not expected/g, "");
+
+  if (baseSubtitle.includes(originMessage)) {
+    return item;
+  }
+
+  return {
+    ...item,
+    subtitle: baseSubtitle ? `${baseSubtitle} - ${originMessage}` : originMessage,
+  };
+}
+
+async function enrichReportExtraItemsWithWarehouseOrigin(
+  items: AuditScanItem[],
+  currentWarehouseId?: string | null
+) {
+  const extraItems = items.filter((item) => item.tone === "extra");
+
+  if (extraItems.length === 0) {
+    return items;
+  }
+
+  try {
+    const locations = await apiService.getWarehouseIdAccessByTagId(
+      extraItems.map((item) => item.id)
+    );
+    const locationsByTag = locations.reduce<
+      Map<string, WarehouseTagLocationItem[]>
+    >((lookup, location) => {
+      const tagId = getWarehouseLocationTagId(location);
+
+      if (!tagId) {
+        return lookup;
+      }
+
+      const existingLocations = lookup.get(tagId) ?? [];
+      lookup.set(tagId, [...existingLocations, location]);
+      return lookup;
+    }, new Map());
+
+    return items.map((item) => {
+      if (item.tone !== "extra") {
+        return item;
+      }
+
+      const matchingLocations =
+        locationsByTag.get(item.id) ??
+        locationsByTag.get(String(item.id).trim()) ??
+        [];
+      const sourceLabel = getWarehouseOriginLabel(
+        matchingLocations,
+        currentWarehouseId
+      );
+
+      return sourceLabel
+        ? replaceGenericExtraSubtitle(item, sourceLabel)
+        : item;
+    });
+  } catch (error) {
+    console.warn("Failed to enrich report extra assets with warehouse origin:", error);
+    return items;
+  }
+}
+
+async function buildDetailedEmployeeReport(
   baseReport: LatestAuditReport,
   comparisonResponse: Record<string, unknown>,
   fallbackLocation?: string | null
-): LatestAuditReport {
+): Promise<LatestAuditReport> {
   const responseRecord = comparisonResponse as Record<string, unknown>;
   const explicitFound = filterComparisonAssets(
     responseRecord.FoundAssets ??
@@ -581,10 +715,13 @@ function buildDetailedEmployeeReport(
     pickString(responseRecord, ["Location"]) ??
     fallbackLocation?.trim() ??
     baseReport.location;
-  const detailItems = [...foundItems, ...missingItems, ...extraItems];
   const matchingSection = baseReport.warehouseSections?.find(
     (section) =>
       section.referenceId?.trim() === baseReport.referenceId?.trim()
+  );
+  const detailItems = await enrichReportExtraItemsWithWarehouseOrigin(
+    [...foundItems, ...missingItems, ...extraItems],
+    matchingSection?.warehouseId
   );
 
   return {
@@ -1538,7 +1675,7 @@ export default function EmployeeReportsScreen({
       setLoadingReferenceId(referenceId);
       const comparisonResponse = await apiService.getWarehouseAuditData(referenceId);
       const warehouseLabel = getWarehouseLabelForReference(report, referenceId, 0);
-      const detailedReport = buildDetailedEmployeeReport(
+      const detailedReport = await buildDetailedEmployeeReport(
         {
           ...report,
           referenceId,
