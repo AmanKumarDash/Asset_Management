@@ -2,7 +2,7 @@ import { View } from "react-native";
 
 export default function AuthCard({ children }: any) {
   return (
-    <View className="bg-white rounded-2xl p-6 shadow-md w-full max-w-md">
+    <View className="w-full max-w-md rounded-2xl bg-white p-6 shadow-md">
       {children}
     </View>
   );

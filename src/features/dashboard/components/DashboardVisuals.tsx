@@ -58,7 +58,7 @@ function getColumnCount(width: number, isDesktop: boolean) {
     return 4;
   }
 
-  return width < 480 ? 1 : 2;
+  return 2;
 }
 
 export function PeriodSwitch({

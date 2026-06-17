@@ -22,22 +22,24 @@ export default function AuthInput({
 }: Props) {
   return (
     <View className="mb-4">
-      <Text className="text-gray-600 mb-1">{label}</Text>
-      <View className="flex-row items-center border border-gray-300 rounded-lg bg-white overflow-hidden">
+      <Text className="mb-1 text-gray-600">{label}</Text>
+      <View className="h-12 flex-row items-center overflow-hidden rounded-lg border border-gray-300 bg-white">
         <TextInput
           value={value}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
           secureTextEntry={secureTextEntry}
           onChangeText={onChangeText}
-          className="flex-1 px-4 py-3 text-gray-800"
-          style={{ outlineWidth: 0 }}
+          autoCapitalize="none"
+          autoCorrect={false}
+          className="h-12 flex-1 px-4 text-gray-800"
+          style={{ outlineWidth: 0, textAlignVertical: "center" }}
         />
 
         {setShowPassword && (
           <TouchableOpacity
             onPress={() => setShowPassword(!showPassword)}
-            className="h-full items-center justify-center px-3 py-3"
+            className="h-12 w-12 items-center justify-center"
             activeOpacity={0.7}
           >
             <Feather

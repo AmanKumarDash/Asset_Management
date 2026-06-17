@@ -737,10 +737,15 @@ export default function DashboardScreen() {
   const { data, isLoading, errorMessage, periodLabel, reload } = useAdminDashboardData(period);
   const isDesktop = width >= 1024;
   const isCompactMobile = width < 640;
+  const metricGap = 12;
+  const metricHorizontalPadding = isDesktop ? 40 : 32;
+  const compactMetricCardWidth = Math.floor(
+    (width - metricHorizontalPadding - metricGap) / 2
+  );
   const metricCardWidth: DimensionValue = isDesktop
     ? `${100 / 7 - 1.2}%`
     : isCompactMobile
-      ? "48%"
+      ? Math.max(compactMetricCardWidth, 0)
       : "31.5%";
   const selectedAssetStatus = useMemo(() => {
     if (!selectedWarehouseId) {
@@ -884,7 +889,7 @@ export default function DashboardScreen() {
 
       {!isLoading && !errorMessage ? (
         <>
-          <View className="mt-4 flex-row flex-wrap" style={{ gap: 12 }}>
+          <View className="mt-4 flex-row flex-wrap" style={{ gap: metricGap }}>
             {headerMetrics.map((metric) => (
               <HeaderMetricCard key={metric.label} {...metric} width={metricCardWidth} />
             ))}
