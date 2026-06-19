@@ -832,17 +832,27 @@ async function handleFetchReportByDate() {
 
   return (
     <View className="flex-1" style={{ paddingHorizontal: 20, paddingVertical: 20, minHeight: 0 }}>
-      <View className="mb-5 flex-row items-start justify-between">
-        <View>
-          <Text className="text-[28px] font-semibold" style={{ color: adminTheme.slate }}>
+      <View className="mb-5 flex-row items-start justify-between" style={{ gap: 16 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            className="text-[28px] font-semibold"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={{ color: adminTheme.slate }}
+          >
             {report.title}
           </Text>
-          <Text className="mt-1 text-base" style={{ color: adminTheme.slateSoft }}>
+          <Text
+            className="mt-1 text-base"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={{ color: adminTheme.slateSoft }}
+          >
             {report.desktopMeta}
           </Text>
         </View>
 
-        <View className="flex-row gap-3">
+        <View className="flex-row" style={{ flexShrink: 0, gap: 12 }}>
           <SectionButton
             title="Back"
             icon="arrow-left"
