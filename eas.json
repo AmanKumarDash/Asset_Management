@@ -8,13 +8,22 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com"
+        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com",
+        "EXPO_PUBLIC_MQTT_BROKER": "wss://no-counter.smaketsolutions.com:9002",
+        "EXPO_PUBLIC_MQTT_TOPICS": "SMDEV-001p,SMDEV-002p,SMDEV-003p,audit/scanners/+/live",
+        "EXPO_PUBLIC_MQTT_USERNAME": "smaket",
+        "EXPO_PUBLIC_MQTT_PASSWORD": "smaket123"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com"
+        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com",
+        "EXPO_PUBLIC_MQTT_BROKER": "wss://no-counter.smaketsolutions.com:9002",
+        "EXPO_PUBLIC_MQTT_TOPICS": "SMDEV-001p,SMDEV-002p,SMDEV-003p,audit/scanners/+/live",
+        "EXPO_PUBLIC_MQTT_USERNAME": "smaket",
+        "EXPO_PUBLIC_MQTT_PASSWORD": "smaket123",
+        "EXPO_PUBLIC_ENABLE_APP_LOGS": "true"
       },
       "android": {
         "buildType": "apk"
@@ -23,7 +32,11 @@
     "preview-slim": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com"
+        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com",
+        "EXPO_PUBLIC_MQTT_BROKER": "wss://no-counter.smaketsolutions.com:9002",
+        "EXPO_PUBLIC_MQTT_TOPICS": "SMDEV-001p,SMDEV-002p,SMDEV-003p,audit/scanners/+/live",
+        "EXPO_PUBLIC_MQTT_USERNAME": "smaket",
+        "EXPO_PUBLIC_MQTT_PASSWORD": "smaket123"
       },
       "android": {
         "buildType": "apk"
@@ -31,7 +44,11 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com"
+        "EXPO_PUBLIC_API_URL": "https://backend-prepod.smaketsolutions.com",
+        "EXPO_PUBLIC_MQTT_BROKER": "wss://no-counter.smaketsolutions.com:9002",
+        "EXPO_PUBLIC_MQTT_TOPICS": "SMDEV-001p,SMDEV-002p,SMDEV-003p,audit/scanners/+/live",
+        "EXPO_PUBLIC_MQTT_USERNAME": "smaket",
+        "EXPO_PUBLIC_MQTT_PASSWORD": "smaket123"
       },
       "android": {
         "buildType": "app-bundle"
@@ -39,3 +56,5 @@
     }
   }
 }
+ 
+ 

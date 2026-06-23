@@ -5,7 +5,7 @@ import mqtt from "mqtt";
 const MQTT_BROKER =
   process.env.EXPO_PUBLIC_MQTT_BROKER ?? "wss://no-counter.smaketsolutions.com:9002";
 const MQTT_TOPICS = (
-  process.env.EXPO_PUBLIC_MQTT_TOPICS ?? "SMDEV-001p"
+  process.env.EXPO_PUBLIC_MQTT_TOPICS ?? "SMDEV-001p,SMDEV-002p,SMDEV-003p"
 )
   .split(",")
   .map((topic) => topic.trim())
