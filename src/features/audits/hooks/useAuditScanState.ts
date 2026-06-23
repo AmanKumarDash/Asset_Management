@@ -41,17 +41,7 @@ type ResolvedMisplacedAuditItem = AuditScanItem & {
 };
 
 const INVENTORY_LOOKUP_RETRY_DELAYS_MS = [300, 900, 1800] as const;
-const INVENTORY_LOOKUP_CONCURRENCY = 3;
-
-type InventoryLookupQueueJob = {
-  tagId: string;
-  resolve: (value: InventoryBarcodeScanDetail[]) => void;
-  reject: (reason?: unknown) => void;
-};
-
-type WarehouseOriginLookupCache = Map<string, WarehouseTagLocationItem[]>;
-type WarehouseOriginPendingLookup = Map<string, Promise<WarehouseTagLocationItem[]>>;
-
+ 
 function createAuditSessionId() {
   const randomUuid = globalThis.crypto?.randomUUID?.();
 
@@ -194,21 +184,21 @@ function delay(ms: number) {
     setTimeout(resolve, ms);
   });
 }
-
+ 
 async function searchInventoryBarcodeWithRetry(tagId: string) {
   let lastError: unknown = null;
-
+ 
   for (let attempt = 0; attempt <= INVENTORY_LOOKUP_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       return await apiService.searchInventoryBarcodeScanMode(tagId);
     } catch (error) {
       lastError = error;
       const retryDelay = INVENTORY_LOOKUP_RETRY_DELAYS_MS[attempt];
-
+ 
       if (retryDelay === undefined) {
         break;
       }
-
+ 
       appLogger.warn("AuditScan", "Retrying inventory lookup after failed request.", {
         tagId,
         attempt: attempt + 1,
@@ -218,10 +208,10 @@ async function searchInventoryBarcodeWithRetry(tagId: string) {
       await delay(retryDelay);
     }
   }
-
+ 
   throw lastError;
 }
-
+ 
 // Converts inventory lookup data into the reusable UI item shape shown in the audit results list.
 function mapInventoryToAuditItem(
   tagId: string,
@@ -602,7 +592,6 @@ function getWarehouseLocationId(location: WarehouseTagLocationItem): string | nu
     getTagKey(location.WarehouseId) ??
     getTagKey(location.WarehouseID) ??
     getTagKey(location.warehouseId) ??
-    getTagKey(location.warehouseid) ??
     getTagKey(location.ExpectedWarehouseId) ??
     getTagKey(location.OriginalWarehouseId) ??
     null
@@ -671,9 +660,7 @@ function getWarehouseOriginLabelsForTag(
 
 async function enrichExtraItemsWithWarehouseOrigin(
   items: AuditScanItem[],
-  currentWarehouseId: string,
-  originCache?: WarehouseOriginLookupCache,
-  pendingOriginLookups?: WarehouseOriginPendingLookup
+  currentWarehouseId: string
 ): Promise<AuditScanItem[]> {
   const extraItems = items.filter((item) => item.tone === "extra");
 
@@ -681,85 +668,10 @@ async function enrichExtraItemsWithWarehouseOrigin(
     return items;
   }
 
-  const extraTagIds = Array.from(
-    new Set(
-      extraItems
-        .map((item) => String(item.id).trim())
-        .filter((tagId) => tagId.length > 0)
-    )
-  );
-
-  if (extraTagIds.length === 0) {
-    return items;
-  }
-
   try {
-    let fetchedLocations: WarehouseTagLocationItem[] = [];
-    const tagsToFetch = originCache
-      ? extraTagIds.filter(
-          (tagId) => !originCache.has(tagId) && !pendingOriginLookups?.has(tagId)
-        )
-      : extraTagIds;
-
-    if (tagsToFetch.length > 0) {
-      const lookupPromise = apiService
-        .getWarehouseIdAccessByTagId(tagsToFetch)
-        .then((locations) => {
-          fetchedLocations = locations;
-
-          if (originCache) {
-            const locationsByRequestedTag = locations.reduce<
-              Map<string, WarehouseTagLocationItem[]>
-            >((lookup, location) => {
-              const tagId = getWarehouseLocationTagId(location);
-
-              if (!tagId) {
-                return lookup;
-              }
-
-              const existingLocations = lookup.get(tagId) ?? [];
-              lookup.set(tagId, [...existingLocations, location]);
-              return lookup;
-            }, new Map());
-
-            tagsToFetch.forEach((tagId) => {
-              originCache.set(tagId, locationsByRequestedTag.get(tagId) ?? []);
-            });
-          }
-
-          return locations;
-        })
-        .finally(() => {
-          tagsToFetch.forEach((tagId) => {
-            pendingOriginLookups?.delete(tagId);
-          });
-        });
-
-      tagsToFetch.forEach((tagId) => {
-        pendingOriginLookups?.set(
-          tagId,
-          lookupPromise.then(() => originCache?.get(tagId) ?? [])
-        );
-      });
-
-      if (!originCache) {
-        await lookupPromise;
-      }
-    }
-
-    if (originCache && pendingOriginLookups) {
-      await Promise.all(
-        extraTagIds.map((tagId) =>
-          originCache.has(tagId)
-            ? Promise.resolve(originCache.get(tagId) ?? [])
-            : pendingOriginLookups.get(tagId) ?? Promise.resolve([])
-        )
-      );
-    }
-
-    const locations = originCache
-      ? extraTagIds.flatMap((tagId) => originCache.get(tagId) ?? [])
-      : fetchedLocations;
+    const locations = await apiService.getWarehouseIdAccessByTagId(
+      extraItems.map((item) => item.id)
+    );
     const locationsByTag = locations.reduce<
       Map<string, WarehouseTagLocationItem[]>
     >((lookup, location) => {
@@ -938,7 +850,7 @@ function buildCombinedWarehouseReport(
   const warehouseSections: LatestAuditReportWarehouseSection[] = reports.map(
     (report, index) => ({
       warehouseId: warehouseIds[index] ?? null,
-      warehouseName: getStoredWarehouseLabel(warehouseIds[index], warehouseLabels),
+      warehouseName: report.location,
       referenceId: report.referenceId,
       observedAt: report.observedAt,
       summary: report.summary,
@@ -962,33 +874,6 @@ function buildCombinedWarehouseReport(
     items: reports.flatMap((report) => report.items),
     warehouseSections,
   };
-}
-
-function buildOmittedExpectedMissingItems(
-  warehouseAssets: AuditComparisonAsset[],
-  warehouseEntries: { key: string; asset: AuditComparisonAsset }[]
-) {
-  const remainingUniqueKeys = new Map(
-    warehouseEntries.map((entry) => [entry.key, 1])
-  );
-
-  return warehouseAssets.flatMap((asset, index) => {
-    const key = getComparisonKey(asset, `warehouse-${index}`);
-    const remainingCount = remainingUniqueKeys.get(key) ?? 0;
-
-    if (remainingCount > 0) {
-      remainingUniqueKeys.set(key, remainingCount - 1);
-      return [];
-    }
-
-    return [
-      mapReportAssetToAuditItem(
-        "missing",
-        asset,
-        getComparisonAssetTagId(asset, `EXPECTED-${index + 1}`)
-      ),
-    ];
-  });
 }
 
 function buildAuditComparisonReport(
@@ -1088,10 +973,6 @@ function buildAuditComparisonReport(
         getComparisonAssetTagId(entry.asset)
       )
     );
-  const omittedMissingItems = buildOmittedExpectedMissingItems(
-    warehouseAssets,
-    warehouseEntries
-  );
 
   const extraItems = scannedEntries
     .filter((entry) => !warehouseByKey.has(entry.key))
@@ -1114,9 +995,7 @@ function buildAuditComparisonReport(
     });
 
   const reportItemIds = new Set(
-    [...foundItems, ...missingItems, ...omittedMissingItems, ...extraItems].map(
-      (item) => item.id
-    )
+    [...foundItems, ...missingItems, ...extraItems].map((item) => item.id)
   );
   const unmatchedItems = snapshotItems
     .filter((item) => unmatchedTagIds.includes(item.id))
@@ -1126,24 +1005,18 @@ function buildAuditComparisonReport(
       tone: "extra" as const,
       icon: "plus-circle" as const,
     }));
-  const allItems = [
-    ...foundItems,
-    ...missingItems,
-    ...omittedMissingItems,
-    ...extraItems,
-    ...unmatchedItems,
-  ];
+  const allItems = [...foundItems,...missingItems,...extraItems, ...unmatchedItems];
 
   return {
     items: allItems,
     summary: {
       found: foundItems.length,
-      missing: missingItems.length + omittedMissingItems.length,
+      missing: missingItems.length,
       extra: extraItems.length + unmatchedItems.length,
       scanned: submittedTagIds.length,
-      expected: warehouseAssets.length,
+      expected: warehouseEntries.length,
     },
-    warehouseCount: warehouseAssets.length,
+    warehouseCount: warehouseEntries.length,
   };
 }
 
@@ -1189,13 +1062,7 @@ export function useAuditScanState() {
   const [isPreparingWarehouse, setIsPreparingWarehouse] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
-  const lookupQueueRef = useRef<InventoryLookupQueueJob[]>([]);
-  const activeLookupCountRef = useRef(0);
   const stagedLookupsRef = useRef(new Map<string, StagedAssetLookup>());
-  const warehouseOriginCacheRef = useRef<WarehouseOriginLookupCache>(new Map());
-  const pendingWarehouseOriginLookupsRef = useRef<WarehouseOriginPendingLookup>(
-    new Map()
-  );
   const scannedTagIdsRef = useRef(new Set<string>());
   const expectedTagIdsRef = useRef(new Set<string>());
   const auditPhaseRef = useRef<AuditPhase>("idle");
@@ -1214,46 +1081,8 @@ export function useAuditScanState() {
     auditWarehouseIdRef.current = auditWarehouseId;
   }, [auditWarehouseId]);
 
-  const processInventoryLookupQueue = useCallback(() => {
-    while (
-      activeLookupCountRef.current < INVENTORY_LOOKUP_CONCURRENCY &&
-      lookupQueueRef.current.length > 0
-    ) {
-      const job = lookupQueueRef.current.shift();
-
-      if (!job) {
-        return;
-      }
-
-      activeLookupCountRef.current += 1;
-
-      void searchInventoryBarcodeWithRetry(job.tagId)
-        .then(job.resolve)
-        .catch(job.reject)
-        .finally(() => {
-          activeLookupCountRef.current = Math.max(
-            activeLookupCountRef.current - 1,
-            0
-          );
-          processInventoryLookupQueue();
-        });
-    }
-  }, []);
-
-  const enqueueInventoryLookup = useCallback((tagId: string) => {
-    const lookupPromise = new Promise<InventoryBarcodeScanDetail[]>(
-      (resolve, reject) => {
-        lookupQueueRef.current.push({ tagId, resolve, reject });
-      }
-    );
-
-    processInventoryLookupQueue();
-    return lookupPromise;
-  }, [processInventoryLookupQueue]);
-
   // Resolves one scanned tag into a UI item and caches the result to avoid duplicate lookup calls.
   const resolveAuditItem = useCallback(async (tagId: string) => {
-    const lookupSessionId = scanSessionRef.current;
     const cachedItem = itemCacheRef.current.get(tagId);
 
     if (cachedItem) {
@@ -1266,12 +1095,9 @@ export function useAuditScanState() {
       return pendingLookup;
     }
 
-    const lookupPromise = enqueueInventoryLookup(tagId)
+    const lookupPromise = apiService
+      .searchInventoryBarcodeScanMode(tagId)
       .then((results) => {
-        if (lookupSessionId !== scanSessionRef.current) {
-          return mapInventoryToAuditItem(tagId, null);
-        }
-
         const asset = results[0] ?? null;
         const item = applyWarehouseExpectationToItem(
           mapInventoryToAuditItem(tagId, asset),
@@ -1289,33 +1115,16 @@ export function useAuditScanState() {
 
         return item;
       })
+      .catch(() => mapInventoryToAuditItem(tagId, null))
       .then((item) => {
-        if (lookupSessionId === scanSessionRef.current) {
-          itemCacheRef.current.set(tagId, item);
-          pendingLookupsRef.current.delete(tagId);
-        }
-
+        itemCacheRef.current.set(tagId, item);
+        pendingLookupsRef.current.delete(tagId);
         return item;
-      })
-      .catch((error) => {
-        const fallbackItem = mapInventoryToAuditItem(tagId, null);
-
-        if (lookupSessionId === scanSessionRef.current) {
-          itemCacheRef.current.set(tagId, fallbackItem);
-          pendingLookupsRef.current.delete(tagId);
-
-          appLogger.warn("AuditScan", "Inventory lookup failed after retries.", {
-            tagId,
-            error,
-          });
-        }
-
-        return fallbackItem;
       });
 
     pendingLookupsRef.current.set(tagId, lookupPromise);
     return lookupPromise;
-  }, [enqueueInventoryLookup]);
+  }, []);
 
   // Handles live MQTT payloads, extracts unique tags, and updates the on-screen scan list.
   const handleMqttMessage = useCallback(
@@ -1337,97 +1146,68 @@ export function useAuditScanState() {
         ? new Set(tagIds)
         : new Set([...scannedTagIdsRef.current, ...tagIds]);
 
-      const optimisticItemsByTagId = new Map(
-        tagIds.map((tagId) => [
-          tagId,
-          itemCacheRef.current.get(tagId) ?? mapInventoryToAuditItem(tagId, null),
-        ])
-      );
+      void Promise.all(
+        tagIds.map((tagId) => resolveAuditItem(tagId))
+      )
+        .then((resolvedItems) => {
+          const currentWarehouseId = auditWarehouseIdRef.current;
 
-      if (replacesCurrentList) {
-        setMqttItems((current) => {
-          const snapshotIds = new Set(tagIds);
-          const currentIds = new Set(current.map((item) => item.id));
-          const newlyScannedItems = tagIds
-            .filter((tagId) => !currentIds.has(tagId))
-            .map((tagId) => optimisticItemsByTagId.get(tagId)!)
-            .reverse();
-          const retainedItems = current
-            .filter((item) => snapshotIds.has(item.id))
-            .map((item) => optimisticItemsByTagId.get(item.id) ?? item);
+          if (!currentWarehouseId) {
+            return resolvedItems;
+          }
 
-          return [...newlyScannedItems, ...retainedItems];
-        });
-      } else {
+          return enrichExtraItemsWithWarehouseOrigin(
+            resolvedItems,
+            currentWarehouseId
+          );
+        })
+        .then((resolvedItems) => {
+        if (
+          auditPhaseRef.current !== "scanning" ||
+          sessionId !== scanSessionRef.current
+        ) {
+          return;
+        }
+
+        if (replacesCurrentList) {
+          setMqttItems((current) => {
+            const snapshotIds = new Set(tagIds);
+            const currentIds = new Set(current.map((item) => item.id));
+            const resolvedById = new Map(
+              resolvedItems.map((item) => [item.id, item])
+            );
+            const newlyScannedItems = resolvedItems
+              .filter((item) => !currentIds.has(item.id))
+              .reverse();
+            const retainedItems = current
+              .filter((item) => snapshotIds.has(item.id))
+              .map((item) => resolvedById.get(item.id) ?? item);
+
+            return [...newlyScannedItems, ...retainedItems];
+          });
+          return;
+        }
+
+        // For single items, append to existing list
         setMqttItems((current) => {
           const nextItems = [...current];
-
-          tagIds.forEach((tagId) => {
-            const optimisticItem = optimisticItemsByTagId.get(tagId);
-
-            if (!optimisticItem) {
-              return;
-            }
-
+ 
+          resolvedItems.forEach((item) => {
             const existingIndex = nextItems.findIndex(
-              (existingItem) => existingItem.id === optimisticItem.id
+              (existingItem) => existingItem.id === item.id
             );
 
             if (existingIndex >= 0) {
-              nextItems[existingIndex] = optimisticItem;
+              nextItems[existingIndex] = item;
               return;
             }
 
-            nextItems.unshift(optimisticItem);
+            nextItems.unshift(item);
           });
 
           return nextItems;
         });
-      }
-
-      tagIds.forEach((tagId) => {
-        void resolveAuditItem(tagId)
-          .then((resolvedItem) => {
-            const currentWarehouseId = auditWarehouseIdRef.current;
-
-            if (!currentWarehouseId) {
-              return resolvedItem;
-            }
-
-            return enrichExtraItemsWithWarehouseOrigin(
-              [resolvedItem],
-              currentWarehouseId,
-              warehouseOriginCacheRef.current,
-              pendingWarehouseOriginLookupsRef.current
-            ).then((items) => items[0] ?? resolvedItem);
-          })
-          .then((resolvedItem) => {
-            if (
-              auditPhaseRef.current !== "scanning" ||
-              sessionId !== scanSessionRef.current ||
-              !scannedTagIdsRef.current.has(tagId)
-            ) {
-              return;
-            }
-
-            setMqttItems((current) => {
-              const nextItems = [...current];
-              const existingIndex = nextItems.findIndex(
-                (existingItem) =>
-                  existingItem.id === tagId ||
-                  existingItem.id === resolvedItem.id
-              );
-
-              if (existingIndex >= 0) {
-                nextItems[existingIndex] = resolvedItem;
-                return nextItems;
-              }
-
-              nextItems.unshift(resolvedItem);
-              return nextItems;
-            });
-          });
-        });
+      });
     },
     [resolveAuditItem]
   );
@@ -1501,16 +1281,9 @@ export function useAuditScanState() {
   const clearScanSession = useCallback((nextPhase: AuditPhase = "idle") => {
     scanSessionRef.current += 1;
     mqttService.disconnectMqtt();
-    lookupQueueRef.current.forEach((job) => {
-      job.reject(new Error("Inventory lookup queue cleared."));
-    });
-    lookupQueueRef.current = [];
-    activeLookupCountRef.current = 0;
     itemCacheRef.current.clear();
     pendingLookupsRef.current.clear();
     stagedLookupsRef.current.clear();
-    warehouseOriginCacheRef.current.clear();
-    pendingWarehouseOriginLookupsRef.current.clear();
     scannedTagIdsRef.current = new Set<string>();
     setManualAssetId("");
     setMqttItems([]);
@@ -1579,22 +1352,23 @@ export function useAuditScanState() {
       }
 
       const seen = new Set<string>();
-
-      warehouseAssets.forEach((asset) => {
+      const expectedCount = warehouseAssets.reduce((count, asset) => {
         const tagKey = getTagKey(asset.TagId);
 
-        if (tagKey) {
-          seen.add(tagKey);
+        if (!tagKey || seen.has(tagKey)) {
+          return count;
         }
-      });
+
+        seen.add(tagKey);
+        return count + 1;
+      }, 0);
 
       expectedTagIdsRef.current = seen;
-      setExpectedAssetCount(warehouseAssets.length);
+      setExpectedAssetCount(expectedCount);
       setSubmitError(null);
       appLogger.info("AuditScan", "Loaded warehouse asset count for audit progress.", {
         warehouseId: numericWarehouseId,
-        expectedCount: warehouseAssets.length,
-        expectedTaggedAssetCount: seen.size,
+        expectedCount,
       });
     } catch (error) {
       if (requestId !== warehouseLoadRequestRef.current) {
@@ -1627,7 +1401,6 @@ export function useAuditScanState() {
     setPendingMissingItems([]);
     setResolvedMisplacedItems([]);
     completedWarehouseReportsRef.current = [];
-    auditWarehouseLabelsRef.current = new Map<string, string>();
     setExpectedAssetCount(0);
     setIsPreparingWarehouse(false);
   }, [clearScanSession]);
@@ -1935,9 +1708,7 @@ export function useAuditScanState() {
         );
         const enrichedItems = await enrichExtraItemsWithWarehouseOrigin(
           normalizedReport.items,
-          currentWarehouseId,
-          warehouseOriginCacheRef.current,
-          pendingWarehouseOriginLookupsRef.current
+          currentWarehouseId
         );
         const reconciledItems = reconcileReportWithSession(
           enrichedItems,
@@ -1949,7 +1720,9 @@ export function useAuditScanState() {
           extra: reconciledItems.filter((item) => item.tone === "extra").length,
           found: reconciledItems.filter((item) => item.tone === "found").length,
         };
-        const locationLabel = currentWarehouseLabel;
+        const locationLabel = auditWarehouseId
+          ? `Warehouse ${auditWarehouseId}`
+          : "Selected warehouse";
 
         currentReport = {
           title: "Audit Report",
@@ -1972,18 +1745,6 @@ export function useAuditScanState() {
       const isFinalWarehouse =
         activeWarehouseIndex >= auditWarehouseIds.length - 1;
       let displayReport = currentReport;
-
-      if (!isMultiWarehouseSession) {
-        void saveAuditReportSession({
-          id: `audit-session-${Date.now()}`,
-          sessionId,
-          userId: user?.employeeId || "",
-          referenceIds: referenceId ? [referenceId] : [],
-          warehouseIds: [currentWarehouseId],
-          observedAt,
-          report: currentReport,
-        });
-      }
 
       if (isMultiWarehouseSession) {
         const nextCompletedReports = [...completedWarehouseReportsRef.current];
@@ -2017,13 +1778,10 @@ export function useAuditScanState() {
 
       setReportItems(displayReport.items);
       setReportSummary(displayReport.summary);
-      setExpectedAssetCount((currentExpectedCount) =>
-        Math.max(
-          currentExpectedCount,
-          displayReport.summary.expected ?? 0,
-          normalizedReport.summary.expected ?? 0,
+      setExpectedAssetCount(
+        displayReport.summary.expected ??
+          normalizedReport.summary.expected ??
           normalizedReport.warehouseCount
-        )
       );
       setLatestAuditReport(displayReport);
       setAuditPhase("submitted");
