@@ -132,9 +132,79 @@ function extractAuditReferenceId(
 
 class ApiService {
   private api: AxiosInstance;
+  private warehouseAccessByTagCache = new Map<string, WarehouseTagLocationItem[]>();
+  private pendingWarehouseAccessByTagRequests = new Map<
+    string,
+    Promise<WarehouseTagLocationItem[]>
+  >();
 
   constructor() {
     this.api = axiosInstance;
+  }
+
+  private getWarehouseAccessTagKey(tagId: number | string): string {
+    return String(tagId).trim();
+  }
+
+  private getWarehouseLocationTagKey(
+    location: WarehouseTagLocationItem
+  ): string | null {
+    const candidates = [
+      location.TagId,
+      location.TAG_ID,
+      location.TagID,
+      location.tagId,
+      location.tagid,
+      location.RFIDTagId,
+      location.RFIDTagID,
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate === null || candidate === undefined) {
+        continue;
+      }
+
+      const tagKey = this.getWarehouseAccessTagKey(candidate);
+
+      if (tagKey) {
+        return tagKey;
+      }
+    }
+
+    return null;
+  }
+
+  private async fetchWarehouseIdAccessByTagIds(
+    tagIds: string[]
+  ): Promise<WarehouseTagLocationItem[]> {
+    const response = await this.api.get<
+      | ApiCollectionEnvelope<WarehouseTagLocationItem>
+      | ApiEnvelope<WarehouseTagLocationItem[]>
+      | ApiEnvelope<WarehouseTagLocationItem>
+      | WarehouseTagLocationItem[]
+      | WarehouseTagLocationItem
+    >(ENDPOINTS.WAREHOUSE.GET_ACCESS_BY_TAG_ID(tagIds.join(",")));
+
+    const collection = extractResponseCollection<WarehouseTagLocationItem>(
+      response.data as ApiCollectionEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem[]
+    );
+
+    if (collection.length > 0) {
+      return collection;
+    }
+
+    const singleItem = extractResponseData<WarehouseTagLocationItem>(
+      response.data as ApiEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem
+    );
+
+    return singleItem && typeof singleItem === "object" && !Array.isArray(singleItem)
+      ? [singleItem]
+      : [];
+  }
+
+  clearWarehouseIdAccessByTagCache() {
+    this.warehouseAccessByTagCache.clear();
+    this.pendingWarehouseAccessByTagRequests.clear();
   }
 
   // Authenticates the user and returns the normalized login payload used to build app session state.
@@ -327,7 +397,7 @@ class ApiService {
     const normalizedTagIds = Array.from(
       new Set(
         tagIds
-          .map((tagId) => String(tagId).trim())
+          .map((tagId) => this.getWarehouseAccessTagKey(tagId))
           .filter((tagId) => tagId.length > 0)
       )
     );
@@ -336,29 +406,56 @@ class ApiService {
       return [];
     }
 
-    const response = await this.api.get<
-      | ApiCollectionEnvelope<WarehouseTagLocationItem>
-      | ApiEnvelope<WarehouseTagLocationItem[]>
-      | ApiEnvelope<WarehouseTagLocationItem>
-      | WarehouseTagLocationItem[]
-      | WarehouseTagLocationItem
-    >(ENDPOINTS.WAREHOUSE.GET_ACCESS_BY_TAG_ID(normalizedTagIds.join(",")));
+    const pendingRequests: Promise<WarehouseTagLocationItem[]>[] = [];
+    const missingTagIds: string[] = [];
 
-    const collection = extractResponseCollection<WarehouseTagLocationItem>(
-      response.data as ApiCollectionEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem[]
-    );
+    normalizedTagIds.forEach((tagId) => {
+      if (this.warehouseAccessByTagCache.has(tagId)) {
+        return;
+      }
 
-    if (collection.length > 0) {
-      return collection;
+      const pendingRequest = this.pendingWarehouseAccessByTagRequests.get(tagId);
+
+      if (pendingRequest) {
+        pendingRequests.push(pendingRequest);
+        return;
+      }
+
+      missingTagIds.push(tagId);
+    });
+
+    if (missingTagIds.length > 0) {
+      const batchRequest = this.fetchWarehouseIdAccessByTagIds(missingTagIds);
+
+      missingTagIds.forEach((tagId) => {
+        const tagRequest = batchRequest
+          .then((locations) => {
+            const matchingLocations = locations.filter(
+              (location) =>
+                this.getWarehouseLocationTagKey(location) === tagId ||
+                (missingTagIds.length === 1 &&
+                  this.getWarehouseLocationTagKey(location) === null)
+            );
+
+            this.warehouseAccessByTagCache.set(tagId, matchingLocations);
+            return matchingLocations;
+          })
+          .finally(() => {
+            this.pendingWarehouseAccessByTagRequests.delete(tagId);
+          });
+
+        this.pendingWarehouseAccessByTagRequests.set(tagId, tagRequest);
+        pendingRequests.push(tagRequest);
+      });
     }
 
-    const singleItem = extractResponseData<WarehouseTagLocationItem>(
-      response.data as ApiEnvelope<WarehouseTagLocationItem> | WarehouseTagLocationItem
-    );
+    if (pendingRequests.length > 0) {
+      await Promise.all(pendingRequests);
+    }
 
-    return singleItem && typeof singleItem === "object" && !Array.isArray(singleItem)
-      ? [singleItem]
-      : [];
+    return normalizedTagIds.flatMap(
+      (tagId) => this.warehouseAccessByTagCache.get(tagId) ?? []
+    );
   }
 
   // Loads submitted employee report rows, optionally constrained to a date range.
