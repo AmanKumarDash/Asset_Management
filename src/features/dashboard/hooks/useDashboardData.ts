@@ -1,6 +1,9 @@
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { UserDetails, apiService, EmployeeReportApiItem } from "@/network/ApiService";
-import { AuditComparisonResponse } from "@/features/audits/types/audit";
+import {
+  AuditComparisonAsset,
+  AuditComparisonResponse,
+} from "@/features/audits/types/audit";
 import { WarehouseSummary } from "@/models/warehouse";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -162,6 +165,43 @@ function getSortableTime(value: string | null) {
   return new Date(value ?? "").getTime() || 0;
 }
 
+function parseNumericId(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function getTagKey(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  return null;
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
 function getRowScanKey(item: EmployeeReportApiItem, index: number) {
   const tagId = item.TagId;
 
@@ -271,6 +311,22 @@ function pickWarehouseName(record: Record<string, unknown>, fallback: string) {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : fallback;
 }
 
+function getWarehouseBaselineAssetKey(asset: Record<string, unknown>, index: number) {
+  const tagKey = getTagKey(asset.TagId ?? asset.ID ?? asset.TagID ?? asset.tagId);
+
+  if (tagKey) {
+    return `tag:${tagKey}`;
+  }
+
+  const productId = parseNumericId(asset.ProductId ?? asset.ProductID ?? asset.productId);
+
+  if (productId !== null) {
+    return `product:${productId}`;
+  }
+
+  return `row:${index}`;
+}
+
 function getComparisonArrayCount(response: AuditComparisonResponse, keys: string[]) {
   for (const key of keys) {
     const value = response[key];
@@ -309,7 +365,195 @@ function getComparisonCount(
   return getComparisonNumericCount(response, countKeys) ?? getComparisonArrayCount(response, arrayKeys);
 }
 
+function filterComparisonAssets(value: unknown): AuditComparisonAsset[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (entry): entry is AuditComparisonAsset => !!entry && typeof entry === "object"
+  );
+}
+
+function getComparisonKey(asset: AuditComparisonAsset, fallbackKey: string) {
+  const productId =
+    parseNumericId(asset.ProductId) ??
+    parseNumericId(asset.ProductID) ??
+    parseNumericId(asset.productId);
+
+  if (productId !== null) {
+    return `product:${productId}`;
+  }
+
+  const tagKey =
+    getTagKey(asset.TagId) ??
+    getTagKey(asset.ID) ??
+    pickString(asset as Record<string, unknown>, ["TAG_ID", "TagID", "tagId"]);
+
+  return tagKey ? `tag:${tagKey}` : fallbackKey;
+}
+
+function uniqueComparisonEntries(assets: AuditComparisonAsset[], prefix: string) {
+  return assets.reduce<{ key: string; asset: AuditComparisonAsset }[]>(
+    (entries, asset, index) => {
+      const key = getComparisonKey(asset, `${prefix}-${index}`);
+
+      if (!entries.some((entry) => entry.key === key)) {
+        entries.push({ key, asset });
+      }
+
+      return entries;
+    },
+    []
+  );
+}
+
+function pickComparisonArrayEntry(
+  response: AuditComparisonResponse,
+  keys: string[]
+): AuditComparisonAsset[] {
+  for (const key of keys) {
+    const assets = filterComparisonAssets(response[key]);
+
+    if (assets.length > 0) {
+      return assets;
+    }
+  }
+
+  return [];
+}
+
+function getObjectRecords(value: unknown): Record<string, unknown>[] {
+  const values = Array.isArray(value) ? value : [value];
+
+  return values.filter(
+    (entry): entry is Record<string, unknown> => !!entry && typeof entry === "object"
+  );
+}
+
+function getNestedWarehouseAssets(response: AuditComparisonResponse) {
+  const sourceRecords = [
+    ...getObjectRecords(response),
+    ...getObjectRecords(response.WarehouseAuditData),
+  ];
+  const nestedAuditRecords = sourceRecords.flatMap((record) =>
+    getObjectRecords(record.WarehouseAuditData)
+  );
+  const records = [...sourceRecords, ...nestedAuditRecords];
+  const warehouseKeys = [
+    "WarehouseData",
+    "WarehouseAssets",
+    "WarehouseItems",
+    "ExpectedAssets",
+    "ExpectedItems",
+    "Expected",
+    "SelectedWarehouseAssets",
+    "BaselineAssets",
+  ];
+
+  return records.flatMap((record) =>
+    warehouseKeys.flatMap((key) => filterComparisonAssets(record[key]))
+  );
+}
+
+function pickAuditComparisonArrays(response: AuditComparisonResponse): {
+  scannedAssets: AuditComparisonAsset[];
+  warehouseAssets: AuditComparisonAsset[];
+} {
+  const scannedAssets =
+    pickComparisonArrayEntry(response, [
+      "ScannedAssets",
+      "ScannedItems",
+      "Scanned",
+      "AuditScanData",
+      "ActualData",
+      "ActualItems",
+      "Actual",
+      "AuditData",
+      "AuditItems",
+      "StagedAssets",
+      "StagingData",
+    ]) ||
+    [];
+  const warehouseAssets =
+    pickComparisonArrayEntry(response, [
+      "WarehouseAssets",
+      "WarehouseItems",
+      "WarehouseData",
+      "ExpectedAssets",
+      "ExpectedItems",
+      "Expected",
+      "SelectedWarehouseAssets",
+      "BaselineAssets",
+    ]) || [];
+  const responseRows = filterComparisonAssets(response);
+
+  return {
+    scannedAssets: scannedAssets.length > 0 ? scannedAssets : responseRows,
+    warehouseAssets:
+      warehouseAssets.length > 0 ? warehouseAssets : getNestedWarehouseAssets(response),
+  };
+}
+
+function getComparedAuditStatusCounts(response: AuditComparisonResponse) {
+  const explicitFound = pickComparisonArrayEntry(response, [
+    "FoundAssets",
+    "FoundItems",
+    "Found",
+    "foundAssets",
+    "foundItems",
+    "found",
+  ]);
+  const explicitMissing = pickComparisonArrayEntry(response, [
+    "MissingAssets",
+    "MissingItems",
+    "Missing",
+    "missingAssets",
+    "missingItems",
+    "missing",
+  ]);
+  const explicitExtra = pickComparisonArrayEntry(response, [
+    "ExtraAssets",
+    "ExtraItems",
+    "Extra",
+    "extraAssets",
+    "extraItems",
+    "extra",
+  ]);
+
+  if (explicitFound.length || explicitMissing.length || explicitExtra.length) {
+    return {
+      found: explicitFound.length,
+      missing: explicitMissing.length,
+      extra: explicitExtra.length,
+    };
+  }
+
+  const { scannedAssets, warehouseAssets } = pickAuditComparisonArrays(response);
+
+  if (scannedAssets.length === 0 || warehouseAssets.length === 0) {
+    return null;
+  }
+
+  const scannedEntries = uniqueComparisonEntries(scannedAssets, "scanned");
+  const warehouseEntries = uniqueComparisonEntries(warehouseAssets, "warehouse");
+  const scannedByKey = new Map(scannedEntries.map((entry) => [entry.key, entry]));
+  const warehouseByKey = new Map(warehouseEntries.map((entry) => [entry.key, entry]));
+
+  return {
+    found: warehouseEntries.filter((entry) => scannedByKey.has(entry.key)).length,
+    missing: warehouseEntries.filter((entry) => !scannedByKey.has(entry.key)).length,
+    extra: scannedEntries.filter((entry) => !warehouseByKey.has(entry.key)).length,
+  };
+}
+
 function getAuditStatusCounts(row: DashboardAuditRow, response: AuditComparisonResponse) {
+  const comparedStatus = getComparedAuditStatusCounts(response);
+
+  if (comparedStatus) {
+    return comparedStatus;
+  }
+
   const extra = getComparisonCount(
     response,
     ["ExtraCount", "extraCount"],
@@ -569,9 +813,9 @@ export function useAdminDashboardData(period: DashboardPeriod) {
             warehouseSummaries.map(async (warehouse) => {
               const baseline = await apiService.getWarehouseTagBaseline(warehouse.id).catch(() => []);
               const assetCount = new Set(
-                baseline
-                  .map((asset) => String(asset.TagId ?? "").trim())
-                  .filter(Boolean)
+                baseline.map((asset, index) =>
+                  getWarehouseBaselineAssetKey(asset as Record<string, unknown>, index)
+                )
               ).size;
 
               return {

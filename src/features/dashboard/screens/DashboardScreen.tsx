@@ -256,7 +256,7 @@ function WarehouseDistributionChart({
   items: DashboardWarehouseDistributionItem[];
   isCompact: boolean;
 }) {
-  const visibleItems = items.slice(0, 5);
+  const visibleItems = items;
 
   if (visibleItems.length === 0) {
     return (
@@ -269,7 +269,8 @@ function WarehouseDistributionChart({
   const chartMaxValue = getChartMaxValue(visibleItems);
   const axisValues = [chartMaxValue, chartMaxValue * 0.75, chartMaxValue * 0.5, chartMaxValue * 0.25, 0];
   const chartHeight = 180;
-  const minimumChartWidth = isCompact ? Math.max(visibleItems.length * 92, 460) : 520;
+  const minimumChartWidth = Math.max(visibleItems.length * (isCompact ? 104 : 118), 520);
+  const shouldScrollHorizontally = isCompact || visibleItems.length > 6;
 
   return (
     <View
@@ -283,10 +284,13 @@ function WarehouseDistributionChart({
         <Feather name="more-vertical" size={22} color={adminTheme.muted} />
       </View>
 
-      <ScrollView horizontal={isCompact} showsHorizontalScrollIndicator={false}>
+      <ScrollView horizontal={shouldScrollHorizontally} showsHorizontalScrollIndicator={false}>
         <View
           className="mt-4 flex-row"
-          style={{ width: isCompact ? minimumChartWidth : "100%", minWidth: minimumChartWidth }}
+          style={{
+            width: shouldScrollHorizontally ? minimumChartWidth : "100%",
+            minWidth: minimumChartWidth,
+          }}
         >
           <View className="pr-3" style={{ height: chartHeight + 40, width: 42 }}>
             {axisValues.map((value, index) => (
@@ -321,9 +325,9 @@ function WarehouseDistributionChart({
                   const barHeight = Math.max((item.assetCount / chartMaxValue) * (chartHeight - 8), 8);
 
                   return (
-                    <View key={item.id} className="items-center" style={{ width: 72 }}>
+                    <View key={item.id} className="items-center" style={{ width: 92 }}>
                       <Text className="mb-2 text-xs font-semibold" style={{ color: "#1E40AF" }}>
-                        {item.assetCount.toLocaleString()}
+                        {item.assetCount.toLocaleString()} assets
                       </Text>
                       <View
                         className="rounded-t-[3px]"
@@ -346,11 +350,11 @@ function WarehouseDistributionChart({
 
             <View className="mt-2 flex-row justify-around">
               {visibleItems.map((item) => (
-                <View key={`${item.id}-label`} className="items-center" style={{ width: 72 }}>
+                <View key={`${item.id}-label`} className="items-center" style={{ width: 92 }}>
                   <Text
-                    className="text-center text-[11px] font-medium"
+                    className="text-center text-[11px] font-semibold leading-4"
                     style={{ color: adminTheme.muted }}
-                    numberOfLines={1}
+                    numberOfLines={2}
                   >
                     {item.name}
                   </Text>
