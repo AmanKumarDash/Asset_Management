@@ -295,20 +295,23 @@ function applyWarehouseExpectationToItem(
 }
 
 // Extracts the scanned RFID tag and product id needed by the warehouse staging API.
+// For unmatched tags (no product), includes them with ProductId: 0 so they're tracked as "Extra" in reports.
 function mapInventoryToStagedLookup(
   tagId: string,
   asset: InventoryBarcodeScanDetail | null
 ): StagedAssetLookup | null {
   const resolvedTagId = getTagKey(asset?.TagId ?? tagId);
-  const productId = parseNumericId(asset?.ProductId);
 
-  if (resolvedTagId === null || productId === null) {
+  // For unmatched assets (no product association), use ProductId: 0
+  const productId = asset ? parseNumericId(asset.ProductId) : null;
+
+  if (resolvedTagId === null) {
     return null;
   }
 
   return {
     TagId: resolvedTagId,
-    ProductId: productId,
+    ProductId: productId ?? 0,
   };
 }
 
@@ -1718,31 +1721,38 @@ export function useAuditScanState() {
         ? tagIds.filter((tagId) => !submittedMatchedTagIds.includes(tagId))
         : tagIds.filter((tagId) => !stagedLookupsRef.current.has(tagId));
 
+    // Build staging list from all scanned tags (matched + unmatched)
+    // Unmatched tags are included with ProductId: 0 to be tracked as "Extra" in reports
     const stagingList = canRetry
       ? submittedStagingList
-      : matchedTagIds.map((tagId) => {
+      : tagIds.map((tagId) => {
           const stagedLookup = stagedLookupsRef.current.get(tagId);
 
+          if (stagedLookup) {
+            return {
+              ...stagedLookup,
+              WareHouseId: warehouseId,
+            };
+          }
+
+          // For unmatched tags, create a staging entry with ProductId: 0
           return {
-            ...stagedLookup!,
+            TagId: tagId,
+            ProductId: 0,
             WareHouseId: warehouseId,
           };
         });
 
     if (stagingList.length === 0) {
-      const message =
-        unmatchedTagIds.length > 0
-          ? `No scanned tags could be matched to a product for submission. Remove unmatched tags or resolve them before retrying.`
-          : "No matched scanned tags are available to submit.";
+      const message = "No scanned tags are available to submit.";
 
       setSubmitError(message);
       appLogger.warn(
         "AuditScan",
-        "Submit blocked because no valid staging entries were available.",
+        "Submit blocked because no scanned tags were available.",
         {
           warehouseId,
           tagIds,
-          unmatchedTagIds,
           stagedLookupKeys: Array.from(
             stagedLookupsRef.current.keys()
           ),
@@ -1758,14 +1768,14 @@ export function useAuditScanState() {
     scanSessionRef.current += 1;
     setSubmitError(null);
     setSubmittedTagIds(tagIds);
-    setSubmittedMatchedTagIds(matchedTagIds);
+    setSubmittedMatchedTagIds(tagIds); // All tags are now submitted, including unmatched
     setSubmittedStagingList(stagingList);
     setFrozenItems(snapshotItems);
     setReportItems([]);
     setReportSummary({
       found: 0,
       missing: 0,
-      extra: unmatchedTagIds.length,
+      extra: 0,
       scanned: tagIds.length,
     });
     setConnectionStatus("idle");
