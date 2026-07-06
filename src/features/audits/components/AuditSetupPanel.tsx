@@ -1,4 +1,5 @@
 ﻿import { OrganizationDetails } from "@/models/organization";
+import { RfidMachineSummary } from "@/models/rfidMachine";
 import { WarehouseSummary } from "@/models/warehouse";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
@@ -69,10 +70,13 @@ function SetupStateBanner({
 export default function AuditSetupPanel({
   organization,
   warehouses,
+  machines,
   selectedWarehouseId,
   selectedWarehouseIds,
+  selectedMachineId,
   onSelectWarehouse,
   onToggleWarehouse,
+  onSelectMachine,
   isLoading,
   error,
   onRetry,
@@ -81,10 +85,13 @@ export default function AuditSetupPanel({
 }: {
   organization: OrganizationDetails | null;
   warehouses: WarehouseSummary[];
+  machines?: RfidMachineSummary[];
   selectedWarehouseId?: string | null;
   selectedWarehouseIds?: string[];
+  selectedMachineId?: string | null;
   onSelectWarehouse?: (warehouseId: string) => void;
   onToggleWarehouse?: (warehouseId: string) => void;
+  onSelectMachine?: (machineId: string) => void;
   isLoading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -93,6 +100,7 @@ export default function AuditSetupPanel({
 }) {
   const selectedIds = selectedWarehouseIds ?? (selectedWarehouseId ? [selectedWarehouseId] : []);
   const isMultiSelect = Boolean(onToggleWarehouse || selectedWarehouseIds);
+  const machineList = machines ?? [];
 
   return (
     <View
@@ -205,16 +213,75 @@ export default function AuditSetupPanel({
         </View>
       ) : null}
 
+      <View className="mt-4 flex-row items-center justify-between">
+        <Text className="text-[16px] font-semibold" style={{ color: adminTheme.slate }}>
+          RFID Machines
+        </Text>
+        <Text className="text-xs" style={{ color: adminTheme.muted }}>
+          {selectedMachineId ? "1 selected" : `${machineList.length} loaded`}
+        </Text>
+      </View>
+
+      {machineList.length > 0 ? (
+        <View className="mt-3 flex-row flex-wrap gap-3">
+          {machineList.map((machine) => {
+            const isSelected = selectedMachineId === machine.id;
+
+            return (
+              <Pressable
+                key={machine.id}
+                onPress={() => onSelectMachine?.(machine.id)}
+                disabled={selectionLocked}
+                className="min-w-[180px] flex-1 rounded-[16px] border px-4 py-4"
+                style={{
+                  borderColor: isSelected ? primaryColor : adminTheme.border,
+                  backgroundColor: isSelected ? adminTheme.infoBg : adminTheme.surface,
+                  opacity: selectionLocked && !isSelected ? 0.68 : 1,
+                }}
+              >
+                <View className="flex-row items-start justify-between" style={{ gap: 8 }}>
+                  <View className="flex-1">
+                    <Text className="text-[15px] font-semibold" style={{ color: adminTheme.slate }}>
+                      {machine.label}
+                    </Text>
+                    <Text className="mt-1 text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+                      {machine.subtitle ?? `Topic ${machine.topic}`}
+                    </Text>
+                  </View>
+                  {isSelected ? (
+                    <View
+                      className="h-7 w-7 items-center justify-center rounded-full"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      <Feather name="check" size={14} color="#FFFFFF" />
+                    </View>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : !isLoading && !error ? (
+        <View
+          className="mt-3 rounded-[16px] border px-4 py-4"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <Text className="text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+            No RFID machines are assigned to this organization yet.
+          </Text>
+        </View>
+      ) : null}
+
       <View
         className="mt-4 rounded-[16px] px-4 py-3"
         style={{ backgroundColor: adminTheme.warningBg }}
       >
         <Text className="text-sm leading-5" style={{ color: adminTheme.warningText }}>
           {selectionLocked
-            ? "Warehouse selection is locked for the current audit session. Finish or restart the audit before changing it."
-            : selectedIds.length > 0
-              ? "Selected warehouses will be scanned one by one in the same reconciliation session."
-              : "Select at least one warehouse first, then the audit workspace will unlock and scanning can start."}
+            ? "Warehouse and machine selection are locked for the current audit session. Finish or restart the audit before changing them."
+            : selectedIds.length > 0 && selectedMachineId
+              ? "Selected warehouses will use the selected RFID machine topic for this reconciliation session."
+              : "Select at least one warehouse and one RFID machine first, then the audit workspace will unlock and scanning can start."}
         </Text>
       </View>
     </View>

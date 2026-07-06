@@ -21,6 +21,33 @@ export const ENDPOINTS = {
   ORG: {
     GET_DETAILS: "/api/org/GetDetails",
   },
+  SALE_ORDER_DETAILS: {
+    GET_ALL_CART_DETAILS_BY_ORG: (
+      sortOrder = "desc",
+      sortColumn = "CreatedOn",
+      pageNo = 1,
+      rowCount = 100,
+      startDate?: string,
+      endDate?: string
+    ) => {
+      const params = [
+        `sortOrder=${encodeURIComponent(sortOrder)}`,
+        `sortColumn=${encodeURIComponent(sortColumn)}`,
+        `pageNo=${pageNo}`,
+        `rowCount=${rowCount}`,
+      ];
+
+      if (startDate) {
+        params.push(`StartDate=${encodeURIComponent(startDate)}`);
+      }
+
+      if (endDate) {
+        params.push(`EndDate=${encodeURIComponent(endDate)}`);
+      }
+
+      return `/api/SaleOrderDetails/GetAllCartDetailsByOrg?${params.join("&")}`;
+    },
+  },
   WAREHOUSE: {
     GET_BY_ORG: (pageNo = 1, rowCount = 50) =>
       `/api/warehouse/getwarehousebyOrg?pageNo=${pageNo}&rowCount=${rowCount}`,

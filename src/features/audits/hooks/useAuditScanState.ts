@@ -1067,6 +1067,7 @@ export function useAuditScanState() {
     useState<MqttConnectionStatus>("idle");
   const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
   const [auditWarehouseIds, setAuditWarehouseIds] = useState<string[]>([]);
+  const [auditMqttTopic, setAuditMqttTopic] = useState<string | null>(null);
   const [auditApiSessionId, setAuditApiSessionId] = useState<string | null>(null);
   const [activeWarehouseIndex, setActiveWarehouseIndex] = useState(0);
   const [pendingMissingItems, setPendingMissingItems] = useState<
@@ -1322,9 +1323,16 @@ export function useAuditScanState() {
       return;
     }
 
+    if (!auditMqttTopic) {
+      setSubmitError("Select an RFID machine before starting the audit.");
+      setConnectionStatus("error");
+      setAuditPhase("idle");
+      return;
+    }
+
     mqttService.onMessage(handleMqttMessage);
     mqttService.onStatus(setConnectionStatus);
-    mqttService.connectMqtt();
+    mqttService.connectMqtt(auditMqttTopic);
 
     return () => {
       mqttService.offMessage(handleMqttMessage);
@@ -1333,7 +1341,7 @@ export function useAuditScanState() {
       setConnectionStatus("idle");
       // setMqttItems([]);
     };
-  }, [auditPhase, handleMqttMessage]);
+  }, [auditMqttTopic, auditPhase, handleMqttMessage]);
 
   // Combines manual and live scanner entries into the list used while the audit is still active.
   const liveItems = useMemo(
@@ -1505,6 +1513,7 @@ export function useAuditScanState() {
     clearScanSession("idle");
     setAuditWarehouseId(null);
     setAuditWarehouseIds([]);
+    setAuditMqttTopic(null);
     setAuditApiSessionId(null);
     setActiveWarehouseIndex(0);
     setPendingMissingItems([]);
@@ -1545,8 +1554,16 @@ export function useAuditScanState() {
   // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
   // We snapshot the current expectedAssetCount before clearScanSession wipes it to zero, then restore it
   // immediately so the progress card denominator stays correct once MQTT scanning begins.
-  const startAudit = useCallback((warehouseId?: string) => {
+  const startAudit = useCallback((warehouseId?: string, mqttTopic?: string | null) => {
     if (!warehouseId || isPreparingWarehouse) {
+      return;
+    }
+
+    const normalizedMqttTopic = mqttTopic?.trim();
+
+    if (!normalizedMqttTopic) {
+      setSubmitError("Select an RFID machine before starting the audit.");
+      setConnectionStatus("error");
       return;
     }
 
@@ -1555,6 +1572,7 @@ export function useAuditScanState() {
     clearScanSession("scanning");
     expectedTagIdsRef.current = currentExpectedTagIds;
     setAuditWarehouseId(warehouseId);
+    setAuditMqttTopic(normalizedMqttTopic);
     setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
     setAuditApiSessionId((current) =>
       current && auditPhase !== "submitted" ? current : createAuditSessionId()

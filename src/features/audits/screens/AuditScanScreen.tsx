@@ -802,9 +802,13 @@ function MobileAuditScan() {
   const {
     organization,
     warehouses,
+    rfidMachines,
     selectedWarehouse,
     selectedWarehouseIds,
+    selectedMachine,
+    selectedMachineId,
     setSelectedWarehouseId,
+    setSelectedMachineId,
     toggleSelectedWarehouseId,
     isLoading,
     error,
@@ -824,6 +828,8 @@ function MobileAuditScan() {
     warehouses,
     selectedWarehouseIds
   );
+  const canPrepareAudit =
+    selectedWarehouseIds.length > 0 && Boolean(selectedMachine) && !isPreparingWarehouse;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -864,9 +870,12 @@ function MobileAuditScan() {
             <AuditSetupPanel
               organization={organization}
               warehouses={warehouses}
+              machines={rfidMachines}
               selectedWarehouseIds={selectedWarehouseIds}
+              selectedMachineId={selectedMachineId}
               onSelectWarehouse={handleSelectWarehouse}
               onToggleWarehouse={handleSelectWarehouse}
+              onSelectMachine={setSelectedMachineId}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
@@ -877,11 +886,11 @@ function MobileAuditScan() {
           <View className="px-4 pt-4">
             <Pressable
               onPress={startSelectedWarehouseSession}
-              disabled={selectedWarehouseIds.length === 0 || isPreparingWarehouse}
+              disabled={!canPrepareAudit}
               className="items-center rounded-[18px] px-5 py-4"
               style={{
                 backgroundColor:
-                  selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                  canPrepareAudit
                     ? adminTheme.primary
                     : adminTheme.mutedBg,
               }}
@@ -890,16 +899,16 @@ function MobileAuditScan() {
                 className="text-base font-semibold"
                 style={{
                   color:
-                    selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                    canPrepareAudit
                       ? "#FFFFFF"
                       : adminTheme.mutedText,
                 }}
               >
                 {isPreparingWarehouse
                   ? "Preparing warehouses..."
-                  : selectedWarehouseSummary
+                  : selectedWarehouseSummary && selectedMachine
                     ? `Start audit for ${selectedWarehouseSummary}`
-                    : "Select warehouses to start"}
+                    : "Select warehouses and machine to start"}
               </Text>
             </Pressable>
           </View>
@@ -923,7 +932,7 @@ function MobileAuditScan() {
               connectionStatus={connectionStatus}
               onStartAudit={() => {
                 if (activeWarehouseId) {
-                  startAudit(activeWarehouseId);
+                  startAudit(activeWarehouseId, selectedMachine?.topic);
                 }
               }}
               submitError={submitError}
@@ -1105,9 +1114,13 @@ function DesktopAuditScan({ width }: { width: number }) {
   const {
     organization,
     warehouses,
+    rfidMachines,
     selectedWarehouse,
     selectedWarehouseIds,
+    selectedMachine,
+    selectedMachineId,
     setSelectedWarehouseId,
+    setSelectedMachineId,
     toggleSelectedWarehouseId,
     isLoading,
     error,
@@ -1128,6 +1141,8 @@ function DesktopAuditScan({ width }: { width: number }) {
     warehouses,
     selectedWarehouseIds
   );
+  const canPrepareAudit =
+    selectedWarehouseIds.length > 0 && Boolean(selectedMachine) && !isPreparingWarehouse;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -1186,9 +1201,12 @@ function DesktopAuditScan({ width }: { width: number }) {
             <AuditSetupPanel
               organization={organization}
               warehouses={warehouses}
+              machines={rfidMachines}
               selectedWarehouseIds={selectedWarehouseIds}
+              selectedMachineId={selectedMachineId}
               onSelectWarehouse={handleSelectWarehouse}
               onToggleWarehouse={handleSelectWarehouse}
+              onSelectMachine={setSelectedMachineId}
               isLoading={isLoading}
               error={error}
               onRetry={refreshSetup}
@@ -1199,11 +1217,11 @@ function DesktopAuditScan({ width }: { width: number }) {
           <View className="mb-5">
             <Pressable
               onPress={startSelectedWarehouseSession}
-              disabled={selectedWarehouseIds.length === 0 || isPreparingWarehouse}
+              disabled={!canPrepareAudit}
               className="items-center rounded-[18px] px-5 py-4"
               style={{
                 backgroundColor:
-                  selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                  canPrepareAudit
                     ? adminTheme.primary
                     : adminTheme.mutedBg,
               }}
@@ -1212,16 +1230,16 @@ function DesktopAuditScan({ width }: { width: number }) {
                 className="text-base font-semibold"
                 style={{
                   color:
-                    selectedWarehouseIds.length > 0 && !isPreparingWarehouse
+                    canPrepareAudit
                       ? "#FFFFFF"
                       : adminTheme.mutedText,
                 }}
               >
                 {isPreparingWarehouse
                   ? "Preparing warehouses..."
-                  : selectedWarehouseSummary
+                  : selectedWarehouseSummary && selectedMachine
                     ? `Start audit for ${selectedWarehouseSummary}`
-                    : "Select warehouses to start"}
+                    : "Select warehouses and machine to start"}
               </Text>
             </Pressable>
           </View>
@@ -1247,7 +1265,7 @@ function DesktopAuditScan({ width }: { width: number }) {
                 connectionStatus={connectionStatus}
                 onStartAudit={() => {
                   if (activeWarehouseId) {
-                    startAudit(activeWarehouseId);
+                    startAudit(activeWarehouseId, selectedMachine?.topic);
                   }
                 }}
                 submitError={submitError}

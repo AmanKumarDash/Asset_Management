@@ -1,4 +1,5 @@
 import { OrganizationDetails } from "@/models/organization";
+import { RfidMachineSummary } from "@/models/rfidMachine";
 import { WarehouseSummary } from "@/models/warehouse";
 import type { AuthSession } from "@/models/session";
 import type {
@@ -25,10 +26,12 @@ export type AuthSessionContextValue = {
   user: AppUser | null;
   organization: OrganizationDetails | null;
   accessibleWarehouses: WarehouseSummary[];
+  rfidMachines: RfidMachineSummary[];
   signIn: (input: SignInInput) => Promise<SignInResult>;
   signOut: () => void;
   updateUser: (updates: Partial<AppUser>) => void;
   refreshOrganization: () => Promise<OrganizationDetails | null>;
   refreshWarehouseAccess: () => Promise<WarehouseSummary[]>;
+  refreshRfidMachines: () => Promise<RfidMachineSummary[]>;
   hasPermission: (permission: AppPermission) => boolean;
 };

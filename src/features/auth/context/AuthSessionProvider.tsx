@@ -8,6 +8,7 @@ import {
 } from "react";
 import { STORAGE_KEYS } from "@/constants/storage";
 import { OrganizationDetails } from "@/models/organization";
+import { RfidMachineSummary } from "@/models/rfidMachine";
 import { AuthSession } from "@/models/session";
 import { WarehouseSummary } from "@/models/warehouse";
 import { AppPermission, AppUser } from "@/models/user";
@@ -41,6 +42,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [accessibleWarehouses, setAccessibleWarehouses] = useState<WarehouseSummary[]>([]);
+  const [rfidMachines, setRfidMachines] = useState<RfidMachineSummary[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -53,6 +55,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         storedUser,
         storedOrganization,
         storedWarehouseAccess,
+        storedRfidMachines,
       ] =
         await Promise.all([
           secureStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
@@ -60,6 +63,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
           storage.getObject<AppUser>(STORAGE_KEYS.AUTH_USER),
           storage.getObject<OrganizationDetails>(STORAGE_KEYS.AUTH_ORGANIZATION),
           storage.getObject<WarehouseSummary[]>(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
+          storage.getObject<RfidMachineSummary[]>(STORAGE_KEYS.AUTH_RFID_MACHINES),
         ]);
 
       if (!isMounted) {
@@ -70,6 +74,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setUser(storedUser);
       setOrganization(storedOrganization);
       setAccessibleWarehouses(storedWarehouseAccess ?? []);
+      setRfidMachines(storedRfidMachines ?? []);
       setIsHydrated(true);
 
       appLogger.info("AuthSession", "Hydrated auth session from storage.", {
@@ -78,6 +83,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         hasUser: Boolean(storedUser),
         hasOrganization: Boolean(storedOrganization),
         warehouseAccessCount: storedWarehouseAccess?.length ?? 0,
+        rfidMachineCount: storedRfidMachines?.length ?? 0,
       });
     };
 
@@ -127,6 +133,10 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     await storage.setObject(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS, value);
   }, []);
 
+  const persistRfidMachines = useCallback(async (value: RfidMachineSummary[]) => {
+    await storage.setObject(STORAGE_KEYS.AUTH_RFID_MACHINES, value);
+  }, []);
+
   // Removes all persisted auth-related data during sign-out and expired-session cleanup.
   const clearSession = useCallback(async () => {
     await Promise.all([
@@ -135,6 +145,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       storage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
       storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION),
       storage.removeItem(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
+      storage.removeItem(STORAGE_KEYS.AUTH_RFID_MACHINES),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
       secureStorage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
     ]);
@@ -200,6 +211,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setOrganization(null);
       setAccessibleWarehouses([]);
+      setRfidMachines([]);
       void clearSession();
     });
 
@@ -232,6 +244,33 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [loadWarehouseAccessForUser, persistWarehouseAccess, user?.employeeId]);
 
+  const refreshRfidMachines = useCallback(async () => {
+    try {
+      const machines = await apiService.getRfidMachinesByOrg();
+
+      setRfidMachines(machines);
+      await persistRfidMachines(machines);
+
+      appLogger.info("AuthSession", "Loaded RFID machines for organization.", {
+        rfidMachineCount: machines.length,
+        topics: machines.map((machine) => machine.topic),
+      });
+
+      return machines;
+    } catch (error) {
+      const message = getApiErrorMessage(
+        error,
+        "Unable to load RFID machines right now."
+      );
+
+      appLogger.warn("AuthSession", "RFID machine fetch failed.", {
+        message,
+      });
+
+      throw error;
+    }
+  }, [persistRfidMachines]);
+
   // Handles login, session persistence, and the follow-up organization bootstrap required by the app.
   const signIn = useCallback(
     async ({ identifier, password }: SignInInput): Promise<SignInResult> => {
@@ -246,11 +285,13 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         setUser(session.user);
         setOrganization(null);
         setAccessibleWarehouses([]);
+        setRfidMachines([]);
         await persistSession(session);
         await persistOrganization(null);
         await persistWarehouseAccess([]);
+        await persistRfidMachines([]);
 
-        const [organizationPayload, warehouseAccessPayload] = await Promise.all([
+        const [organizationPayload, warehouseAccessPayload, rfidMachinePayload] = await Promise.all([
           refreshOrganization(),
           loadWarehouseAccessForUser(session.user.employeeId).catch((error) => {
             const message = getApiErrorMessage(
@@ -265,7 +306,22 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
             return [];
           }),
+          apiService.getRfidMachinesByOrg().catch((error) => {
+            const message = getApiErrorMessage(
+              error,
+              "Unable to load RFID machines right now."
+            );
+
+            appLogger.warn("AuthSession", "RFID machine bootstrap failed after sign-in.", {
+              message,
+            });
+
+            return [];
+          }),
         ]);
+
+        setRfidMachines(rfidMachinePayload);
+        await persistRfidMachines(rfidMachinePayload);
 
         appLogger.info("AuthSession", "User signed in successfully.", {
           role: session.user.role,
@@ -275,6 +331,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
           refreshTokenExpiresAt: session.refreshTokenExpiresAt,
           hasOrganization: Boolean(organizationPayload),
           warehouseAccessCount: warehouseAccessPayload.length,
+          rfidMachineCount: rfidMachinePayload.length,
         });
 
         return { success: true };
@@ -288,6 +345,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setOrganization(null);
         setAccessibleWarehouses([]);
+        setRfidMachines([]);
         await clearSession();
 
         appLogger.warn("AuthSession", "Sign-in failed.", {
@@ -305,6 +363,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       clearSession,
       loadWarehouseAccessForUser,
       persistOrganization,
+      persistRfidMachines,
       persistSession,
       persistWarehouseAccess,
       refreshOrganization,
@@ -320,6 +379,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setOrganization(null);
     setAccessibleWarehouses([]);
+    setRfidMachines([]);
     void clearSession();
   }, [clearSession, user]);
 
@@ -360,11 +420,13 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       user,
       organization,
       accessibleWarehouses,
+      rfidMachines,
       signIn,
       signOut,
       updateUser,
       refreshOrganization,
       refreshWarehouseAccess,
+      refreshRfidMachines,
       hasPermission,
     }),
     [
@@ -372,7 +434,9 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       hasPermission,
       isHydrated,
       organization,
+      rfidMachines,
       refreshOrganization,
+      refreshRfidMachines,
       refreshWarehouseAccess,
       signIn,
       signOut,

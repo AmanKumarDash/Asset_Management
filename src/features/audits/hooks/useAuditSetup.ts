@@ -10,11 +10,14 @@ export function useAuditSetup() {
     user,
     organization,
     accessibleWarehouses,
+    rfidMachines,
     refreshOrganization,
     refreshWarehouseAccess,
+    refreshRfidMachines,
   } = useAuthSession();
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +44,8 @@ export function useAuditSetup() {
         accessibleWarehouses.length > 0
           ? accessibleWarehouses
           : await refreshWarehouseAccess();
+      const resolvedRfidMachines =
+        rfidMachines.length > 0 ? rfidMachines : await refreshRfidMachines();
 
       setWarehouses(resolvedWarehouseAccess);
       setSelectedWarehouseIds((current) =>
@@ -48,10 +53,16 @@ export function useAuditSetup() {
           resolvedWarehouseAccess.some((warehouse) => warehouse.id === warehouseId)
         )
       );
+      setSelectedMachineId((current) =>
+        current && resolvedRfidMachines.some((machine) => machine.id === current)
+          ? current
+          : resolvedRfidMachines[0]?.id ?? null
+      );
 
       appLogger.info("AuditSetup", "Loaded organization and warehouse setup.", {
         organizationId: resolvedOrganization.Id,
         warehouseCount: resolvedWarehouseAccess.length,
+        rfidMachineCount: resolvedRfidMachines.length,
       });
     } catch (setupError) {
       const message = getApiErrorMessage(
@@ -61,6 +72,7 @@ export function useAuditSetup() {
 
       setWarehouses([]);
       setSelectedWarehouseIds([]);
+      setSelectedMachineId(null);
       setError(message);
 
       appLogger.warn("AuditSetup", "Failed to load setup details.", {
@@ -69,7 +81,15 @@ export function useAuditSetup() {
     } finally {
       setIsLoading(false);
     }
-  }, [accessibleWarehouses, organization, refreshOrganization, refreshWarehouseAccess, user]);
+  }, [
+    accessibleWarehouses,
+    organization,
+    refreshOrganization,
+    refreshRfidMachines,
+    refreshWarehouseAccess,
+    rfidMachines,
+    user,
+  ]);
 
   // Auto-load setup data whenever the authenticated user context becomes available.
   useEffect(() => {
@@ -94,6 +114,10 @@ export function useAuditSetup() {
   );
 
   const selectedWarehouseId = selectedWarehouseIds[0] ?? null;
+  const selectedMachine = useMemo(
+    () => rfidMachines.find((machine) => machine.id === selectedMachineId) ?? null,
+    [rfidMachines, selectedMachineId]
+  );
 
   const setSelectedWarehouseId = useCallback((warehouseId: string | null) => {
     setSelectedWarehouseIds(warehouseId ? [warehouseId] : []);
@@ -110,12 +134,16 @@ export function useAuditSetup() {
   return {
     organization,
     warehouses,
+    rfidMachines,
     selectedWarehouseId,
     selectedWarehouseIds,
     selectedWarehouse,
     selectedWarehouses,
+    selectedMachineId,
+    selectedMachine,
     setSelectedWarehouseId,
     setSelectedWarehouseIds,
+    setSelectedMachineId,
     toggleSelectedWarehouseId,
     isLoading,
     error,

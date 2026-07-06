@@ -6,4 +6,5 @@
   AUTH_USER: "auth.user",
   AUTH_ORGANIZATION: "auth.organization",
   AUTH_WAREHOUSE_ACCESS: "auth.warehouse-access",
+  AUTH_RFID_MACHINES: "auth.rfid-machines",
 } as const;

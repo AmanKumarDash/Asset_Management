@@ -9,6 +9,7 @@ import {
 import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
 import { LoginResponse } from "@/features/auth/types/authApi";
 import { OrganizationDetails } from "@/models/organization";
+import { RfidMachineSummary } from "@/models/rfidMachine";
 import { AxiosInstance } from "axios";
 import { assertApiBaseUrlConfigured, axiosInstance } from "./axiosConfig";
 import { ENDPOINTS } from "./endpoints";
@@ -102,6 +103,47 @@ export type EmployeeReportApiItem = {
   ReferenceId?: string | null;
   ScanningDate?: string | null;
 };
+
+export type CartResponseData = {
+  CartId?: number;
+  CartNumber?: string | null;
+  APP_Id?: string | null;
+  Machine_No?: string | null;
+  QRCode_No?: string | null;
+  CreatedOn?: string | null;
+  ModifiedOn?: string | null;
+  CreatedBy?: string | null;
+  ModifiedBy?: string | null;
+  TotalRowCount?: number;
+  IsActive?: number;
+} & Record<string, unknown>;
+
+function normalizeRfidMachines(cartRows: CartResponseData[]): RfidMachineSummary[] {
+  const machinesByNo = new Map<string, RfidMachineSummary>();
+
+  cartRows.forEach((row) => {
+    const machineNo = row.Machine_No?.trim();
+
+    if (!machineNo || machinesByNo.has(machineNo)) {
+      return;
+    }
+
+    machinesByNo.set(machineNo, {
+      id: machineNo,
+      machineNo,
+      topic: `${machineNo}p`,
+      label: machineNo,
+      subtitle: row.CartNumber?.trim()
+        ? `Cart ${row.CartNumber.trim()}`
+        : row.QRCode_No?.trim()
+          ? `QR ${row.QRCode_No.trim()}`
+          : undefined,
+      raw: row,
+    });
+  });
+
+  return Array.from(machinesByNo.values());
+}
 
 function extractAuditReferenceId(
   payload: AuditSubmitResponse | string | null | undefined
@@ -245,6 +287,19 @@ class ApiService {
     >(ENDPOINTS.ORG.GET_DETAILS);
 
     return extractResponseData<OrganizationDetails>(response.data);
+  }
+
+  // Loads RFID machines assigned to the authenticated organization and derives the scanner topic.
+  async getRfidMachinesByOrg(): Promise<RfidMachineSummary[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiCollectionEnvelope<CartResponseData> | CartResponseData[]
+    >(ENDPOINTS.SALE_ORDER_DETAILS.GET_ALL_CART_DETAILS_BY_ORG());
+
+    return normalizeRfidMachines(
+      extractResponseCollection<CartResponseData>(response.data)
+    );
   }
 
   // Creates an employee/admin user record for the current organization from the add-user screen.
