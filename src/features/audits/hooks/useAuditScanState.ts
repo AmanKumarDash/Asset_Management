@@ -1214,15 +1214,16 @@ export function useAuditScanState() {
       const sessionId = scanSessionRef.current;
       const { tagIds, replacesCurrentList } = getMqttTagSnapshot(payload);
 
-      // Snapshot payloads replace the live RFID list, including an empty current_tags array.
-      // Event payloads without a tag do not change the UI.
-      if (!replacesCurrentList && tagIds.length === 0) {
+      // Empty scanner events do not change the UI. During an audit, every scanned
+      // tag is retained even after it moves out of RFID range.
+      if (tagIds.length === 0) {
         return;
       }
 
-      scannedTagIdsRef.current = replacesCurrentList
-        ? new Set(tagIds)
-        : new Set([...scannedTagIdsRef.current, ...tagIds]);
+      scannedTagIdsRef.current = new Set([
+        ...scannedTagIdsRef.current,
+        ...tagIds,
+      ]);
 
       const optimisticItemsByTagId = new Map(
         tagIds.map((tagId) => [
@@ -1233,15 +1234,14 @@ export function useAuditScanState() {
 
       if (replacesCurrentList) {
         setMqttItems((current) => {
-          const snapshotIds = new Set(tagIds);
           const currentIds = new Set(current.map((item) => item.id));
           const newlyScannedItems = tagIds
             .filter((tagId) => !currentIds.has(tagId))
             .map((tagId) => optimisticItemsByTagId.get(tagId)!)
             .reverse();
-          const retainedItems = current
-            .filter((item) => snapshotIds.has(item.id))
-            .map((item) => optimisticItemsByTagId.get(item.id) ?? item);
+          const retainedItems = current.map(
+            (item) => optimisticItemsByTagId.get(item.id) ?? item
+          );
 
           return [...newlyScannedItems, ...retainedItems];
         });
