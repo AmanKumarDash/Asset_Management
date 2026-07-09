@@ -118,6 +118,21 @@ export type CartResponseData = {
   IsActive?: number;
 } & Record<string, unknown>;
 
+export type ExtraAuditProductDetailsRequest = {
+  TagIdNumber: string;
+  ProductName: string;
+  WareHouseId: string;
+  WareHouseName: string;
+  HSNCode: string;
+  ProductCode: string;
+  ModelNo: string;
+};
+
+export type ExtraAuditProductDetailsResponse =
+  ExtraAuditProductDetailsRequest & {
+    ProductId: number;
+  };
+
 function normalizeRfidMachines(cartRows: CartResponseData[]): RfidMachineSummary[] {
   const machinesByNo = new Map<string, RfidMachineSummary>();
 
@@ -511,6 +526,21 @@ class ApiService {
     return normalizedTagIds.flatMap(
       (tagId) => this.warehouseAccessByTagCache.get(tagId) ?? []
     );
+  }
+
+  // Temporary placeholder until the backend exposes the extra-audit-product API.
+  // Replace this method body with the real endpoint call when it is available.
+  async saveExtraAuditProductDetails(
+    payload: ExtraAuditProductDetailsRequest
+  ): Promise<ExtraAuditProductDetailsResponse> {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+
+    return {
+      ...payload,
+      ProductId: 0,
+    };
   }
 
   // Loads submitted employee report rows, optionally constrained to a date range.

@@ -6,6 +6,17 @@ export type AuditScanItem = {
   subtitle: string;
   tone: AuditItemTone;
   icon: "plus-square" | "briefcase" | "plus-circle";
+  extraProductDetails?: AuditExtraProductDetails;
+};
+
+export type AuditExtraProductDetails = {
+  TagIdNumber: string;
+  ProductName: string;
+  WareHouseId: string;
+  WareHouseName: string;
+  HSNCode: string;
+  ProductCode: string;
+  ModelNo: string;
 };
 
 export const auditScanOverview = {

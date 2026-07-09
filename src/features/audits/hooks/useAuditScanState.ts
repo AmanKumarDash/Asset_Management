@@ -19,7 +19,10 @@ import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
 import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AuditScanItem } from "../data/auditScanData";
+import {
+  AuditExtraProductDetails,
+  AuditScanItem,
+} from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
 
 type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId" | "UserId">;
@@ -669,6 +672,40 @@ function getWarehouseOriginLabelsForTag(
   );
 }
 
+function buildExtraProductSubtitle(details: AuditExtraProductDetails) {
+  return [
+    details.TagIdNumber,
+    details.ProductCode,
+    details.HSNCode ? `HSN ${details.HSNCode}` : null,
+    details.ModelNo,
+    details.WareHouseName || details.WareHouseId,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function applyExtraProductDetails(
+  items: AuditScanItem[],
+  details: AuditExtraProductDetails
+): AuditScanItem[] {
+  const tagKey = details.TagIdNumber.trim();
+
+  return items.map((item) => {
+    if (item.id !== tagKey) {
+      return item;
+    }
+
+    return {
+      ...item,
+      title: details.ProductName.trim() || item.title,
+      subtitle: buildExtraProductSubtitle(details) || item.subtitle,
+      tone: "extra",
+      icon: "plus-circle",
+      extraProductDetails: details,
+    };
+  });
+}
+
 async function enrichExtraItemsWithWarehouseOrigin(
   items: AuditScanItem[],
   currentWarehouseId: string
@@ -1091,6 +1128,7 @@ export function useAuditScanState() {
   const scanSessionRef = useRef(0);
   const warehouseLoadRequestRef = useRef(0);
   const completedWarehouseReportsRef = useRef<LatestAuditReport[]>([]);
+  const latestReportRef = useRef<LatestAuditReport | null>(null);
 
   // Keeps async callbacks synced with the latest phase without forcing every subscription to re-register.
   useEffect(() => {
@@ -1402,6 +1440,7 @@ export function useAuditScanState() {
     pendingLookupsRef.current.clear();
     apiService.clearWarehouseIdAccessByTagCache();
     stagedLookupsRef.current.clear();
+    latestReportRef.current = null;
     scannedTagIdsRef.current = new Set<string>();
     setManualAssetId("");
     setMqttItems([]);
@@ -1615,6 +1654,90 @@ export function useAuditScanState() {
 
     setManualAssetId("");
   }, [auditPhase, manualAssetId, mqttItems]);
+
+  const loadExtraTagProductDetails = useCallback(async (
+    tagId: string
+  ): Promise<AuditExtraProductDetails> => {
+    const normalizedTagId = tagId.trim();
+    const resolvedWarehouseId = auditWarehouseIdRef.current ?? "";
+    const resolvedWarehouseName =
+      auditWarehouseLabelsRef.current.get(resolvedWarehouseId) ??
+      (resolvedWarehouseId ? `Warehouse ${resolvedWarehouseId}` : "");
+
+    return {
+      TagIdNumber: normalizedTagId,
+      ProductName: "",
+      WareHouseId: resolvedWarehouseId,
+      WareHouseName: resolvedWarehouseName,
+      HSNCode: "",
+      ProductCode: "",
+      ModelNo: "",
+    };
+  }, []);
+
+  const saveExtraTagProductDetails = useCallback(async (
+    details: AuditExtraProductDetails
+  ): Promise<AuditExtraProductDetails> => {
+    const normalizedDetails: AuditExtraProductDetails = {
+      TagIdNumber: details.TagIdNumber.trim(),
+      ProductName: details.ProductName.trim(),
+      WareHouseId: details.WareHouseId.trim(),
+      WareHouseName: details.WareHouseName.trim(),
+      HSNCode: details.HSNCode.trim(),
+      ProductCode: details.ProductCode.trim(),
+      ModelNo: details.ModelNo.trim(),
+    };
+
+    if (!normalizedDetails.TagIdNumber || !normalizedDetails.ProductName) {
+      throw new Error("Enter a tag id and product name.");
+    }
+
+    const savedDetails = await apiService.saveExtraAuditProductDetails(
+      normalizedDetails
+    );
+    const nextDetails: AuditExtraProductDetails = {
+      TagIdNumber: savedDetails.TagIdNumber,
+      ProductName: savedDetails.ProductName,
+      WareHouseId: savedDetails.WareHouseId,
+      WareHouseName: savedDetails.WareHouseName,
+      HSNCode: savedDetails.HSNCode,
+      ProductCode: savedDetails.ProductCode,
+      ModelNo: savedDetails.ModelNo,
+    };
+    const stagedLookup: StagedAssetLookup = {
+      TagId: nextDetails.TagIdNumber,
+      ProductId: parseNumericId(savedDetails.ProductId) ?? 0,
+    };
+
+    registerStagedLookup(stagedLookupsRef.current, stagedLookup, [
+      nextDetails.TagIdNumber,
+    ]);
+    setManualItems((current) => applyExtraProductDetails(current, nextDetails));
+    setMqttItems((current) => applyExtraProductDetails(current, nextDetails));
+    setFrozenItems((current) => applyExtraProductDetails(current, nextDetails));
+    setReportItems((current) => applyExtraProductDetails(current, nextDetails));
+    latestReportRef.current = latestReportRef.current
+      ? {
+          ...latestReportRef.current,
+          items: applyExtraProductDetails(
+            latestReportRef.current.items,
+            nextDetails
+          ),
+          warehouseSections: latestReportRef.current.warehouseSections?.map(
+            (section) => ({
+              ...section,
+              items: applyExtraProductDetails(section.items, nextDetails),
+            })
+          ),
+        }
+      : null;
+
+    if (latestReportRef.current) {
+      setLatestAuditReport(latestReportRef.current);
+    }
+
+    return nextDetails;
+  }, []);
 
   const reconcileReportWithSession = useCallback((
     normalizedItems: AuditScanItem[],
@@ -1931,6 +2054,7 @@ export function useAuditScanState() {
           normalizedReport.warehouseCount
         )
       );
+      latestReportRef.current = displayReport;
       setLatestAuditReport(displayReport);
       setAuditPhase("submitted");
     } catch (error) {
@@ -2009,6 +2133,8 @@ export function useAuditScanState() {
     prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
+    loadExtraTagProductDetails,
+    saveExtraTagProductDetails,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,

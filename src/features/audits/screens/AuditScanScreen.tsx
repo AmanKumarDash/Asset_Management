@@ -17,6 +17,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import {
+  AuditExtraProductDetails,
   AuditItemTone,
   AuditScanItem,
   auditScanOverview,
@@ -492,58 +493,310 @@ function ManualEntryRow({
 }
 
 // Displays the list of scanned audit items, including found, missing, and extra rows.
-function AuditScanList({ items }: { items: AuditScanItem[] }) {
-  return (
-    <View>
-      {items.map((item, index) => {
-        const styles = getToneStyles(item.tone);
+type ExtraDetailsLoader = (tagId: string) => Promise<AuditExtraProductDetails>;
+type ExtraDetailsSaver = (
+  details: AuditExtraProductDetails
+) => Promise<AuditExtraProductDetails>;
 
-        return (
+function getExtraProductNameFromItem(item: AuditScanItem) {
+  const title = item.title.trim();
+
+  if (
+    !title ||
+    title === "Unmatched RFID Asset" ||
+    title === "Manual Asset Entry" ||
+    title === "Extra Asset"
+  ) {
+    return "";
+  }
+
+  return title;
+}
+
+function createEmptyExtraProductDetails(
+  item: AuditScanItem
+): AuditExtraProductDetails {
+  return {
+    TagIdNumber: item.id,
+    ProductName:
+      item.extraProductDetails?.ProductName ?? getExtraProductNameFromItem(item),
+    WareHouseId: item.extraProductDetails?.WareHouseId ?? "",
+    WareHouseName: item.extraProductDetails?.WareHouseName ?? "",
+    HSNCode: item.extraProductDetails?.HSNCode ?? "",
+    ProductCode: item.extraProductDetails?.ProductCode ?? "",
+    ModelNo: item.extraProductDetails?.ModelNo ?? "",
+  };
+}
+
+function ExtraTagProductForm({
+  item,
+  onLoadDetails,
+  onSaveDetails,
+}: {
+  item: AuditScanItem;
+  onLoadDetails: ExtraDetailsLoader;
+  onSaveDetails: ExtraDetailsSaver;
+}) {
+  const [details, setDetails] = useState<AuditExtraProductDetails>(() =>
+    item.extraProductDetails ?? createEmptyExtraProductDetails(item)
+  );
+  const [isLoading, setIsLoading] = useState(!item.extraProductDetails);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (item.extraProductDetails) {
+      return;
+    }
+
+    setIsLoading(true);
+    onLoadDetails(item.id)
+      .then((loadedDetails) => {
+        if (isMounted) {
+          setDetails((current) => ({
+            ...current,
+            ...loadedDetails,
+            ProductName:
+              current.ProductName ||
+              loadedDetails.ProductName ||
+              getExtraProductNameFromItem(item),
+            HSNCode: current.HSNCode,
+            ProductCode: current.ProductCode,
+            ModelNo: current.ModelNo,
+          }));
+          setMessage(null);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setMessage("Warehouse details could not be loaded for this tag.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [item.extraProductDetails, item.id, onLoadDetails]);
+
+  const updateField = (field: keyof AuditExtraProductDetails, value: string) => {
+    setDetails((current) => ({ ...current, [field]: value }));
+  };
+  const canSave = details.ProductName.trim().length > 0 && !isLoading && !isSaving;
+
+  const handleSave = () => {
+    if (!canSave) {
+      setMessage("Product name is required.");
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(null);
+    onSaveDetails(details)
+      .then((savedDetails) => {
+        setDetails(savedDetails);
+        setMessage("Product details added.");
+      })
+      .catch((error) => {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Product details could not be saved."
+        );
+      })
+      .finally(() => {
+        setIsSaving(false);
+      });
+  };
+
+  const fields = [
+    { key: "ProductName", label: "Product name", editable: true },
+    { key: "TagIdNumber", label: "Tag ID number", editable: false },
+    { key: "WareHouseName", label: "Warehouse name", editable: false },
+    { key: "WareHouseId", label: "Warehouse ID", editable: false },
+    { key: "HSNCode", label: "HSN code", editable: true },
+    { key: "ProductCode", label: "Product code", editable: true },
+    { key: "ModelNo", label: "Model no", editable: true },
+  ] as const;
+
+  return (
+    <View
+      className="mt-4 rounded-[14px] border p-3"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <View className="flex-row flex-wrap" style={{ gap: 10 }}>
+        {fields.map((field) => (
           <View
-            key={`${item.id}-${index}`}
-            className={`flex-row items-center rounded-[18px] border px-4 py-4 ${
-              index < items.length - 1 ? "mb-3" : ""
-            }`}
+            key={field.key}
             style={{
-              borderColor: styles.dot,
-              backgroundColor: styles.iconBg,
+              minWidth: field.key === "ProductName" ? 220 : 160,
+              flexGrow: field.key === "ProductName" ? 1.4 : 1,
+              flexBasis: field.key === "ProductName" ? 220 : 160,
             }}
           >
-            <View
-              className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
-              style={{ backgroundColor: adminTheme.surface }}
-            >
-              <Feather name={item.icon} size={18} color={styles.icon} />
-            </View>
-
-            <View className="flex-1">
-              <Text
-                className="text-[16px] font-semibold"
-                style={{ color: adminTheme.slate }}
-              >
-                {item.title}
-              </Text>
-              <Text
-                className="mt-1 text-sm"
-                style={{ color: adminTheme.slateSoft }}
-              >
-                {item.subtitle}
-              </Text>
-            </View>
-
-            <View
-              className="ml-3 h-8 w-8 items-center justify-center rounded-full"
-              style={{ backgroundColor: styles.statusBg }}
-            >
-              <Feather
-                name={getStatusIconName(item.tone)}
-                size={16}
-                color={styles.statusIcon}
-              />
-            </View>
+            <Text className="mb-1 text-xs font-semibold" style={{ color: adminTheme.slateSoft }}>
+              {field.label}
+            </Text>
+            <TextInput
+              value={details[field.key]}
+              editable={field.editable && !isSaving}
+              onChangeText={(value) => updateField(field.key, value)}
+              placeholder={field.label}
+              placeholderTextColor="#94A3B8"
+              className="rounded-[12px] border px-3 py-2 text-sm"
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: field.editable ? "#FFFFFF" : adminTheme.surfaceAlt,
+                color: adminTheme.slate,
+              }}
+            />
           </View>
-        );
-      })}
+        ))}
+      </View>
+
+      <View className="mt-3 flex-row items-center justify-between" style={{ gap: 10 }}>
+        <Text className="flex-1 text-xs" style={{ color: adminTheme.slateSoft }}>
+          {isLoading ? "Loading warehouse details..." : message ?? ""}
+        </Text>
+        <Pressable
+          onPress={handleSave}
+          disabled={!canSave}
+          className="flex-row items-center rounded-[12px] px-4 py-2.5"
+          style={{
+            gap: 8,
+            backgroundColor: canSave ? adminTheme.primary : adminTheme.mutedBg,
+          }}
+        >
+          <Feather
+            name="save"
+            size={16}
+            color={canSave ? "#FFFFFF" : adminTheme.mutedText}
+          />
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: canSave ? "#FFFFFF" : adminTheme.mutedText }}
+          >
+            {isSaving ? "Saving..." : "Save"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function AuditScanRow({
+  item,
+  index,
+  isLast,
+  onLoadExtraDetails,
+  onSaveExtraDetails,
+}: {
+  item: AuditScanItem;
+  index: number;
+  isLast: boolean;
+  onLoadExtraDetails: ExtraDetailsLoader;
+  onSaveExtraDetails: ExtraDetailsSaver;
+}) {
+  const styles = getToneStyles(item.tone);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const canAddExtraDetails = item.tone === "extra";
+
+  return (
+    <View
+      key={`${item.id}-${index}`}
+      className={`rounded-[18px] border px-4 py-4 ${!isLast ? "mb-3" : ""}`}
+      style={{
+        borderColor: styles.dot,
+        backgroundColor: styles.iconBg,
+      }}
+    >
+      <View className="flex-row items-center">
+        <View
+          className="mr-3 h-10 w-10 items-center justify-center rounded-[12px]"
+          style={{ backgroundColor: adminTheme.surface }}
+        >
+          <Feather name={item.icon} size={18} color={styles.icon} />
+        </View>
+
+        <View className="flex-1">
+          <Text
+            className="text-[16px] font-semibold"
+            style={{ color: adminTheme.slate }}
+          >
+            {item.title}
+          </Text>
+          <Text
+            className="mt-1 text-sm"
+            style={{ color: adminTheme.slateSoft }}
+          >
+            {item.subtitle}
+          </Text>
+        </View>
+
+        {canAddExtraDetails ? (
+          <Pressable
+            onPress={() => setIsFormOpen((current) => !current)}
+            className="ml-3 h-8 w-8 items-center justify-center rounded-full"
+            style={{ backgroundColor: adminTheme.surface }}
+          >
+            <Feather
+              name={isFormOpen ? "minus" : "plus"}
+              size={16}
+              color={styles.statusIcon}
+            />
+          </Pressable>
+        ) : (
+          <View
+            className="ml-3 h-8 w-8 items-center justify-center rounded-full"
+            style={{ backgroundColor: styles.statusBg }}
+          >
+            <Feather
+              name={getStatusIconName(item.tone)}
+              size={16}
+              color={styles.statusIcon}
+            />
+          </View>
+        )}
+      </View>
+
+      {isFormOpen && canAddExtraDetails ? (
+        <ExtraTagProductForm
+          item={item}
+          onLoadDetails={onLoadExtraDetails}
+          onSaveDetails={onSaveExtraDetails}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function AuditScanList({
+  items,
+  onLoadExtraDetails,
+  onSaveExtraDetails,
+}: {
+  items: AuditScanItem[];
+  onLoadExtraDetails: ExtraDetailsLoader;
+  onSaveExtraDetails: ExtraDetailsSaver;
+}) {
+  return (
+    <View>
+      {items.map((item, index) => (
+        <AuditScanRow
+          key={`${item.id}-${index}`}
+          item={item}
+          index={index}
+          isLast={index >= items.length - 1}
+          onLoadExtraDetails={onLoadExtraDetails}
+          onSaveExtraDetails={onSaveExtraDetails}
+        />
+      ))}
     </View>
   );
 }
@@ -790,6 +1043,8 @@ function MobileAuditScan() {
     prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
+    loadExtraTagProductDetails,
+    saveExtraTagProductDetails,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,
@@ -1031,7 +1286,11 @@ function MobileAuditScan() {
 
             {auditPhase !== "idle" && items.length > 0 ? (
               filteredItems.length > 0 ? (
-                <AuditScanList items={filteredItems} />
+                <AuditScanList
+                  items={filteredItems}
+                  onLoadExtraDetails={loadExtraTagProductDetails}
+                  onSaveExtraDetails={saveExtraTagProductDetails}
+                />
               ) : (
                 <View
                   className="rounded-[18px] border px-4 py-5"
@@ -1102,6 +1361,8 @@ function DesktopAuditScan({ width }: { width: number }) {
     prepareMultiWarehouseAudit,
     startAudit,
     addManualAsset,
+    loadExtraTagProductDetails,
+    saveExtraTagProductDetails,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,
@@ -1385,7 +1646,11 @@ function DesktopAuditScan({ width }: { width: number }) {
               </View>
 
               {filteredItems.length > 0 ? (
-                <AuditScanList items={filteredItems} />
+                <AuditScanList
+                  items={filteredItems}
+                  onLoadExtraDetails={loadExtraTagProductDetails}
+                  onSaveExtraDetails={saveExtraTagProductDetails}
+                />
               ) : (
                 <View
                   className="rounded-[20px] border px-5 py-5"
