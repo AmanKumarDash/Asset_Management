@@ -58,16 +58,36 @@ function parseProductCodeFromSubtitle(subtitle: string) {
   return parts.length > 1 ? parts[1] : "";
 }
 
+function getItemHsnCode(item: LatestAuditReport["items"][number]) {
+  return item.reportFields?.hsnCode ?? item.extraProductDetails?.HSNCode ?? "";
+}
+
+function getItemProductCode(item: LatestAuditReport["items"][number]) {
+  return (
+    item.reportFields?.productCode ??
+    item.extraProductDetails?.ProductCode ??
+    parseProductCodeFromSubtitle(item.subtitle)
+  );
+}
+
+function getItemModelNoAndCatelog(item: LatestAuditReport["items"][number]) {
+  return (
+    item.reportFields?.modelNoAndCatelog ??
+    item.extraProductDetails?.ModelNo ??
+    ""
+  );
+}
+
 function buildFallbackRows(report: LatestAuditReport): LatestAuditReportExcelRow[] {
   return getReportSections(report).flatMap((section) =>
     section.items.map((item, index) => ({
       sno: index + 1,
       newCostCentre: section.warehouseName || report.location,
-      costCentreDescription: section.warehouseId ?? "",
+      costCentreDescription: getItemHsnCode(item),
       newFunctionalLocation:
         item.tone === "missing" ? "" : section.warehouseName || report.location,
-      assetNo: parseProductCodeFromSubtitle(item.subtitle),
-      plantNo: "",
+      assetNo: getItemProductCode(item),
+      plantNo: getItemModelNoAndCatelog(item),
       plantIdentification: item.title,
       rfidTaggingPosition: item.id,
       quantity: "1",

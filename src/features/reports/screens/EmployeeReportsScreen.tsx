@@ -1,4 +1,7 @@
-import { AuditScanItem } from "@/features/audits/data/auditScanData";
+import {
+    AuditReportFields,
+    AuditScanItem,
+} from "@/features/audits/data/auditScanData";
 import {
     AuditReportTone,
     AuditSummary,
@@ -11,6 +14,7 @@ import {
 } from "@/features/reports/state/auditReportSessionStore";
 import {
     LatestAuditReport,
+    LatestAuditReportExcelRow,
     LatestAuditReportWarehouseSection,
 } from "@/features/reports/state/latestAuditReportStore";
 import { WarehouseSummary } from "@/models/warehouse";
@@ -441,6 +445,17 @@ function getReportAssetSubtitle(
   return `${tagId} - Present in audit`;
 }
 
+function getReportAssetFields(asset: AuditReportAsset): AuditReportFields {
+  return {
+    hsnCode: pickString(asset, ["HSNCode"]) ?? undefined,
+    productCode: pickString(asset, ["ProductCode"]) ?? undefined,
+    modelNoAndCatelog:
+      pickString(asset, ["modelNo_and_catelog"]) ??
+      pickString(asset, ["ModelNo", "ModelNoAndCatelog"]) ??
+      undefined,
+  };
+}
+
 function mapReportAssetToAuditItem(
   tone: AuditReportTone,
   asset: AuditReportAsset,
@@ -459,6 +474,7 @@ function mapReportAssetToAuditItem(
         : tone === "extra"
           ? "plus-circle"
           : "plus-square",
+    reportFields: getReportAssetFields(asset),
   };
 }
 
@@ -524,6 +540,28 @@ function getWarehouseOriginLabel(
   return getWarehouseLocationName(location) ?? `Warehouse ${warehouseId}`;
 }
 
+function getWarehouseLocationReportFields(
+  locations: WarehouseTagLocationItem[]
+): AuditReportFields {
+  const location = locations.find(
+    (entry) =>
+      pickString(entry, ["HSNCode"]) ||
+      pickString(entry, ["ProductCode"]) ||
+      pickString(entry, ["modelNo_and_catelog"])
+  );
+
+  if (!location) {
+    return {};
+  }
+
+  return {
+    hsnCode: pickString(location, ["HSNCode"]) ?? undefined,
+    productCode: pickString(location, ["ProductCode"]) ?? undefined,
+    modelNoAndCatelog:
+      pickString(location, ["modelNo_and_catelog"]) ?? undefined,
+  };
+}
+
 function replaceGenericExtraSubtitle(item: AuditScanItem, sourceLabel: string) {
   const originMessage = `Found here, expected in ${sourceLabel}`;
   const baseSubtitle = item.subtitle
@@ -581,15 +619,50 @@ async function enrichReportExtraItemsWithWarehouseOrigin(
         matchingLocations,
         currentWarehouseId
       );
+      const reportFields = getWarehouseLocationReportFields(matchingLocations);
+      const enrichedItem = {
+        ...item,
+        reportFields: {
+          ...item.reportFields,
+          ...reportFields,
+        },
+      };
 
       return sourceLabel
-        ? replaceGenericExtraSubtitle(item, sourceLabel)
-        : item;
+        ? replaceGenericExtraSubtitle(enrichedItem, sourceLabel)
+        : enrichedItem;
     });
   } catch (error) {
     console.warn("Failed to enrich report extra assets with warehouse origin:", error);
     return items;
   }
+}
+
+function buildExcelRowsFromReportItems(
+  items: AuditScanItem[],
+  warehouseName: string,
+  observedAt: string | null
+): LatestAuditReportExcelRow[] {
+  return items.map((item, index) => ({
+    sno: index + 1,
+    newCostCentre: warehouseName,
+    costCentreDescription:
+      item.reportFields?.hsnCode ?? item.extraProductDetails?.HSNCode ?? "",
+    newFunctionalLocation: item.tone === "missing" ? "" : warehouseName,
+    assetNo:
+      item.reportFields?.productCode ??
+      item.extraProductDetails?.ProductCode ??
+      "",
+    plantNo:
+      item.reportFields?.modelNoAndCatelog ??
+      item.extraProductDetails?.ModelNo ??
+      "",
+    plantIdentification: item.title,
+    rfidTaggingPosition: item.id,
+    quantity: "1",
+    auditStart: observedAt ?? "",
+    auditEnd: observedAt ?? "",
+  }));
 }
 
 async function buildDetailedEmployeeReport(
@@ -723,6 +796,11 @@ async function buildDetailedEmployeeReport(
     [...foundItems, ...missingItems, ...extraItems],
     matchingSection?.warehouseId
   );
+  const excelRows = buildExcelRowsFromReportItems(
+    detailItems,
+    location,
+    observedAt
+  );
 
   return {
     ...baseReport,
@@ -732,6 +810,7 @@ async function buildDetailedEmployeeReport(
     observedAt,
     summary,
     items: detailItems,
+    excelRows,
     warehouseSections: [
       {
         warehouseId: matchingSection?.warehouseId ?? null,
@@ -740,6 +819,7 @@ async function buildDetailedEmployeeReport(
         observedAt,
         summary,
         items: detailItems,
+        excelRows,
       },
     ],
   };
@@ -821,13 +901,24 @@ function buildCombinedDetailedReport(
       observedAt: report.observedAt,
       summary: report.summary,
       items: report.items,
+      excelRows: buildExcelRowsFromReportItems(
+        report.items,
+        report.location,
+        report.observedAt
+      ),
     })
   );
+  const items = reports.flatMap((report) => report.items);
 
   return {
     ...baseReport,
     summary,
-    items: reports.flatMap((report) => report.items),
+    items,
+    excelRows: buildExcelRowsFromReportItems(
+      items,
+      baseReport.location,
+      baseReport.observedAt
+    ),
     warehouseSections,
   };
 }
@@ -886,6 +977,50 @@ function getReportItemWarehouseLabel(
         ? `Warehouses ${warehouseLabels.join(", ")}`
         : "Unknown warehouse",
   };
+}
+
+function getEmployeeReportFields(item: EmployeeReportApiItem): AuditReportFields {
+  const record = item as Record<string, unknown>;
+
+  return {
+    hsnCode: pickString(record, ["HSNCode"]) ?? undefined,
+    productCode: pickString(record, ["ProductCode"]) ?? undefined,
+    modelNoAndCatelog: pickString(record, ["modelNo_and_catelog"]) ?? undefined,
+  };
+}
+
+function getEmployeeReportProductName(item: EmployeeReportApiItem) {
+  const record = item as Record<string, unknown>;
+
+  return (
+    pickString(record, ["ProductName", "Title", "Name", "ItemName"]) ??
+    `Product ${String(item.ProductId)}`
+  );
+}
+
+function buildEmployeeReportExcelRows(
+  reportItems: EmployeeReportApiItem[],
+  warehouseName: string,
+  observedAt: string | null
+): LatestAuditReportExcelRow[] {
+  return reportItems.map((item, index) => {
+    const fields = getEmployeeReportFields(item);
+    const tagId = String(item.TagId ?? item.ProductId ?? "UNKNOWN-TAG");
+
+    return {
+      sno: index + 1,
+      newCostCentre: warehouseName,
+      costCentreDescription: fields.hsnCode ?? "",
+      newFunctionalLocation: warehouseName,
+      assetNo: fields.productCode ?? "",
+      plantNo: fields.modelNoAndCatelog ?? "",
+      plantIdentification: getEmployeeReportProductName(item),
+      rfidTaggingPosition: tagId,
+      quantity: "1",
+      auditStart: observedAt ?? "",
+      auditEnd: observedAt ?? "",
+    };
+  });
 }
 
 function buildEmployeeReports(
@@ -986,8 +1121,18 @@ function buildEmployeeReports(
               expected: referenceItems.length,
             },
             items: [],
+            excelRows: buildEmployeeReportExcelRows(
+              referenceItems,
+              warehouseName,
+              referenceItems[0]?.ScanningDate ?? observedAt
+            ),
           };
         });
+      const excelRows = buildEmployeeReportExcelRows(
+        sortedItems,
+        location,
+        observedAt
+      );
       const report: LatestAuditReport = {
         title,
         location,
@@ -1006,16 +1151,19 @@ function buildEmployeeReports(
         },
         items: sortedItems.map((item) => {
           const tagId = String(item.TagId ?? item.ProductId ?? "UNKNOWN-TAG");
-          const productCode = item.ProductCode?.trim();
+          const fields = getEmployeeReportFields(item);
+          const productName = getEmployeeReportProductName(item);
 
           return {
             id: tagId,
-            title: productCode || `Product ${String(item.ProductId)}`,
+            title: productName,
             subtitle: `${location} - Product ${String(item.ProductId)}`,
             tone: "found" as const,
             icon: "plus-square",
+            reportFields: fields,
           };
         }),
+        excelRows,
         warehouseSections,
       };
 

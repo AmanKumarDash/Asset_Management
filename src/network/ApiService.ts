@@ -95,6 +95,9 @@ export type WarehouseAccessApiItem = {
 export type EmployeeReportApiItem = {
   WareHouseId: number | string;
   ProductId: number | string;
+  ProductName?: string | null;
+  HSNCode?: string | null;
+  modelNo_and_catelog?: string | null;
   ProductCode?: string | null;
   TagId?: string | number | null;
   SessionId?: string | null;

@@ -38,6 +38,8 @@ export type WarehouseTagBaselineItem = {
 };
 
 export type AuditReportAsset = Partial<InventoryBarcodeScanDetail> & {
+  HSNCode?: string | null;
+  modelNo_and_catelog?: string | null;
   TAG_ID?: string;
   TagID?: string;
   tagId?: string;
@@ -108,4 +110,7 @@ export type WarehouseTagLocationItem = {
   warehouseName?: string;
   ExpectedWarehouseName?: string;
   OriginalWarehouseName?: string;
+  HSNCode?: string | null;
+  ProductCode?: string | null;
+  modelNo_and_catelog?: string | null;
 } & Record<string, unknown>;

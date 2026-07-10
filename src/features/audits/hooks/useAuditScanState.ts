@@ -21,6 +21,7 @@ import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AuditExtraProductDetails,
+  AuditReportFields,
   AuditScanItem,
 } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
@@ -672,6 +673,28 @@ function getWarehouseOriginLabelsForTag(
   );
 }
 
+function getWarehouseLocationReportFields(
+  locations: WarehouseTagLocationItem[]
+): AuditReportFields {
+  const location = locations.find(
+    (entry) =>
+      pickString(entry, ["HSNCode"]) ||
+      pickString(entry, ["ProductCode"]) ||
+      pickString(entry, ["modelNo_and_catelog"])
+  );
+
+  if (!location) {
+    return {};
+  }
+
+  return {
+    hsnCode: pickString(location, ["HSNCode"]) ?? undefined,
+    productCode: pickString(location, ["ProductCode"]) ?? undefined,
+    modelNoAndCatelog:
+      pickString(location, ["modelNo_and_catelog"]) ?? undefined,
+  };
+}
+
 function buildExtraProductSubtitle(details: AuditExtraProductDetails) {
   return [
     details.TagIdNumber,
@@ -747,12 +770,20 @@ async function enrichExtraItemsWithWarehouseOrigin(
         matchingLocations,
         currentWarehouseId
       );
+      const reportFields = getWarehouseLocationReportFields(matchingLocations);
+      const enrichedItem = {
+        ...item,
+        reportFields: {
+          ...item.reportFields,
+          ...reportFields,
+        },
+      };
 
       if (!sourceLabel) {
-        return item;
+        return enrichedItem;
       }
 
-      return appendWarehouseOriginSubtitle(item, sourceLabel);
+      return appendWarehouseOriginSubtitle(enrichedItem, sourceLabel);
     });
   } catch (error) {
     appLogger.warn("AuditScan", "Failed to enrich extra assets with warehouse origin.", {
@@ -834,6 +865,32 @@ function getReportAssetSubtitle(
   return `${tagId} - Present in audit`;
 }
 
+function getReportAssetFields(asset: AuditReportAsset): AuditReportFields {
+  const assetRecord = asset as Record<string, unknown>;
+
+  return {
+    hsnCode: pickString(assetRecord, ["HSNCode"]) ?? undefined,
+    productCode: pickString(assetRecord, ["ProductCode"]) ?? undefined,
+    modelNoAndCatelog:
+      pickString(assetRecord, ["modelNo_and_catelog"]) ??
+      pickString(assetRecord, ["ModelNo", "ModelNoAndCatelog"]) ??
+      undefined,
+  };
+}
+
+function applyReportFieldsToItem(
+  item: AuditScanItem,
+  asset: AuditReportAsset
+): AuditScanItem {
+  return {
+    ...item,
+    reportFields: {
+      ...item.reportFields,
+      ...getReportAssetFields(asset),
+    },
+  };
+}
+
 // Converts a backend report asset into the same UI row shape used during live scanning.
 function mapReportAssetToAuditItem(
   tone: AuditReportTone,
@@ -853,6 +910,7 @@ function mapReportAssetToAuditItem(
         : tone === "extra"
           ? "plus-circle"
           : "plus-square",
+    reportFields: getReportAssetFields(asset),
   };
 }
 
@@ -997,11 +1055,11 @@ function buildAuditComparisonReport(
       const snapshotItem = comparisonSnapshotMap.get(entry.key);
 
       if (snapshotItem) {
-        return {
+        return applyReportFieldsToItem({
           ...snapshotItem,
           tone: "found" as const,
           icon: "plus-square" as const,
-        };
+        }, scannedByKey.get(entry.key)?.asset ?? entry.asset);
       }
 
       const scannedAsset = scannedByKey.get(entry.key)?.asset ?? entry.asset;
@@ -1028,11 +1086,11 @@ function buildAuditComparisonReport(
       const snapshotItem = comparisonSnapshotMap.get(entry.key);
 
       if (snapshotItem) {
-        return {
+        return applyReportFieldsToItem({
           ...snapshotItem,
           tone: "extra" as const,
           icon: "plus-circle" as const,
-        };
+        }, entry.asset);
       }
 
       return mapReportAssetToAuditItem(

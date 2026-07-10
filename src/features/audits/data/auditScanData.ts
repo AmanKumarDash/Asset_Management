@@ -7,6 +7,13 @@ export type AuditScanItem = {
   tone: AuditItemTone;
   icon: "plus-square" | "briefcase" | "plus-circle";
   extraProductDetails?: AuditExtraProductDetails;
+  reportFields?: AuditReportFields;
+};
+
+export type AuditReportFields = {
+  hsnCode?: string;
+  productCode?: string;
+  modelNoAndCatelog?: string;
 };
 
 export type AuditExtraProductDetails = {
