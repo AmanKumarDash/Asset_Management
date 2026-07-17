@@ -729,6 +729,14 @@ function applyExtraProductDetails(
   });
 }
 
+function replaceAuditItemByTagId(
+  items: AuditScanItem[],
+  tagId: string,
+  replacement: AuditScanItem
+): AuditScanItem[] {
+  return items.map((item) => (item.id === tagId ? replacement : item));
+}
+
 async function enrichExtraItemsWithWarehouseOrigin(
   items: AuditScanItem[],
   currentWarehouseId: string
@@ -1736,11 +1744,16 @@ export function useAuditScanState() {
   const saveExtraTagProductDetails = useCallback(async (
     details: AuditExtraProductDetails
   ): Promise<AuditExtraProductDetails> => {
+    const currentWarehouseId = auditWarehouseIdRef.current?.trim() ?? "";
+    const currentWarehouseName =
+      auditWarehouseLabelsRef.current.get(currentWarehouseId) ||
+      details.WareHouseName.trim() ||
+      (currentWarehouseId ? `Warehouse ${currentWarehouseId}` : "");
     const normalizedDetails: AuditExtraProductDetails = {
       TagIdNumber: details.TagIdNumber.trim(),
       ProductName: details.ProductName.trim(),
-      WareHouseId: details.WareHouseId.trim(),
-      WareHouseName: details.WareHouseName.trim(),
+      WareHouseId: currentWarehouseId || details.WareHouseId.trim(),
+      WareHouseName: currentWarehouseName,
       HSNCode: details.HSNCode.trim(),
       ProductCode: details.ProductCode.trim(),
       ModelNo: details.ModelNo.trim(),
@@ -1748,6 +1761,10 @@ export function useAuditScanState() {
 
     if (!normalizedDetails.TagIdNumber || !normalizedDetails.ProductName) {
       throw new Error("Enter a tag id and product name.");
+    }
+
+    if (parseNumericId(normalizedDetails.WareHouseId) === null) {
+      throw new Error("Select a valid warehouse before saving this product.");
     }
 
     const savedDetails = await apiService.saveExtraAuditProductDetails(
@@ -1766,6 +1783,7 @@ export function useAuditScanState() {
       TagId: nextDetails.TagIdNumber,
       ProductId: parseNumericId(savedDetails.ProductId) ?? 0,
     };
+    const numericWarehouseId = parseNumericId(nextDetails.WareHouseId);
 
     registerStagedLookup(stagedLookupsRef.current, stagedLookup, [
       nextDetails.TagIdNumber,
@@ -1792,6 +1810,112 @@ export function useAuditScanState() {
 
     if (latestReportRef.current) {
       setLatestAuditReport(latestReportRef.current);
+    }
+
+    if (numericWarehouseId !== null) {
+      void apiService.getWarehouseTagBaseline(numericWarehouseId)
+        .then(async (warehouseAssets) => {
+          const expectedTagIds = new Set<string>();
+
+          warehouseAssets.forEach((asset) => {
+            const tagKey = getTagKey(asset.TagId);
+
+            if (tagKey) {
+              expectedTagIds.add(tagKey);
+            }
+          });
+
+          expectedTagIdsRef.current = expectedTagIds;
+          setExpectedAssetCount(warehouseAssets.length);
+
+          const inventoryResults = await searchInventoryBarcodeWithRetry(
+            nextDetails.TagIdNumber
+          );
+          const baselineAsset = warehouseAssets.find(
+            (asset) => getTagKey(asset.TagId) === nextDetails.TagIdNumber
+          );
+          const refreshedAsset: InventoryBarcodeScanDetail | null =
+            inventoryResults[0] ??
+            (expectedTagIds.has(nextDetails.TagIdNumber)
+              ? {
+                  ProductId:
+                    parseNumericId(baselineAsset?.ProductId) ??
+                    parseNumericId(savedDetails.ProductId) ??
+                    0,
+                  ProductCode:
+                    baselineAsset?.ProductCode ?? nextDetails.ProductCode,
+                  ID: 0,
+                  ProductName:
+                    baselineAsset?.ProductName ?? nextDetails.ProductName,
+                  ModelNo: nextDetails.ModelNo,
+                  TagId: nextDetails.TagIdNumber,
+                  WarehouseId: numericWarehouseId,
+                }
+              : null);
+
+          if (refreshedAsset === null) {
+            return;
+          }
+
+          const refreshedItem = applyWarehouseExpectationToItem(
+            mapInventoryToAuditItem(nextDetails.TagIdNumber, refreshedAsset),
+            expectedTagIds
+          );
+          const refreshedLookup = mapInventoryToStagedLookup(
+            nextDetails.TagIdNumber,
+            refreshedAsset
+          );
+
+          if (refreshedLookup) {
+            registerStagedLookup(stagedLookupsRef.current, refreshedLookup, [
+              nextDetails.TagIdNumber,
+              refreshedAsset.TagId,
+              refreshedItem.id,
+            ]);
+          }
+
+          itemCacheRef.current.set(nextDetails.TagIdNumber, refreshedItem);
+          scannedTagIdsRef.current.add(nextDetails.TagIdNumber);
+          setManualItems((current) =>
+            replaceAuditItemByTagId(
+              current,
+              nextDetails.TagIdNumber,
+              refreshedItem
+            )
+          );
+          setMqttItems((current) =>
+            replaceAuditItemByTagId(
+              current,
+              nextDetails.TagIdNumber,
+              refreshedItem
+            )
+          );
+          setFrozenItems((current) =>
+            replaceAuditItemByTagId(
+              current,
+              nextDetails.TagIdNumber,
+              refreshedItem
+            )
+          );
+          setReportItems((current) =>
+            replaceAuditItemByTagId(
+              current,
+              nextDetails.TagIdNumber,
+              refreshedItem
+            )
+          );
+        })
+        .catch((error) => {
+          appLogger.warn(
+            "AuditScan",
+            "Saved extra product, but failed to refresh warehouse match state.",
+            {
+              tagId: nextDetails.TagIdNumber,
+              warehouseId: numericWarehouseId,
+              error,
+            }
+          );
+        });
     }
 
     return nextDetails;

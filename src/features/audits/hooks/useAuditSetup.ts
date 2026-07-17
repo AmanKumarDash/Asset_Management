@@ -2,7 +2,7 @@ import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { WarehouseSummary } from "@/models/warehouse";
 import { getApiErrorMessage } from "@/network/responses";
 import { appLogger } from "@/utils/appLogger";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Loads the organization and warehouse data needed before a user can start an audit session.
 export function useAuditSetup() {
@@ -20,6 +20,7 @@ export function useAuditSetup() {
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoLoadedUserIdRef = useRef<string | null>(null);
 
   // Refreshes the setup screen by ensuring org details exist first, then loading warehouses for that org.
   const loadAuditSetup = useCallback(async () => {
@@ -93,8 +94,20 @@ export function useAuditSetup() {
 
   // Auto-load setup data whenever the authenticated user context becomes available.
   useEffect(() => {
+    const userId = user?.employeeId?.trim() ?? null;
+
+    if (!userId) {
+      autoLoadedUserIdRef.current = null;
+      return;
+    }
+
+    if (autoLoadedUserIdRef.current === userId) {
+      return;
+    }
+
+    autoLoadedUserIdRef.current = userId;
     void loadAuditSetup();
-  }, [loadAuditSetup]);
+  }, [loadAuditSetup, user?.employeeId]);
 
   // Exposes the full selected warehouse object so screens do not have to re-lookup it by id.
   const selectedWarehouse = useMemo(

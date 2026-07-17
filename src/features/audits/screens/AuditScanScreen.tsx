@@ -522,9 +522,13 @@ function createEmptyExtraProductDetails(
       item.extraProductDetails?.ProductName ?? getExtraProductNameFromItem(item),
     WareHouseId: item.extraProductDetails?.WareHouseId ?? "",
     WareHouseName: item.extraProductDetails?.WareHouseName ?? "",
-    HSNCode: item.extraProductDetails?.HSNCode ?? "",
-    ProductCode: item.extraProductDetails?.ProductCode ?? "",
-    ModelNo: item.extraProductDetails?.ModelNo ?? "",
+    HSNCode: item.extraProductDetails?.HSNCode ?? item.reportFields?.hsnCode ?? "",
+    ProductCode:
+      item.extraProductDetails?.ProductCode ?? item.reportFields?.productCode ?? "",
+    ModelNo:
+      item.extraProductDetails?.ModelNo ??
+      item.reportFields?.modelNoAndCatelog ??
+      "",
   };
 }
 
@@ -532,10 +536,12 @@ function ExtraTagProductForm({
   item,
   onLoadDetails,
   onSaveDetails,
+  onSaved,
 }: {
   item: AuditScanItem;
   onLoadDetails: ExtraDetailsLoader;
   onSaveDetails: ExtraDetailsSaver;
+  onSaved: () => void;
 }) {
   const [details, setDetails] = useState<AuditExtraProductDetails>(() =>
     item.extraProductDetails ?? createEmptyExtraProductDetails(item)
@@ -562,9 +568,9 @@ function ExtraTagProductForm({
               current.ProductName ||
               loadedDetails.ProductName ||
               getExtraProductNameFromItem(item),
-            HSNCode: current.HSNCode,
-            ProductCode: current.ProductCode,
-            ModelNo: current.ModelNo,
+            HSNCode: current.HSNCode || loadedDetails.HSNCode,
+            ProductCode: current.ProductCode || loadedDetails.ProductCode,
+            ModelNo: current.ModelNo || loadedDetails.ModelNo,
           }));
           setMessage(null);
         }
@@ -602,6 +608,7 @@ function ExtraTagProductForm({
       .then((savedDetails) => {
         setDetails(savedDetails);
         setMessage("Product details added.");
+        onSaved();
       })
       .catch((error) => {
         setMessage(
@@ -770,6 +777,7 @@ function AuditScanRow({
           item={item}
           onLoadDetails={onLoadExtraDetails}
           onSaveDetails={onSaveExtraDetails}
+          onSaved={() => setIsFormOpen(false)}
         />
       ) : null}
     </View>

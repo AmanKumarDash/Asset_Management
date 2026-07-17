@@ -59,6 +59,8 @@ export const ENDPOINTS = {
     GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>
       `/api/warehouse/GetWareHousetagno?WarehouseId=${encodeURIComponent(String(warehouseId))}`,
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
+    TAG_PRODUCT_MAPPING_OF_MISSING_PRODUCTS:
+      "/api/warehouse/TagProductMappingOfMissingProducts",
     GET_AUDIT_DATA: (referenceId: string) =>
       `/api/warehouse/GetWarehouseAuditData?referanceId=${encodeURIComponent(referenceId)}`,
     GET_ACCESS_BY_TAG_ID: (tagIds: string) =>

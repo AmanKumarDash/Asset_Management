@@ -136,6 +136,34 @@ export type ExtraAuditProductDetailsResponse =
     ProductId: number;
   };
 
+type MissingTagProductMappingRequest = {
+  ProductCode: string;
+  ProductName: string;
+  TagId: string;
+  HSNCode: string;
+  ModelNo: string;
+  WareHouseId: number;
+  WareHouseName: string;
+  ProductId: number;
+};
+
+type MissingTagProductMappingResponse = Partial<MissingTagProductMappingRequest> & {
+  TagIdNumber?: string;
+};
+
+function parseOptionalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function normalizeRfidMachines(cartRows: CartResponseData[]): RfidMachineSummary[] {
   const machinesByNo = new Map<string, RfidMachineSummary>();
 
@@ -531,18 +559,54 @@ class ApiService {
     );
   }
 
-  // Temporary placeholder until the backend exposes the extra-audit-product API.
-  // Replace this method body with the real endpoint call when it is available.
   async saveExtraAuditProductDetails(
     payload: ExtraAuditProductDetailsRequest
   ): Promise<ExtraAuditProductDetailsResponse> {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 250);
-    });
+    assertApiBaseUrlConfigured();
+
+    const warehouseId = parseOptionalNumber(payload.WareHouseId);
+
+    if (warehouseId === null) {
+      throw new Error("Select a valid warehouse before saving this product.");
+    }
+
+    const requestPayload: MissingTagProductMappingRequest = {
+      ProductCode: payload.ProductCode,
+      ProductName: payload.ProductName,
+      TagId: payload.TagIdNumber,
+      HSNCode: payload.HSNCode,
+      ModelNo: payload.ModelNo,
+      WareHouseId: warehouseId,
+      WareHouseName: payload.WareHouseName,
+      ProductId: 0,
+    };
+
+    const response = await this.api.post<
+      | ApiEnvelope<MissingTagProductMappingResponse>
+      | MissingTagProductMappingResponse
+      | unknown
+    >(
+      ENDPOINTS.WAREHOUSE.TAG_PRODUCT_MAPPING_OF_MISSING_PRODUCTS,
+      requestPayload
+    );
+
+    const responseData =
+      extractResponseData<MissingTagProductMappingResponse>(
+        response.data as
+          | ApiEnvelope<MissingTagProductMappingResponse>
+          | MissingTagProductMappingResponse
+      ) ?? {};
 
     return {
-      ...payload,
-      ProductId: 0,
+      TagIdNumber:
+        responseData.TagIdNumber ?? responseData.TagId ?? payload.TagIdNumber,
+      ProductName: responseData.ProductName ?? payload.ProductName,
+      WareHouseId: String(responseData.WareHouseId ?? warehouseId),
+      WareHouseName: responseData.WareHouseName ?? payload.WareHouseName,
+      HSNCode: responseData.HSNCode ?? payload.HSNCode,
+      ProductCode: responseData.ProductCode ?? payload.ProductCode,
+      ModelNo: responseData.ModelNo ?? payload.ModelNo,
+      ProductId: parseOptionalNumber(responseData.ProductId) ?? 0,
     };
   }
 
