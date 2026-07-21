@@ -256,10 +256,12 @@ function getComparisonKey(
   asset: AuditComparisonAsset,
   fallbackKey: string
 ): string {
-  const productId =
+  const rawProductId =
     parseNumericId(asset.ProductId) ??
     parseNumericId(asset.ProductID) ??
     parseNumericId(asset.productId);
+  const productId =
+    rawProductId !== null && rawProductId !== 0 ? rawProductId : null;
 
   if (productId !== null) {
     return `product:${productId}`;

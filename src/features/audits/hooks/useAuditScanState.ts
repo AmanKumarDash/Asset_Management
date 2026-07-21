@@ -348,14 +348,56 @@ function getComparisonAssetTagId(
   return tagId ?? fallbackTagId ?? "UNKNOWN-TAG";
 }
 
+// function getComparisonKey(
+//   asset: AuditComparisonAsset | StagedAssetLookup,
+//   fallbackKey: string
+// ): string {
+//   const productId =
+//     parseNumericId((asset as AuditComparisonAsset).ProductId) ??
+//     parseNumericId((asset as AuditComparisonAsset).ProductID) ??
+//     parseNumericId((asset as AuditComparisonAsset).productId);
+
+//   // Include WarehouseId in the comparison key to ensure items are only matched within the same warehouse
+//   const warehouseId =
+//     parseNumericId((asset as AuditComparisonAsset).WarehouseId) ??
+//     parseNumericId((asset as AuditComparisonAsset).WareHouseId) ??
+//     parseNumericId((asset as AuditComparisonAsset).warehouseId);
+
+//   if (productId !== null && warehouseId !== null) {
+//     return `warehouse:${warehouseId}:product:${productId}`;
+//   }
+
+//   if (productId !== null) {
+//     return `product:${productId}`;
+//   }
+
+//   const tagKey =
+//     getTagKey((asset as AuditComparisonAsset).TagId) ??
+//     getTagKey((asset as AuditComparisonAsset).ID) ??
+//     pickString(asset as Record<string, unknown>, ["TAG_ID", "TagID", "tagId"]);
+
+//   if (tagKey) {
+//     return `tag:${tagKey}`;
+//   }
+
+//   return fallbackKey;
+// }
+
 function getComparisonKey(
   asset: AuditComparisonAsset | StagedAssetLookup,
   fallbackKey: string
 ): string {
-  const productId =
+  const rawProductId =
     parseNumericId((asset as AuditComparisonAsset).ProductId) ??
     parseNumericId((asset as AuditComparisonAsset).ProductID) ??
     parseNumericId((asset as AuditComparisonAsset).productId);
+
+  // ProductId 0 is the sentinel for "no product association" (see
+  // mapInventoryToStagedLookup / AuditScanData), not a real distinguishing id.
+  // Treating it as a real id collapses every unmatched tag onto the same
+  // "product:0" key, silently dropping all but one of them.
+  const productId =
+    rawProductId !== null && rawProductId !== 0 ? rawProductId : null;
 
   // Include WarehouseId in the comparison key to ensure items are only matched within the same warehouse
   const warehouseId =

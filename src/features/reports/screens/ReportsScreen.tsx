@@ -43,6 +43,38 @@ interface DatewiseScanItem {
   }[];
 }
 
+function getDatewiseScanKey(
+  item: Pick<DatewiseScanItem, "ProductId" | "TagId" | "ReferenceId">,
+  fallbackKey: string
+) {
+  if (item.ProductId !== 0) {
+    return `product:${item.ProductId}`;
+  }
+
+  const tagId = item.TagId?.trim();
+
+  if (tagId) {
+    return `tag:${tagId}`;
+  }
+
+  const referenceId = item.ReferenceId?.trim();
+
+  return referenceId ? `reference:${referenceId}` : fallbackKey;
+}
+
+function getDatewiseWarehouseKey(
+  item: DatewiseScanItem["WarehouseAuditData"][number]["WarehouseData"][number],
+  fallbackKey: string
+) {
+  if (item.ProductId !== 0) {
+    return `product:${item.ProductId}`;
+  }
+
+  const tagId = item.TagId?.trim();
+
+  return tagId ? `tag:${tagId}` : fallbackKey;
+}
+
 function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
   items: AuditScanItem[];
   summary: AuditSummary;
@@ -54,13 +86,18 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
     };
   }
 
-  const scannedSet = new Set(data.map(item => item.ProductId));
-  const scannedMap = new Map<number, { shortTag: string; refId: string; code?: string }>();
+  const scannedKeys = data.map((item, index) =>
+    getDatewiseScanKey(item, `scanned:${index}`)
+  );
+  const scannedSet = new Set(scannedKeys);
+  const scannedMap = new Map<string, { shortTag: string; refId: string; code?: string }>();
 
 
-  data.forEach(item => {
-    if (!scannedMap.has(item.ProductId)) {
-      scannedMap.set(item.ProductId, { shortTag: item.TagId, refId: item.ReferenceId, code: item.ProductCode });
+  data.forEach((item, index) => {
+    const key = getDatewiseScanKey(item, `scanned:${index}`);
+
+    if (!scannedMap.has(key)) {
+      scannedMap.set(key, { shortTag: item.TagId, refId: item.ReferenceId, code: item.ProductCode });
     }
   });
 
@@ -69,10 +106,12 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
   const summary: AuditSummary = { found: 0, missing: 0, extra: 0, scanned: scannedSet.size };
 
   // Found: warehouse + scanned
-  warehouseItems.forEach(whItem => {
-    const isScanned = scannedSet.has(whItem.ProductId);
+  warehouseItems.forEach((whItem, index) => {
+    const warehouseKey = getDatewiseWarehouseKey(whItem, `warehouse:${index}`);
+    const isScanned = scannedSet.has(warehouseKey);
+
     if (isScanned) {
-      const scanInfo = scannedMap.get(whItem.ProductId)!;
+      const scanInfo = scannedMap.get(warehouseKey)!;
       items.push({
         id: whItem.TagId, // full RFID Tag ID (consistent format)
         title: whItem.ProductName,
@@ -95,9 +134,9 @@ function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
   });
 
   // Extra: scanned not in warehouse
-  scannedSet.forEach(pid => {
-    if (!warehouseItems.some(w => w.ProductId === pid)) {
-      const scanInfo = scannedMap.get(pid)!;
+  scannedSet.forEach(key => {
+    if (!warehouseItems.some((whItem, index) => getDatewiseWarehouseKey(whItem, `warehouse:${index}`) === key)) {
+      const scanInfo = scannedMap.get(key)!;
       items.push({
         id: scanInfo.shortTag, // Use scan TagId for extra items (only source available)
         title: scanInfo.code || "Unknown Product",
