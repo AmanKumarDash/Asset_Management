@@ -378,6 +378,13 @@ function normalizeRouteUserId(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function redirectToEmployeesWithNotice(notice: "created" | "updated") {
+  router.replace({
+    pathname: "/employees",
+    params: { notice },
+  });
+}
+
 function Field({
   label,
   value,
@@ -920,7 +927,7 @@ export default function AddEmployeeScreen() {
           buildEmployeeUpdatePayload(values, resolvedOrgId)
         );
         await apiService.updateWarehouseAccess(buildWarehouseAccessRequest(values));
-        setSubmitSuccess("Employee details and warehouse access updated successfully.");
+        redirectToEmployeesWithNotice("updated");
       } else {
         const createResponse = await apiService.createUser(buildEmployeePayload(values));
         const createdUserId = resolveCreatedUserId(createResponse);
@@ -952,8 +959,7 @@ export default function AddEmployeeScreen() {
           return;
         }
 
-        setSubmitSuccess("Employee created and warehouse access assigned successfully.");
-        applyFormValues(EMPTY_FORM_VALUES);
+        redirectToEmployeesWithNotice("created");
       }
     } catch (error) {
       setSubmitError(

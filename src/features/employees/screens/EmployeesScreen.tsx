@@ -3,12 +3,14 @@ import { UserDetails, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { Href, router } from "expo-router";
-import { useCallback, useState } from "react";
+import { Href, router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   GestureResponderEvent,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   Text,
@@ -29,6 +31,11 @@ type EmployeeListEntry = {
   avatarBg: string;
   avatarText: string;
 };
+
+type EmployeeNotice = "created" | "updated" | "deleted";
+
+const EMPLOYEE_PAGE_SIZE = 20;
+const LOAD_MORE_SCROLL_THRESHOLD = 240;
 
 function SectionButton({
   title,
@@ -292,6 +299,32 @@ function EmployeeTable({
   );
 }
 
+function LoadMoreFooter({
+  hasMore,
+  isLoadingMore,
+}: {
+  hasMore: boolean;
+  isLoadingMore: boolean;
+}) {
+  if (isLoadingMore) {
+    return (
+      <View className="items-center py-5">
+        <ActivityIndicator size="small" color={adminTheme.primary} />
+      </View>
+    );
+  }
+
+  if (!hasMore) {
+    return (
+      <Text className="py-5 text-center text-sm" style={{ color: adminTheme.muted }}>
+        All employees loaded
+      </Text>
+    );
+  }
+
+  return null;
+}
+
 function DetailRow({
   icon,
   label,
@@ -325,25 +358,44 @@ function MobileEmployees({
   employees,
   canAdd,
   canEdit,
+  hasMore,
+  isLoadingMore,
   onAdd,
   onEdit,
   onDelete,
+  onLoadMore,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
   canEdit: boolean;
+  hasMore: boolean;
+  isLoadingMore: boolean;
   onAdd: () => void;
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
+  onLoadMore: () => void;
 }) {
   const stopCardPress = (event: GestureResponderEvent) => {
     event.stopPropagation();
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isNearBottom =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - LOAD_MORE_SCROLL_THRESHOLD;
+
+    if (isNearBottom) {
+      onLoadMore();
+    }
   };
 
   return (
     <ScrollView
       className="flex-1"
       contentContainerStyle={{ paddingBottom: 24 }}
+      onScroll={handleScroll}
+      scrollEventThrottle={250}
       showsVerticalScrollIndicator={false}
     >
       <View className="border-b px-4 pb-4 pt-3" style={{ borderColor: adminTheme.border }}>
@@ -459,6 +511,7 @@ function MobileEmployees({
             ) : null}
           </Pressable>
         ))}
+        <LoadMoreFooter hasMore={hasMore} isLoadingMore={isLoadingMore} />
       </View>
     </ScrollView>
   );
@@ -468,21 +521,40 @@ function DesktopEmployees({
   employees,
   canAdd,
   canEdit,
+  hasMore,
+  isLoadingMore,
   onAdd,
   onEdit,
   onDelete,
+  onLoadMore,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
   canEdit: boolean;
+  hasMore: boolean;
+  isLoadingMore: boolean;
   onAdd: () => void;
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
+  onLoadMore: () => void;
 }) {
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isNearBottom =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - LOAD_MORE_SCROLL_THRESHOLD;
+
+    if (isNearBottom) {
+      onLoadMore();
+    }
+  };
+
   return (
     <ScrollView
       className="flex-1"
       contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 20 }}
+      onScroll={handleScroll}
+      scrollEventThrottle={250}
       showsVerticalScrollIndicator={false}
     >
       <View className="mb-5 flex-row items-start justify-between">
@@ -511,6 +583,7 @@ function DesktopEmployees({
         onEdit={onEdit}
         onDelete={onDelete}
       />
+      <LoadMoreFooter hasMore={hasMore} isLoadingMore={isLoadingMore} />
     </ScrollView>
   );
 }
@@ -650,16 +723,83 @@ function DeleteEmployeeModal({
   );
 }
 
+function EmployeeSuccessModal({
+  notice,
+  onClose,
+}: {
+  notice: EmployeeNotice | null;
+  onClose: () => void;
+}) {
+  const messages: Record<EmployeeNotice, string> = {
+    created: "Employee created successfully.",
+    updated: "Employee updated successfully.",
+    deleted: "Employee deleted successfully.",
+  };
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={Boolean(notice)}
+      onRequestClose={onClose}
+    >
+      <View
+        className="flex-1 items-center justify-center px-5"
+        style={{ backgroundColor: "rgba(15, 23, 42, 0.42)" }}
+      >
+        <View
+          className="w-full max-w-[380px] rounded-[20px] border px-5 py-5"
+          style={{
+            borderColor: adminTheme.border,
+            backgroundColor: adminTheme.surface,
+          }}
+        >
+          <View className="mb-4 flex-row items-center">
+            <View
+              className="mr-3 h-11 w-11 items-center justify-center rounded-full"
+              style={{ backgroundColor: adminTheme.successBg }}
+            >
+              <Feather name="check" size={22} color={adminTheme.successText} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-lg font-semibold" style={{ color: adminTheme.slate }}>
+                Success
+              </Text>
+              <Text className="mt-0.5 text-sm" style={{ color: adminTheme.muted }}>
+                {notice ? messages[notice] : ""}
+              </Text>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={onClose}
+            className="items-center rounded-xl px-4 py-3"
+            style={{ backgroundColor: adminTheme.primary }}
+          >
+            <Text className="text-sm font-semibold text-white">OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function EmployeesScreen() {
   const { width } = useWindowDimensions();
   const { user } = useAuthSession();
+  const { notice } = useLocalSearchParams<{ notice?: string | string[] }>();
   const isMobile = width < 1024;
   const canManageEmployees = user?.role === "admin";
 
   const [employees, setEmployees] = useState<EmployeeListEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreEmployees, setHasMoreEmployees] = useState(true);
+  const [currentPage, setCurrentPage] = useState(0);
+  const employeeRequestIdRef = useRef(0);
   const [employeeToDelete, setEmployeeToDelete] =
     useState<EmployeeListEntry | null>(null);
+  const [employeeNotice, setEmployeeNotice] = useState<EmployeeNotice | null>(null);
   const [isDeletingEmployee, setIsDeletingEmployee] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -700,6 +840,7 @@ export default function EmployeesScreen() {
         )
       );
       setEmployeeToDelete(null);
+      setEmployeeNotice("deleted");
     } catch (error) {
       console.error(error);
       setDeleteError("Unable to delete the employee right now.");
@@ -708,18 +849,79 @@ export default function EmployeesScreen() {
     }
   };
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
+  const fetchUsersPage = useCallback(async (pageNo: number, replace = false) => {
+    const requestId = employeeRequestIdRef.current + 1;
+    employeeRequestIdRef.current = requestId;
+
+    if (replace) {
+      setLoading(true);
+      setHasMoreEmployees(true);
+      setCurrentPage(0);
+    } else {
+      setLoadingMore(true);
+    }
 
     try {
-      const data = await apiService.getUserDetails("");
-      setEmployees(data.map((employee, index) => formatEmployee(employee, index)));
+      const data = await apiService.getUserDetails(
+        "",
+        pageNo,
+        EMPLOYEE_PAGE_SIZE
+      );
+
+      if (employeeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setEmployees((currentEmployees) => {
+        const pageEmployees = data.map((employee, index) =>
+          formatEmployee(
+            employee,
+            replace ? index : currentEmployees.length + index
+          )
+        );
+
+        if (replace) {
+          return pageEmployees;
+        }
+
+        const existingIds = new Set(
+          currentEmployees.map((employee) => employee.userId)
+        );
+        const newEmployees = pageEmployees.filter(
+          (employee) => !existingIds.has(employee.userId)
+        );
+
+        return [...currentEmployees, ...newEmployees];
+      });
+      setCurrentPage(pageNo);
+      setHasMoreEmployees(data.length > 0);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoading(false);
+      if (employeeRequestIdRef.current === requestId) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, []);
+
+  const fetchUsers = useCallback(async () => {
+    await fetchUsersPage(1, true);
+  }, [fetchUsersPage]);
+
+  const loadMoreEmployees = useCallback(() => {
+    if (loading || loadingMore || !hasMoreEmployees) {
+      return;
+    }
+
+    void fetchUsersPage(currentPage + 1);
+  }, [
+    currentPage,
+    fetchUsersPage,
+    hasMoreEmployees,
+    loading,
+    loadingMore,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -727,12 +929,48 @@ export default function EmployeesScreen() {
     }, [fetchUsers])
   );
 
+  useEffect(() => {
+    const routeNotice = Array.isArray(notice) ? notice[0] : notice;
+
+    if (
+      routeNotice === "created" ||
+      routeNotice === "updated" ||
+      routeNotice === "deleted"
+    ) {
+      setEmployeeNotice(routeNotice);
+    }
+  }, [notice]);
+
+  const closeEmployeeNotice = () => {
+    setEmployeeNotice(null);
+
+    if (notice) {
+      router.replace("/employees");
+    }
+  };
+
   if (loading) {
-    return <LoadingState />;
+    return (
+      <>
+        <LoadingState />
+        <EmployeeSuccessModal
+          notice={employeeNotice}
+          onClose={closeEmployeeNotice}
+        />
+      </>
+    );
   }
 
   if (employees.length === 0) {
-    return <EmptyState canAdd={canManageEmployees} onAdd={openAddEmployee} />;
+    return (
+      <>
+        <EmptyState canAdd={canManageEmployees} onAdd={openAddEmployee} />
+        <EmployeeSuccessModal
+          notice={employeeNotice}
+          onClose={closeEmployeeNotice}
+        />
+      </>
+    );
   }
 
   return (
@@ -742,18 +980,24 @@ export default function EmployeesScreen() {
           employees={employees}
           canAdd={canManageEmployees}
           canEdit={canManageEmployees}
+          hasMore={hasMoreEmployees}
+          isLoadingMore={loadingMore}
           onAdd={openAddEmployee}
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
+          onLoadMore={loadMoreEmployees}
         />
       ) : (
         <DesktopEmployees
           employees={employees}
           canAdd={canManageEmployees}
           canEdit={canManageEmployees}
+          hasMore={hasMoreEmployees}
+          isLoadingMore={loadingMore}
           onAdd={openAddEmployee}
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
+          onLoadMore={loadMoreEmployees}
         />
       )}
 
@@ -763,6 +1007,11 @@ export default function EmployeesScreen() {
         errorMessage={deleteError}
         onCancel={cancelDeleteEmployee}
         onProceed={confirmDeleteEmployee}
+      />
+
+      <EmployeeSuccessModal
+        notice={employeeNotice}
+        onClose={closeEmployeeNotice}
       />
     </>
   );
