@@ -9,6 +9,7 @@ import {
   WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { STORAGE_KEYS } from "@/constants/storage";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
 import {
   LatestAuditReport,
@@ -17,6 +18,7 @@ import {
 } from "@/features/reports/state/latestAuditReportStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
+import { storage } from "@/storage/storage";
 import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -30,6 +32,16 @@ type StagedAssetLookup = Omit<AssetWarehouseStagingItem, "WareHouseId" | "UserId
 type WarehouseAuditSelection = {
   id: string;
   name?: string | null;
+};
+
+type PausedAuditSnapshot = {
+  warehouseId: string;
+  sessionId: string;
+  tagIds: string[];
+  stagingList: AssetWarehouseStagingItem[];
+  items: AuditScanItem[];
+  expectedAssetCount: number;
+  updatedAt: string;
 };
 
 type PendingMissingAuditItem = AuditScanItem & {
@@ -597,6 +609,40 @@ function getLiveSummaryFromItems(
     scanned: summary.found + summary.extra,
     expected: expectedCount,
   };
+}
+
+function getPausedAuditStorageKey(userId?: string | null) {
+  return `${STORAGE_KEYS.AUDIT_PAUSED_SESSIONS}:${userId?.trim() || "anonymous"}`;
+}
+
+async function loadPausedAuditSnapshots(userId?: string | null) {
+  return (
+    (await storage.getObject<Record<string, PausedAuditSnapshot>>(
+      getPausedAuditStorageKey(userId)
+    )) ?? {}
+  );
+}
+
+async function savePausedAuditSnapshot(
+  userId: string | null | undefined,
+  snapshot: PausedAuditSnapshot
+) {
+  const snapshots = await loadPausedAuditSnapshots(userId);
+  snapshots[snapshot.warehouseId] = snapshot;
+  await storage.setObject(getPausedAuditStorageKey(userId), snapshots);
+}
+
+async function removePausedAuditSnapshot(
+  userId: string | null | undefined,
+  warehouseId?: string | null
+) {
+  if (!warehouseId) {
+    return;
+  }
+
+  const snapshots = await loadPausedAuditSnapshots(userId);
+  delete snapshots[warehouseId];
+  await storage.setObject(getPausedAuditStorageKey(userId), snapshots);
 }
 
 // Reads the first useful string from backend report objects because those payloads can vary by key name.
@@ -1184,7 +1230,7 @@ function buildAuditComparisonReport(
 
 // Central audit hook that manages the full client-side scan lifecycle from start, to submit, to report view.
 export function useAuditScanState() {
-  const { user } = useAuthSession();
+  const { user, refreshWarehouseAccess } = useAuthSession();
   const [manualAssetId, setManualAssetId] = useState("");
   const [auditPhase, setAuditPhase] = useState<AuditPhase>("idle");
   const [mqttItems, setMqttItems] = useState<AuditScanItem[]>([]);
@@ -1223,6 +1269,7 @@ export function useAuditScanState() {
   >([]);
   const [expectedAssetCount, setExpectedAssetCount] = useState(0);
   const [isPreparingWarehouse, setIsPreparingWarehouse] = useState(false);
+  const [isPausingAudit, setIsPausingAudit] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
   const lookupQueueRef = useRef<InventoryLookupQueueJob[]>([]);
@@ -1501,7 +1548,7 @@ export function useAuditScanState() {
       return reportItems.length > 0 ? reportItems : frozenItems;
     }
 
-    if (auditPhase === "submitting" || auditPhase === "submitError") {
+    if (auditPhase === "paused" || auditPhase === "submitting" || auditPhase === "submitError") {
       return frozenItems;
     }
 
@@ -1518,7 +1565,7 @@ export function useAuditScanState() {
       return reportSummary;
     }
 
-    if (auditPhase === "submitting" || auditPhase === "submitError") {
+    if (auditPhase === "paused" || auditPhase === "submitting" || auditPhase === "submitError") {
       return getLiveSummaryFromItems(
         frozenItems,
         expectedAssetCount,
@@ -1565,6 +1612,39 @@ export function useAuditScanState() {
     setSubmitError(null);
     setConnectionStatus("idle");
     setAuditPhase(nextPhase);
+  }, []);
+
+  const restorePausedSnapshot = useCallback((snapshot: PausedAuditSnapshot) => {
+    const restoredLookups = new Map<string, StagedAssetLookup>();
+    const restoredTagIds = new Set<string>(snapshot.tagIds);
+
+    snapshot.stagingList.forEach((entry) => {
+      const tagKey = getTagKey(entry.TagId);
+
+      if (!tagKey) {
+        return;
+      }
+
+      restoredLookups.set(tagKey, {
+        TagId: entry.TagId,
+        ProductId: entry.ProductId,
+      });
+    });
+
+    stagedLookupsRef.current = restoredLookups;
+    scannedTagIdsRef.current = restoredTagIds;
+    itemCacheRef.current = new Map(snapshot.items.map((item) => [item.id, item]));
+    setManualItems(snapshot.items);
+    setMqttItems([]);
+    setFrozenItems(snapshot.items);
+    setSubmittedTagIds(snapshot.tagIds);
+    setSubmittedMatchedTagIds(snapshot.tagIds);
+    setSubmittedStagingList(snapshot.stagingList);
+    setAuditApiSessionId(snapshot.sessionId);
+    setExpectedAssetCount(snapshot.expectedAssetCount);
+    setSubmitError(null);
+    setConnectionStatus("idle");
+    setAuditPhase("paused");
   }, []);
 
   // Stores the selected warehouse for the audit flow and clears any previous scan session state.
@@ -1629,6 +1709,17 @@ export function useAuditScanState() {
       expectedTagIdsRef.current = seen;
       setExpectedAssetCount(warehouseAssets.length);
       setSubmitError(null);
+      const pausedSnapshots = await loadPausedAuditSnapshots(user?.employeeId);
+      const pausedSnapshot = pausedSnapshots[normalizedWarehouseId];
+
+      if (pausedSnapshot && requestId === warehouseLoadRequestRef.current) {
+        restorePausedSnapshot({
+          ...pausedSnapshot,
+          expectedAssetCount:
+            pausedSnapshot.expectedAssetCount || warehouseAssets.length,
+        });
+      }
+
       appLogger.info("AuditScan", "Loaded warehouse asset count for audit progress.", {
         warehouseId: numericWarehouseId,
         expectedCount: warehouseAssets.length,
@@ -1652,7 +1743,7 @@ export function useAuditScanState() {
         setIsPreparingWarehouse(false);
       }
     }
-  }, [clearScanSession]);
+  }, [clearScanSession, restorePausedSnapshot, user?.employeeId]);
 
   // Returns the hook to a clean pre-scan state when the user changes warehouse or leaves the audit screen.
   const resetAudit = useCallback(() => {
@@ -1716,8 +1807,16 @@ export function useAuditScanState() {
 
     const currentExpectedCount = expectedAssetCount;
     const currentExpectedTagIds = new Set(expectedTagIdsRef.current);
-    clearScanSession("scanning");
-    expectedTagIdsRef.current = currentExpectedTagIds;
+
+    if (auditPhase !== "paused") {
+      clearScanSession("scanning");
+      expectedTagIdsRef.current = currentExpectedTagIds;
+    } else {
+      scanSessionRef.current += 1;
+      setAuditPhase("scanning");
+      setSubmitError(null);
+    }
+
     setAuditWarehouseId(warehouseId);
     setAuditMqttTopic(normalizedMqttTopic);
     setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
@@ -2022,12 +2121,109 @@ export function useAuditScanState() {
     return normalizedItems.map((item) => resolvedById.get(item.id) ?? item);
   }, [pendingMissingItems]);
 
+  const pauseAudit = useCallback(async () => {
+    if (auditPhase !== "scanning" || liveItems.length === 0 || isPausingAudit) {
+      return;
+    }
+
+    const tagIds = Array.from(new Set(liveItems.map((item) => item.id)));
+    const warehouseId = parseNumericId(auditWarehouseId);
+    const sessionId = auditApiSessionId ?? createAuditSessionId();
+
+    if (warehouseId === null || !auditWarehouseId) {
+      setSubmitError("Select a warehouse before pausing the audit.");
+      return;
+    }
+
+    const pendingLookups = tagIds.flatMap((tagId) => {
+      const pendingLookup = pendingLookupsRef.current.get(tagId);
+      return pendingLookup ? [pendingLookup] : [];
+    });
+
+    if (pendingLookups.length > 0) {
+      await Promise.all(pendingLookups);
+    }
+
+    const stagingList = tagIds.map((tagId) => {
+      const stagedLookup = stagedLookupsRef.current.get(tagId);
+
+      if (stagedLookup) {
+        return {
+          ...stagedLookup,
+          WareHouseId: warehouseId,
+        };
+      }
+
+      return {
+        TagId: tagId,
+        ProductId: 0,
+        WareHouseId: warehouseId,
+      };
+    });
+    const snapshotItems = buildSnapshotItems(tagIds, liveItems);
+
+    setIsPausingAudit(true);
+    setSubmitError(null);
+
+    try {
+      if (!auditApiSessionId) {
+        setAuditApiSessionId(sessionId);
+      }
+
+      await apiService.submitScannedAuditTags(sessionId, stagingList, 1);
+      await savePausedAuditSnapshot(user?.employeeId, {
+        warehouseId: auditWarehouseId,
+        sessionId,
+        tagIds,
+        stagingList,
+        items: snapshotItems,
+        expectedAssetCount,
+        updatedAt: new Date().toISOString(),
+      });
+
+      setSubmittedTagIds(tagIds);
+      setSubmittedMatchedTagIds(tagIds);
+      setSubmittedStagingList(stagingList);
+      setFrozenItems(snapshotItems);
+      setConnectionStatus("idle");
+      setAuditPhase("paused");
+      mqttService.disconnectMqtt();
+      void refreshWarehouseAccess().catch((error) => {
+        appLogger.warn("AuditScan", "Paused audit, but warehouse status refresh failed.", {
+          warehouseId,
+          error,
+        });
+      });
+    } catch (error) {
+      setSubmitError("Unable to pause this audit right now. Please try again.");
+      appLogger.error("AuditScan", "Pause audit failed.", {
+        warehouseId,
+        sessionId,
+        tagIds,
+        error,
+      });
+    } finally {
+      setIsPausingAudit(false);
+    }
+  }, [
+    auditApiSessionId,
+    auditPhase,
+    auditWarehouseId,
+    expectedAssetCount,
+    isPausingAudit,
+    liveItems,
+    refreshWarehouseAccess,
+    user?.employeeId,
+  ]);
+
   // Freezes the current scan set, disconnects MQTT, and submits the final staging payload for the selected warehouse.
   const submitAudit = useCallback(async () => {
     const canRetry =
       auditPhase === "submitError" &&
       (submittedReferenceId !== null || submittedTagIds.length > 0);
-    const canSubmitLive = auditPhase === "scanning" && liveItems.length > 0;
+    const canSubmitLive =
+      (auditPhase === "scanning" && liveItems.length > 0) ||
+      (auditPhase === "paused" && (submittedTagIds.length > 0 || frozenItems.length > 0));
 
     if (!canRetry && !canSubmitLive) {
       appLogger.warn("AuditScan", "Submit ignored because the audit is not in a submittable state.", {
@@ -2039,8 +2235,10 @@ export function useAuditScanState() {
       return;
     }
 
-    const tagIds = canRetry
-      ? submittedTagIds
+    const tagIds = canRetry || auditPhase === "paused"
+      ? submittedTagIds.length > 0
+        ? submittedTagIds
+        : Array.from(new Set(frozenItems.map((item) => item.id)))
       : Array.from(new Set(liveItems.map((item) => item.id)));
 
     if (tagIds.length === 0) {
@@ -2090,7 +2288,9 @@ export function useAuditScanState() {
     // Unmatched tags are included with ProductId: 0 to be tracked as "Extra" in reports
     const stagingList = canRetry
       ? submittedStagingList
-      : tagIds.map((tagId) => {
+      : auditPhase === "paused" && submittedStagingList.length > 0
+        ? submittedStagingList
+        : tagIds.map((tagId) => {
           const stagedLookup = stagedLookupsRef.current.get(tagId);
 
           if (stagedLookup) {
@@ -2160,7 +2360,7 @@ export function useAuditScanState() {
     try {
       const referenceId =
         resolvedReferenceId ??
-        (await apiService.submitScannedAuditTags(sessionId, stagingList));
+        (await apiService.submitScannedAuditTags(sessionId, stagingList, 0));
 
       resolvedReferenceId = referenceId || null;
       setSubmittedReferenceId(resolvedReferenceId);
@@ -2280,6 +2480,13 @@ export function useAuditScanState() {
       );
       latestReportRef.current = displayReport;
       setLatestAuditReport(displayReport);
+      await removePausedAuditSnapshot(user?.employeeId, currentWarehouseId);
+      void refreshWarehouseAccess().catch((error) => {
+        appLogger.warn("AuditScan", "Submitted audit, but warehouse status refresh failed.", {
+          warehouseId,
+          error,
+        });
+      });
       setAuditPhase("submitted");
     } catch (error) {
       appLogger.error("AuditScan", "Warehouse audit submission flow failed.", {
@@ -2310,6 +2517,7 @@ export function useAuditScanState() {
     submittedStagingList,
     submittedTagIds,
     reconcileReportWithSession,
+    refreshWarehouseAccess,
     user?.employeeId,
   ]);
 
@@ -2342,13 +2550,17 @@ export function useAuditScanState() {
   ]);
   const canSubmit =
     (auditPhase === "scanning" && liveItems.length > 0) ||
+    (auditPhase === "paused" && (submittedTagIds.length > 0 || frozenItems.length > 0)) ||
     (auditPhase === "submitError" && submittedTagIds.length > 0);
+  const canPause = auditPhase === "scanning" && liveItems.length > 0 && !isPausingAudit;
 
   return {
     items,
     isScanning,
     auditPhase,
     canSubmit,
+    canPause,
+    isPausingAudit,
     submitError,
     connectionStatus,
     manualAssetId,
@@ -2359,6 +2571,7 @@ export function useAuditScanState() {
     addManualAsset,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
+    pauseAudit,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,

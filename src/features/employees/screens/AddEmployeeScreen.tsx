@@ -167,6 +167,8 @@ function normalizeWarehouse(record: WarehouseApiRecord, index: number): Warehous
     name,
     code,
     subtitle,
+    auditStatus: null,
+    auditStatusValue: null,
     raw: record,
   };
 }

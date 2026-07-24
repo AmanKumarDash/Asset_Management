@@ -456,13 +456,15 @@ class ApiService {
   // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.
   async submitScannedAuditTags(
     sessionId: string,
-    stagingList: AssetWarehouseStagingItem[]
+    stagingList: AssetWarehouseStagingItem[],
+    status = 0
   ): Promise<string> {
     assertApiBaseUrlConfigured();
 
     const payload: AuditSubmitRequest = {
       SessionId: sessionId,
       StagingList: stagingList,
+      Status: status,
     };
 
     const response = await this.api.post<

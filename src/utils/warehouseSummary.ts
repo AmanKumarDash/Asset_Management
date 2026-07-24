@@ -31,6 +31,66 @@ function pickId(record: WarehouseRecord, keys: string[]) {
   return null;
 }
 
+function normalizeStatusValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  const parsed = Number(normalizedValue);
+
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  if (["running", "in progress", "in-progress", "started", "active", "pending"].includes(normalizedValue)) {
+    return 1;
+  }
+
+  if (["done", "completed", "complete", "submitted", "finished", "closed"].includes(normalizedValue)) {
+    return 0;
+  }
+
+  return null;
+}
+
+function pickStatus(record: WarehouseRecord) {
+  const candidates = [
+    record.Status,
+    record.status,
+    record.StatusName,
+    record.statusName,
+    record.StatusId,
+    record.statusId,
+    record.AuditStatus,
+    record.auditStatus,
+    record.AuditStatusName,
+    record.auditStatusName,
+    record.WarehouseStatus,
+    record.warehouseStatus,
+    record.WareHouseStatus,
+    record.wareHouseStatus,
+  ];
+
+  for (const value of candidates) {
+    const statusValue = normalizeStatusValue(value);
+
+    if (statusValue !== null) {
+      return statusValue;
+    }
+  }
+
+  return null;
+}
+
 function getAddressSubtitle(address: unknown) {
   if (!address || typeof address !== "object") {
     return null;
@@ -77,12 +137,16 @@ function normalizeWarehouse(record: WarehouseRecord, index: number): WarehouseSu
     ]
       .filter(Boolean)
       .join(" - ") || null;
+  const auditStatusValue = pickStatus(record);
 
   return {
     id,
     name,
     code,
     subtitle,
+    auditStatus:
+      auditStatusValue === 1 ? "running" : auditStatusValue === 0 ? "done" : null,
+    auditStatusValue,
     raw: record,
   };
 }

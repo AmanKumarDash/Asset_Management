@@ -67,6 +67,33 @@ function SetupStateBanner({
   );
 }
 
+function getWarehouseAuditStatusMeta(status: WarehouseSummary["auditStatus"]) {
+  if (status === "running") {
+    return {
+      label: "Running",
+      bg: "#FFF1DB",
+      text: "#9A5F00",
+      icon: "clock" as const,
+    };
+  }
+
+  if (status === "done") {
+    return {
+      label: "Completed",
+      bg: "#EAF5DB",
+      text: "#4C7A18",
+      icon: "check-circle" as const,
+    };
+  }
+
+  return {
+    label: "Not started",
+    bg: "#EEF2F7",
+    text: "#526070",
+    icon: "minus-circle" as const,
+  };
+}
+
 export default function AuditSetupPanel({
   organization,
   warehouses,
@@ -161,6 +188,7 @@ export default function AuditSetupPanel({
         <View className="mt-3 flex-row flex-wrap gap-3">
           {warehouses.map((warehouse) => {
             const isSelected = selectedIds.includes(warehouse.id);
+            const statusMeta = getWarehouseAuditStatusMeta(warehouse.auditStatus);
 
             return (
               <Pressable
@@ -188,6 +216,15 @@ export default function AuditSetupPanel({
                         {warehouse.subtitle}
                       </Text>
                     ) : null}
+                    <View
+                      className="mt-3 flex-row items-center self-start rounded-full px-3 py-1"
+                      style={{ backgroundColor: statusMeta.bg, gap: 6 }}
+                    >
+                      <Feather name={statusMeta.icon} size={13} color={statusMeta.text} />
+                      <Text className="text-xs font-semibold" style={{ color: statusMeta.text }}>
+                        {statusMeta.label}
+                      </Text>
+                    </View>
                   </View>
                   {isSelected ? (
                     <View

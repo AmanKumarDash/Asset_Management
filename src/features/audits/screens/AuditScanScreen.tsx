@@ -79,6 +79,10 @@ function getScanPanelHeading(
     return "Submitting audit snapshot...";
   }
 
+  if (phase === "paused") {
+    return "Audit paused";
+  }
+
   if (phase === "submitted") {
     return "Audit report ready";
   }
@@ -110,6 +114,10 @@ function getScanPanelDescription(
 
   if (phase === "submitting") {
     return "MQTT has been disconnected and the scanned snapshot is frozen. We are sending the warehouse staging payload to the backend now.";
+  }
+
+  if (phase === "paused") {
+    return "This warehouse has saved scanned assets. Submit the saved snapshot or resume scanning from where you stopped.";
   }
 
   if (phase === "submitted") {
@@ -148,6 +156,10 @@ function getSubmitButtonLabel(phase: AuditPhase) {
     return "Report Ready";
   }
 
+  if (phase === "paused") {
+    return "Submit Saved Audit";
+  }
+
   if (phase === "submitError") {
     return "Retry Submit";
   }
@@ -159,6 +171,10 @@ function getSubmitButtonLabel(phase: AuditPhase) {
 function getListHeading(phase: AuditPhase) {
   if (phase === "submitted") {
     return "Audit report";
+  }
+
+  if (phase === "paused") {
+    return "Paused scan snapshot";
   }
 
   if (phase === "submitting") {
@@ -250,6 +266,10 @@ function getEmptyStateDescription(phase: AuditPhase) {
 
   if (phase === "submitting" || phase === "submitError") {
     return "The scan snapshot has been frozen, but there are no submitted items to display yet.";
+  }
+
+  if (phase === "paused") {
+    return "The paused scan snapshot has no items to display yet.";
   }
 
   return "Start the audit to activate scanning and populate asset results.";
@@ -388,7 +408,7 @@ function ScanPanel({
   submitError: string | null;
 }) {
   const showStartButton =
-    phase === "idle" || phase === "submitted" || phase === "submitError";
+    phase === "idle" || phase === "paused" || phase === "submitted" || phase === "submitError";
 
   return (
     <View
@@ -420,7 +440,11 @@ function ScanPanel({
           style={{ backgroundColor: adminTheme.primary }}
         >
           <Text className="text-base font-semibold text-white">
-            {phase === "idle" ? "Start Audit" : "Start New Audit"}
+            {phase === "idle"
+              ? "Start Audit"
+              : phase === "paused"
+                ? "Resume Audit"
+                : "Start New Audit"}
           </Text>
         </Pressable>
       ) : null}
@@ -845,6 +869,41 @@ function SubmitActionButton({
   );
 }
 
+function PauseActionButton({
+  canPause,
+  isPausing,
+  onPauseAudit,
+  mobile = false,
+}: {
+  canPause: boolean;
+  isPausing: boolean;
+  onPauseAudit: () => void;
+  mobile?: boolean;
+}) {
+  const disabled = !canPause || isPausing;
+
+  return (
+    <Pressable
+      onPress={onPauseAudit}
+      disabled={disabled}
+      className={`items-center rounded-[14px] border ${
+        mobile ? "px-5 py-4" : "px-4 py-4"
+      }`}
+      style={{
+        borderColor: disabled ? adminTheme.border : adminTheme.primary,
+        backgroundColor: adminTheme.surface,
+      }}
+    >
+      <Text
+        className={`${mobile ? "text-base" : "text-[16px]"} font-semibold`}
+        style={{ color: disabled ? adminTheme.mutedText : adminTheme.primary }}
+      >
+        {isPausing ? "Pausing..." : "Pause Audit"}
+      </Text>
+    </Pressable>
+  );
+}
+
 function ProceedNextWarehouseButton({
   show,
   onProceed,
@@ -887,7 +946,10 @@ function DesktopProgressCard({
   missing,
   extra,
   canSubmit,
+  canPause,
+  isPausingAudit,
   totalAssets,
+  onPauseAudit,
   onSubmitAudit,
   hasNextWarehouse,
   onProceedNextWarehouse,
@@ -898,7 +960,10 @@ function DesktopProgressCard({
   missing: number;
   extra: number;
   canSubmit: boolean;
+  canPause: boolean;
+  isPausingAudit: boolean;
   totalAssets: number;
+  onPauseAudit: () => void;
   onSubmitAudit: () => void;
   hasNextWarehouse: boolean;
   onProceedNextWarehouse: () => void;
@@ -969,6 +1034,12 @@ function DesktopProgressCard({
       </View>
 
       <View className="mt-4">
+        <PauseActionButton
+          canPause={canPause}
+          isPausing={isPausingAudit}
+          onPauseAudit={onPauseAudit}
+        />
+        <View className="mt-3" />
         <SubmitActionButton
           phase={phase}
           canSubmit={canSubmit}
@@ -1044,6 +1115,8 @@ function MobileAuditScan() {
     isScanning,
     auditPhase,
     canSubmit,
+    canPause,
+    isPausingAudit,
     submitError,
     connectionStatus,
     manualAssetId,
@@ -1053,6 +1126,7 @@ function MobileAuditScan() {
     addManualAsset,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
+    pauseAudit,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,
@@ -1079,6 +1153,7 @@ function MobileAuditScan() {
   } = useAuditSetup();
   const selectionLocked =
     auditPhase === "scanning" ||
+    auditPhase === "paused" ||
     auditPhase === "submitting" ||
     isPreparingWarehouse;
   const activeWarehouseId = auditWarehouseId;
@@ -1334,6 +1409,13 @@ function MobileAuditScan() {
               onSubmitAudit={submitAudit}
               mobile
             />
+            <View className="mt-3" />
+            <PauseActionButton
+              canPause={canPause}
+              isPausing={isPausingAudit}
+              onPauseAudit={pauseAudit}
+              mobile
+            />
             <ProceedNextWarehouseButton
               show={auditPhase === "submitted" && hasNextWarehouse}
               onProceed={proceedToNextWarehouse}
@@ -1362,6 +1444,8 @@ function DesktopAuditScan({ width }: { width: number }) {
     isScanning,
     auditPhase,
     canSubmit,
+    canPause,
+    isPausingAudit,
     submitError,
     connectionStatus,
     manualAssetId,
@@ -1371,6 +1455,7 @@ function DesktopAuditScan({ width }: { width: number }) {
     addManualAsset,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
+    pauseAudit,
     submitAudit,
     proceedToNextWarehouse,
     resetAudit,
@@ -1398,6 +1483,7 @@ function DesktopAuditScan({ width }: { width: number }) {
   const twoColumn = width >= 1340;
   const selectionLocked =
     auditPhase === "scanning" ||
+    auditPhase === "paused" ||
     auditPhase === "submitting" ||
     isPreparingWarehouse;
   const activeWarehouseId = auditWarehouseId;
@@ -1548,7 +1634,10 @@ function DesktopAuditScan({ width }: { width: number }) {
                 missing={summary.missing}
                 extra={summary.extra}
                 canSubmit={canSubmit}
+                canPause={canPause}
+                isPausingAudit={isPausingAudit}
                 totalAssets={totalAssets}
+                onPauseAudit={pauseAudit}
                 onSubmitAudit={submitAudit}
                 hasNextWarehouse={hasNextWarehouse}
                 onProceedNextWarehouse={proceedToNextWarehouse}

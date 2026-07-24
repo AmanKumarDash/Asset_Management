@@ -3,6 +3,7 @@ import { InventoryBarcodeScanDetail } from "./inventory";
 export type AuditPhase =
   | "idle"
   | "scanning"
+  | "paused"
   | "submitting"
   | "submitted"
   | "submitError";
@@ -20,6 +21,7 @@ export type AuditSummary = {
 export type AuditSubmitRequest = {
   SessionId: string;
   StagingList: AssetWarehouseStagingItem[];
+  Status?: number;
 };
 
 export type AssetWarehouseStagingItem = {

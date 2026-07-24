@@ -7,4 +7,5 @@
   AUTH_ORGANIZATION: "auth.organization",
   AUTH_WAREHOUSE_ACCESS: "auth.warehouse-access",
   AUTH_RFID_MACHINES: "auth.rfid-machines",
+  AUDIT_PAUSED_SESSIONS: "audit.paused-sessions",
 } as const;
