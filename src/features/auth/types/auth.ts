@@ -23,6 +23,7 @@ export type SignInResult = {
 
 export type AuthSessionContextValue = {
   isHydrated: boolean;
+  isAuthenticated: boolean;
   user: AppUser | null;
   organization: OrganizationDetails | null;
   accessibleWarehouses: WarehouseSummary[];

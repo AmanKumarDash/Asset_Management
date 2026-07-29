@@ -16,7 +16,7 @@ import AuthInput from "../components/AuthInput";
 import { useAuthSession } from "../hooks/useAuthSession";
 
 export default function LoginScreen() {
-  const { isHydrated, user, signIn } = useAuthSession();
+  const { isHydrated, isAuthenticated, signIn } = useAuthSession();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,7 +27,7 @@ export default function LoginScreen() {
     return null;
   }
 
-  if (user) {
+  if (isAuthenticated) {
     return <Redirect href="/dashboard" />;
   }
 

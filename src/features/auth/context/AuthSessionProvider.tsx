@@ -36,9 +36,37 @@ function deriveInitials(name: string) {
     .join("");
 }
 
+function isFutureDate(value: string | null) {
+  if (!value) {
+    return true;
+  }
+
+  const expiresAt = Date.parse(value);
+
+  if (Number.isNaN(expiresAt)) {
+    return false;
+  }
+
+  return expiresAt > Date.now();
+}
+
+async function clearPersistedSession() {
+  await Promise.all([
+    storage.removeItem(STORAGE_KEYS.AUTH_USER),
+    storage.removeItem(STORAGE_KEYS.AUTH_ACCESS_TOKEN_EXPIRES_AT),
+    storage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
+    storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION),
+    storage.removeItem(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
+    storage.removeItem(STORAGE_KEYS.AUTH_RFID_MACHINES),
+    secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
+    secureStorage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
+  ]);
+}
+
 // Owns auth/session state for the whole app, including token hydration and org bootstrap.
 export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [accessibleWarehouses, setAccessibleWarehouses] = useState<WarehouseSummary[]>([]);
@@ -52,6 +80,8 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       const [
         storedToken,
         storedRefreshToken,
+        storedAccessTokenExpiresAt,
+        storedRefreshTokenExpiresAt,
         storedUser,
         storedOrganization,
         storedWarehouseAccess,
@@ -60,6 +90,8 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         await Promise.all([
           secureStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
           secureStorage.getItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
+          storage.getItem(STORAGE_KEYS.AUTH_ACCESS_TOKEN_EXPIRES_AT),
+          storage.getItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
           storage.getObject<AppUser>(STORAGE_KEYS.AUTH_USER),
           storage.getObject<OrganizationDetails>(STORAGE_KEYS.AUTH_ORGANIZATION),
           storage.getObject<WarehouseSummary[]>(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
@@ -70,17 +102,38 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setAccessToken(storedToken);
-      setUser(storedUser);
-      setOrganization(storedOrganization);
-      setAccessibleWarehouses(storedWarehouseAccess ?? []);
-      setRfidMachines(storedRfidMachines ?? []);
+      const canUseStoredSession =
+        Boolean(storedUser) &&
+        Boolean(storedToken) &&
+        isFutureDate(storedAccessTokenExpiresAt) &&
+        isFutureDate(storedRefreshTokenExpiresAt);
+
+      if (canUseStoredSession) {
+        setAccessToken(storedToken);
+        setIsAuthenticated(true);
+        setUser(storedUser);
+        setOrganization(storedOrganization);
+        setAccessibleWarehouses(storedWarehouseAccess ?? []);
+        setRfidMachines(storedRfidMachines ?? []);
+      } else {
+        setAccessToken(null);
+        setIsAuthenticated(false);
+        setUser(null);
+        setOrganization(null);
+        setAccessibleWarehouses([]);
+        setRfidMachines([]);
+        await clearPersistedSession();
+      }
+
       setIsHydrated(true);
 
       appLogger.info("AuthSession", "Hydrated auth session from storage.", {
         hasToken: Boolean(storedToken),
         hasRefreshToken: Boolean(storedRefreshToken),
+        accessTokenExpiresAt: storedAccessTokenExpiresAt,
+        refreshTokenExpiresAt: storedRefreshTokenExpiresAt,
         hasUser: Boolean(storedUser),
+        restoredSession: canUseStoredSession,
         hasOrganization: Boolean(storedOrganization),
         warehouseAccessCount: storedWarehouseAccess?.length ?? 0,
         rfidMachineCount: storedRfidMachines?.length ?? 0,
@@ -139,16 +192,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
   // Removes all persisted auth-related data during sign-out and expired-session cleanup.
   const clearSession = useCallback(async () => {
-    await Promise.all([
-      storage.removeItem(STORAGE_KEYS.AUTH_USER),
-      storage.removeItem(STORAGE_KEYS.AUTH_ACCESS_TOKEN_EXPIRES_AT),
-      storage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN_EXPIRES_AT),
-      storage.removeItem(STORAGE_KEYS.AUTH_ORGANIZATION),
-      storage.removeItem(STORAGE_KEYS.AUTH_WAREHOUSE_ACCESS),
-      storage.removeItem(STORAGE_KEYS.AUTH_RFID_MACHINES),
-      secureStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
-      secureStorage.removeItem(STORAGE_KEYS.AUTH_REFRESH_TOKEN),
-    ]);
+    await clearPersistedSession();
   }, []);
 
   const loadWarehouseAccessForUser = useCallback(
@@ -208,6 +252,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     // Gives the axios layer a way to clear app state when token refresh can no longer recover the session.
     setSessionExpiredHandler(() => {
       setAccessToken(null);
+      setIsAuthenticated(false);
       setUser(null);
       setOrganization(null);
       setAccessibleWarehouses([]);
@@ -282,6 +327,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         const session = mapLoginResponse(payload);
 
         setAccessToken(session.token);
+        setIsAuthenticated(Boolean(session.token));
         setUser(session.user);
         setOrganization(null);
         setAccessibleWarehouses([]);
@@ -342,6 +388,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         );
 
         setAccessToken(null);
+        setIsAuthenticated(false);
         setUser(null);
         setOrganization(null);
         setAccessibleWarehouses([]);
@@ -376,6 +423,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       email: user?.email ?? "unknown",
     });
     setAccessToken(null);
+    setIsAuthenticated(false);
     setUser(null);
     setOrganization(null);
     setAccessibleWarehouses([]);
@@ -417,6 +465,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isHydrated,
+      isAuthenticated,
       user,
       organization,
       accessibleWarehouses,
@@ -432,6 +481,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     [
       accessibleWarehouses,
       hasPermission,
+      isAuthenticated,
       isHydrated,
       organization,
       rfidMachines,

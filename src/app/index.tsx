@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 
 export default function Index() {
-  const { isHydrated, user } = useAuthSession();
+  const { isHydrated, isAuthenticated } = useAuthSession();
   const [isSplashFinished, setIsSplashFinished] = useState(false);
 
   useEffect(() => {
@@ -12,8 +12,8 @@ export default function Index() {
       return;
     }
 
-    router.replace(user ? "/dashboard" : "/login");
-  }, [isHydrated, isSplashFinished, user]);
+    router.replace(isAuthenticated ? "/dashboard" : "/login");
+  }, [isHydrated, isSplashFinished, isAuthenticated]);
 
   const handleFinish = useCallback(() => {
     setIsSplashFinished(true);

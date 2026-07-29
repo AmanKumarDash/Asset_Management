@@ -15,13 +15,13 @@ export default function AccessGuard({
   allowedRoles,
   requiredPermissions,
 }: AccessGuardProps) {
-  const { isHydrated, user, hasPermission } = useAuthSession();
+  const { isHydrated, isAuthenticated, user, hasPermission } = useAuthSession();
 
   if (!isHydrated) {
     return null;
   }
 
-  if (!user) {
+  if (!isAuthenticated || !user) {
     appLogger.warn("AccessGuard", "Redirecting to login because no active session was found.");
     return <Redirect href="/login" />;
   }

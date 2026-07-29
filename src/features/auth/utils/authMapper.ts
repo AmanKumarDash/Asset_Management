@@ -92,18 +92,23 @@ export function mapAuthUser(apiUser: AuthApiUser): AppUser {
 
 export function mapLoginResponse(payload: LoginResponse): AuthSessionPayload {
   const apiUser = payload.user ?? payload.User ?? payload;
+  const token =
+    payload.accessToken ??
+    payload.AccessToken ??
+    payload.token ??
+    payload.Token ??
+    null;
 
   if (!apiUser) {
     throw new Error("Login response is missing user data.");
   }
 
+  if (!token) {
+    throw new Error("Login response is missing an access token.");
+  }
+
   return {
-    token:
-      payload.accessToken ??
-      payload.AccessToken ??
-      payload.token ??
-      payload.Token ??
-      null,
+    token,
     refreshToken: payload.refreshToken ?? payload.RefreshToken ?? null,
     accessTokenExpiresAt:
       payload.accessTokenExpire ?? payload.AccessTokenExpire ?? null,

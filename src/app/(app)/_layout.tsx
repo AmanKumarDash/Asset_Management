@@ -3,13 +3,13 @@ import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { Redirect, Slot } from "expo-router";
 
 export default function AppLayout() {
-  const { isHydrated, user } = useAuthSession();
+  const { isHydrated, isAuthenticated } = useAuthSession();
 
   if (!isHydrated) {
     return null;
   }
 
-  if (!user) {
+  if (!isAuthenticated) {
     return <Redirect href="/login" />;
   }
 
