@@ -464,7 +464,7 @@ class ApiService {
     const payload: AuditSubmitRequest = {
       SessionId: sessionId,
       StagingList: stagingList,
-      Status: status,
+      StatusId: status,
     };
 
     const response = await this.api.post<

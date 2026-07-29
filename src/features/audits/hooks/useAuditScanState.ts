@@ -1792,7 +1792,7 @@ export function useAuditScanState() {
   // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
   // We snapshot the current expectedAssetCount before clearScanSession wipes it to zero, then restore it
   // immediately so the progress card denominator stays correct once MQTT scanning begins.
-  const startAudit = useCallback((warehouseId?: string, mqttTopic?: string | null) => {
+  const startAudit = useCallback(async (warehouseId?: string, mqttTopic?: string | null) => {
     if (!warehouseId || isPreparingWarehouse) {
       return;
     }
@@ -1807,11 +1807,59 @@ export function useAuditScanState() {
 
     const currentExpectedCount = expectedAssetCount;
     const currentExpectedTagIds = new Set(expectedTagIdsRef.current);
+    const isResumingPausedAudit = auditPhase === "paused";
+    const warehouseNumericId = parseNumericId(warehouseId);
+    const nextAuditSessionId = auditApiSessionId ?? createAuditSessionId();
 
-    if (auditPhase !== "paused") {
+    if (!isResumingPausedAudit) {
       clearScanSession("scanning");
       expectedTagIdsRef.current = currentExpectedTagIds;
     } else {
+      const resumeStagingList =
+        submittedStagingList.length > 0
+          ? submittedStagingList
+          : frozenItems
+              .map((item) => {
+                if (warehouseNumericId === null) {
+                  return null;
+                }
+
+                const stagedLookup = stagedLookupsRef.current.get(item.id);
+
+                return {
+                  TagId: stagedLookup?.TagId ?? item.id,
+                  ProductId: stagedLookup?.ProductId ?? 0,
+                  WareHouseId: warehouseNumericId,
+                };
+              })
+              .filter((item): item is AssetWarehouseStagingItem => item !== null);
+      const resumeSessionId = nextAuditSessionId;
+
+      if (resumeStagingList.length > 0) {
+        try {
+          const referenceId = await apiService.submitScannedAuditTags(
+            resumeSessionId,
+            resumeStagingList,
+            1
+          );
+
+          if (referenceId) {
+            await apiService.getWarehouseAuditData(referenceId);
+            setSubmittedReferenceId(referenceId);
+          }
+        } catch (error) {
+          appLogger.warn("AuditScan", "Resume status update failed; continuing local scan session.", {
+            warehouseId,
+            sessionId: resumeSessionId,
+            error,
+          });
+        }
+      }
+
+      if (!auditApiSessionId) {
+        setAuditApiSessionId(resumeSessionId);
+      }
+
       scanSessionRef.current += 1;
       setAuditPhase("scanning");
       setSubmitError(null);
@@ -1821,13 +1869,21 @@ export function useAuditScanState() {
     setAuditMqttTopic(normalizedMqttTopic);
     setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
     setAuditApiSessionId((current) =>
-      current && auditPhase !== "submitted" ? current : createAuditSessionId()
+      current && auditPhase !== "submitted" ? current : nextAuditSessionId
     );
 
     if (currentExpectedCount > 0) {
       setExpectedAssetCount(currentExpectedCount);
     }
-  }, [auditPhase, clearScanSession, expectedAssetCount, isPreparingWarehouse]);
+  }, [
+    auditApiSessionId,
+    auditPhase,
+    clearScanSession,
+    expectedAssetCount,
+    frozenItems,
+    isPreparingWarehouse,
+    submittedStagingList,
+  ]);
 
   // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
   const addManualAsset = useCallback(() => {
@@ -2170,7 +2226,7 @@ export function useAuditScanState() {
         setAuditApiSessionId(sessionId);
       }
 
-      await apiService.submitScannedAuditTags(sessionId, stagingList, 1);
+      await apiService.submitScannedAuditTags(sessionId, stagingList, 0);
       await savePausedAuditSnapshot(user?.employeeId, {
         warehouseId: auditWarehouseId,
         sessionId,
@@ -2360,7 +2416,7 @@ export function useAuditScanState() {
     try {
       const referenceId =
         resolvedReferenceId ??
-        (await apiService.submitScannedAuditTags(sessionId, stagingList, 0));
+        (await apiService.submitScannedAuditTags(sessionId, stagingList, 1));
 
       resolvedReferenceId = referenceId || null;
       setSubmittedReferenceId(resolvedReferenceId);

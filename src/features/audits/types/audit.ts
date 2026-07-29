@@ -21,7 +21,7 @@ export type AuditSummary = {
 export type AuditSubmitRequest = {
   SessionId: string;
   StagingList: AssetWarehouseStagingItem[];
-  Status?: number;
+  StatusId?: number;
 };
 
 export type AssetWarehouseStagingItem = {

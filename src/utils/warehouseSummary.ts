@@ -51,12 +51,12 @@ function normalizeStatusValue(value: unknown) {
     return parsed;
   }
 
-  if (["running", "in progress", "in-progress", "started", "active", "pending"].includes(normalizedValue)) {
-    return 1;
+  if (["running", "in progress", "in-progress", "started", "active", "pending", "paused", "pause"].includes(normalizedValue)) {
+    return 0;
   }
 
   if (["done", "completed", "complete", "submitted", "finished", "closed"].includes(normalizedValue)) {
-    return 0;
+    return 1;
   }
 
   return null;
@@ -145,7 +145,7 @@ function normalizeWarehouse(record: WarehouseRecord, index: number): WarehouseSu
     code,
     subtitle,
     auditStatus:
-      auditStatusValue === 1 ? "running" : auditStatusValue === 0 ? "done" : null,
+      auditStatusValue === 0 ? "running" : auditStatusValue === 1 ? "done" : null,
     auditStatusValue,
     raw: record,
   };
