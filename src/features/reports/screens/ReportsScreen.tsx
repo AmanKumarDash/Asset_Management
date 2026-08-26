@@ -1,32 +1,32 @@
 import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanData";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
-    LatestAuditReport,
-    LatestAuditReportExcelRow,
-    LatestAuditReportWarehouseSection,
-    setLatestAuditReport,
+  LatestAuditReport,
+  LatestAuditReportExcelRow,
+  LatestAuditReportWarehouseSection,
+  setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { WarehouseSummary } from "@/models/warehouse";
 import {
-    UserDetails,
-    WarehouseDetailsApiItem,
-    WarehouseDetailsComparisonResponse,
-    apiService,
+  UserDetails,
+  WarehouseDetailsApiItem,
+  WarehouseDetailsComparisonResponse,
+  apiService,
 } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
-    useWindowDimensions,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
 import { exportAuditReportAsExcel } from "../utils/reportExcelExporter";
