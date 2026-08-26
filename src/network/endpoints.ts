@@ -58,6 +58,30 @@ export const ENDPOINTS = {
       `/api/warehouse/GetWarehouseAccessByUser?UserId=${encodeURIComponent(userId)}`,
     GET_TAGS_BY_WAREHOUSE: (warehouseId: number | string) =>
       `/api/warehouse/GetWareHousetagno?WarehouseId=${encodeURIComponent(String(warehouseId))}`,
+    GET_DETAILS_BY_WAREHOUSE: (
+      warehouseId: number | string,
+      options?: {
+        referenceId?: string;
+        startDate?: string;
+        endDate?: string;
+      }
+    ) => {
+      const params = [`WarehouseId=${encodeURIComponent(String(warehouseId))}`];
+
+      if (options?.referenceId) {
+        params.push(`referanceId=${encodeURIComponent(options.referenceId)}`);
+      }
+
+      if (options?.startDate) {
+        params.push(`StartDate=${encodeURIComponent(options.startDate)}`);
+      }
+
+      if (options?.endDate) {
+        params.push(`EndDate=${encodeURIComponent(options.endDate)}`);
+      }
+
+      return `/api/warehouse/GetWarehouseDetailsbyWarehouseId?${params.join("&")}`;
+    },
     ASSET_WAREHOUSE_STAGING: "/api/warehouse/AssetWarehouseStaging",
     TAG_PRODUCT_MAPPING_OF_MISSING_PRODUCTS:
       "/api/warehouse/TagProductMappingOfMissingProducts",

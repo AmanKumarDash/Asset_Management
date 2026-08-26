@@ -92,6 +92,67 @@ export type WarehouseAccessApiItem = {
   WarehouseName?: string | null;
 } & Record<string, unknown>;
 
+export type WarehouseDetailsApiItem = Record<string, unknown>;
+export type WarehouseDetailsComparisonResponse = {
+  WarehouseData?: WarehouseDetailsApiItem[];
+  WareHouseData?: WarehouseDetailsApiItem[];
+  AuditScanData?: WarehouseDetailsApiItem[];
+} & Record<string, unknown>;
+
+function extractWarehouseDetailsCollection(value: unknown): WarehouseDetailsApiItem[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is WarehouseDetailsApiItem => Boolean(item && typeof item === "object")
+    );
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    try {
+      return extractWarehouseDetailsCollection(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidateKeys = [
+    "data",
+    "Data",
+    "items",
+    "Items",
+    "result",
+    "Result",
+    "rows",
+    "Rows",
+    "list",
+    "List",
+    "value",
+    "Value",
+    "Content",
+    "content",
+    "WarehouseData",
+    "WareHouseData",
+    "WarehouseDetails",
+    "WareHouseDetails",
+    "Products",
+    "ProductDetails",
+  ];
+
+  for (const key of candidateKeys) {
+    const collection = extractWarehouseDetailsCollection(record[key]);
+
+    if (collection.length > 0) {
+      return collection;
+    }
+  }
+
+  return [];
+}
+
 export type EmployeeReportApiItem = {
   WareHouseId: number | string;
   ProductId: number | string;
@@ -451,6 +512,54 @@ class ApiService {
     >(ENDPOINTS.WAREHOUSE.GET_TAGS_BY_WAREHOUSE(warehouseId));
 
     return extractResponseCollection<WarehouseTagBaselineItem>(response.data);
+  }
+
+  // Loads inventory/detail rows for a selected warehouse in the warehouse-wise report flow.
+  async getWarehouseDetailsByWarehouseId(
+    warehouseId: number | string,
+    options?: {
+      referenceId?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  ): Promise<WarehouseDetailsApiItem[]> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      | ApiCollectionEnvelope<WarehouseDetailsApiItem>
+      | ApiEnvelope<WarehouseDetailsApiItem[]>
+      | WarehouseDetailsApiItem[]
+    >(ENDPOINTS.WAREHOUSE.GET_DETAILS_BY_WAREHOUSE(warehouseId, options));
+
+    const collection = extractResponseCollection<WarehouseDetailsApiItem>(
+      response.data as ApiCollectionEnvelope<WarehouseDetailsApiItem> | WarehouseDetailsApiItem[]
+    );
+
+    if (collection.length > 0) {
+      return collection;
+    }
+
+    return extractWarehouseDetailsCollection(
+      extractResponseData<unknown>(response.data as ApiEnvelope<unknown> | unknown)
+    );
+  }
+
+  // Loads the warehouse-wise comparison payload for a selected warehouse/date/reference.
+  async getWarehouseDetailsComparisonByWarehouseId(
+    warehouseId: number | string,
+    options?: {
+      referenceId?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  ): Promise<WarehouseDetailsComparisonResponse> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiEnvelope<WarehouseDetailsComparisonResponse> | WarehouseDetailsComparisonResponse
+    >(ENDPOINTS.WAREHOUSE.GET_DETAILS_BY_WAREHOUSE(warehouseId, options));
+
+    return extractResponseData<WarehouseDetailsComparisonResponse>(response.data) ?? {};
   }
 
   // Sends the scanned warehouse staging payload so backend can attach each scanned asset to the selected warehouse.

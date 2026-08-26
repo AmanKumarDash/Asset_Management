@@ -1,25 +1,32 @@
 import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanData";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
-  LatestAuditReport,
-  LatestAuditReportWarehouseSection,
-  setLatestAuditReport,
+    LatestAuditReport,
+    LatestAuditReportExcelRow,
+    LatestAuditReportWarehouseSection,
+    setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
-import { UserDetails, apiService } from "@/network/ApiService";
+import { WarehouseSummary } from "@/models/warehouse";
+import {
+    UserDetails,
+    WarehouseDetailsApiItem,
+    WarehouseDetailsComparisonResponse,
+    apiService,
+} from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
+    useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
 import { exportAuditReportAsExcel } from "../utils/reportExcelExporter";
@@ -157,6 +164,14 @@ function formatDateForApi(date: Date) {
   return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
+function formatDateOnlyForApi(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 
 
 function getToneStyles(tone: AuditItemTone) {
@@ -287,6 +302,322 @@ function getUserDisplayName(user: UserDetails) {
     .join(" ");
 
   return fullName || user.EmailId?.trim() || user.UserId?.trim() || "Unknown employee";
+}
+
+function pickWarehouseReportString(
+  record: Record<string, unknown>,
+  keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
+function buildWarehouseExcelRows(
+  items: AuditScanItem[],
+  warehouseName: string,
+  observedAt: string | null
+): LatestAuditReportExcelRow[] {
+  return items.map((item, index) => ({
+    sno: index + 1,
+    newCostCentre: warehouseName,
+    costCentreDescription:
+      item.reportFields?.hsnCode ?? item.extraProductDetails?.HSNCode ?? "",
+    newFunctionalLocation: warehouseName,
+    assetNo:
+      item.reportFields?.productCode ?? item.extraProductDetails?.ProductCode ?? "",
+    plantNo:
+      item.reportFields?.modelNoAndCatelog ?? item.extraProductDetails?.ModelNo ?? "",
+    plantIdentification: item.title,
+    rfidTaggingPosition: item.id,
+    quantity: "1",
+    auditStart: observedAt ?? "",
+    auditEnd: observedAt ?? "",
+  }));
+}
+
+function isScannedWarehouseAuditItem(item: WarehouseDetailsApiItem) {
+  const status =
+    pickWarehouseReportString(item, ["Status", "status", "StatusName", "statusName"])?.toLowerCase() ??
+    null;
+
+  if (!status) {
+    return true;
+  }
+
+  return !["not scanned", "not-scanned", "missing", "inactive"].includes(status);
+}
+
+function getWarehouseComparisonKey(item: WarehouseDetailsApiItem, fallbackKey: string) {
+  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
+
+  if (productId && productId !== "0") {
+    return `product:${productId}`;
+  }
+
+  const tagId = pickWarehouseReportString(item, [
+    "TagId",
+    "TAG_ID",
+    "TagID",
+    "tagId",
+    "RFIDTagId",
+    "RFIDTagID",
+    "TagIdNumber",
+    "ID",
+  ]);
+
+  return tagId ? `tag:${tagId}` : fallbackKey;
+}
+
+function uniqueWarehouseComparisonEntries(items: WarehouseDetailsApiItem[], source: string) {
+  return items.reduce<{ key: string; item: WarehouseDetailsApiItem }[]>(
+    (entries, item, index) => {
+      const key = getWarehouseComparisonKey(item, `${source}:${index}`);
+
+      if (!entries.some((entry) => entry.key === key)) {
+        entries.push({ key, item });
+      }
+
+      return entries;
+    },
+    []
+  );
+}
+
+function mapWarehouseComparisonItemToAuditItem(
+  tone: AuditItemTone,
+  item: WarehouseDetailsApiItem,
+  index: number,
+  warehouseName: string,
+  fallbackTagId?: string | null
+): AuditScanItem {
+  const tagId =
+    pickWarehouseReportString(item, [
+      "TagId",
+      "TAG_ID",
+      "TagID",
+      "tagId",
+      "RFIDTagId",
+      "RFIDTagID",
+      "TagIdNumber",
+      "ID",
+    ]) ??
+    fallbackTagId ??
+    pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]) ??
+    `WAREHOUSE-ASSET-${index + 1}`;
+  const productName =
+    pickWarehouseReportString(item, [
+      "ProductName",
+      "ItemName",
+      "Name",
+      "Title",
+      "ProductCode",
+    ]) ??
+    (tone === "missing"
+      ? "Missing Asset"
+      : tone === "extra"
+        ? "Extra Asset"
+        : `Asset ${tagId}`);
+  const status = pickWarehouseReportString(item, ["Status", "status"]);
+  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
+  const subtitleParts = [
+    tagId,
+    productId ? `Product ${productId}` : null,
+    pickWarehouseReportString(item, ["ProductCode", "AssetNo", "Code"]),
+    status,
+  ].filter(Boolean);
+
+  return {
+    id: tagId,
+    title: productName,
+    subtitle:
+      subtitleParts.length > 0
+        ? subtitleParts.join(" - ")
+        : tone === "missing"
+          ? `${warehouseName} - Expected asset not scanned`
+          : `${warehouseName} - Present in audit`,
+    tone,
+    icon:
+      tone === "missing"
+        ? "briefcase"
+        : tone === "extra"
+          ? "plus-circle"
+          : "plus-square",
+    reportFields: {
+      hsnCode: pickWarehouseReportString(item, ["HSNCode"]) ?? undefined,
+      productCode:
+        pickWarehouseReportString(item, ["ProductCode", "AssetNo", "Code"]) ??
+        undefined,
+      modelNoAndCatelog:
+        pickWarehouseReportString(item, [
+          "modelNo_and_catelog",
+          "ModelNo",
+          "ModelNoAndCatelog",
+        ]) ?? undefined,
+    },
+  };
+}
+
+function resolveWarehouseReportReferenceId(
+  warehouse: WarehouseSummary,
+  response?: WarehouseDetailsComparisonResponse
+) {
+  const responseReference =
+    response && typeof response === "object"
+      ? pickWarehouseReportString(response, [
+          "ReferanceId",
+          "referanceId",
+          "RefrenceId",
+          "ReferenceId",
+          "referenceId",
+        ])
+      : null;
+
+  const warehouseReference = pickWarehouseReportString(warehouse.raw, [
+    "ReferanceId",
+    "referanceId",
+    "RefrenceId",
+    "ReferenceId",
+    "referenceId",
+  ]);
+  const codeReference = warehouse.code?.startsWith("WH-") ? warehouse.code : null;
+
+  return responseReference ?? warehouseReference ?? codeReference ?? null;
+}
+
+function getEmployeeReportReferenceId(item: EmployeeReportApiItem) {
+  return pickWarehouseReportString(item as Record<string, unknown>, [
+    "ReferanceId",
+    "referanceId",
+    "RefrenceId",
+    "ReferenceId",
+    "referenceId",
+  ]);
+}
+
+async function resolveWarehouseReportReferenceForDate(
+  warehouse: WarehouseSummary,
+  userId: string,
+  reportDate: string
+) {
+  const warehouseReference = resolveWarehouseReportReferenceId(warehouse);
+
+  if (warehouseReference) {
+    return warehouseReference;
+  }
+
+  const reportRows = await apiService.getReportByEmployee(userId, {
+    fromDate: reportDate,
+    toDate: reportDate,
+  });
+  const warehouseReportRows = reportRows
+    .filter((row) => String(row.WareHouseId).trim() === String(warehouse.id).trim())
+    .sort((left, right) => {
+      const leftTime = new Date(left.ScanningDate ?? "").getTime() || 0;
+      const rightTime = new Date(right.ScanningDate ?? "").getTime() || 0;
+      return rightTime - leftTime;
+    });
+
+  return (
+    warehouseReportRows
+      .map(getEmployeeReportReferenceId)
+      .find((referenceId): referenceId is string => Boolean(referenceId)) ?? null
+  );
+}
+
+async function buildWarehouseComparisonReport(
+  warehouse: WarehouseSummary,
+  response: WarehouseDetailsComparisonResponse,
+  requestedDate: string
+): Promise<LatestAuditReport> {
+  const warehouseName = warehouse.name || warehouse.code || `Warehouse ${warehouse.id}`;
+  const referenceId = resolveWarehouseReportReferenceId(warehouse, response);
+  const warehouseData = Array.isArray(response.WarehouseData)
+    ? response.WarehouseData
+    : Array.isArray(response.WareHouseData)
+      ? response.WareHouseData
+      : [];
+  const auditScanData = Array.isArray(response.AuditScanData)
+    ? response.AuditScanData.filter(isScannedWarehouseAuditItem)
+    : [];
+  const observedAt =
+    pickWarehouseReportString(response, ["ObservedAt", "ScanningDate", "ScanDate"]) ??
+    auditScanData
+      .map((row) => pickWarehouseReportString(row, ["ScanDate", "ScanningDate", "ObservedAt"]))
+      .find(Boolean) ??
+    warehouseData
+      .map((row) => pickWarehouseReportString(row, ["ScanDate", "ScanningDate", "ObservedAt"]))
+      .find(Boolean) ??
+    requestedDate;
+  const warehouseEntries = uniqueWarehouseComparisonEntries(warehouseData, "warehouse");
+  const scannedEntries = uniqueWarehouseComparisonEntries(auditScanData, "scanned");
+  const warehouseByKey = new Map(warehouseEntries.map((entry) => [entry.key, entry]));
+  const scannedByKey = new Map(scannedEntries.map((entry) => [entry.key, entry]));
+  const foundItems = warehouseEntries
+    .filter((entry) => scannedByKey.has(entry.key))
+    .map((entry, index) =>
+      mapWarehouseComparisonItemToAuditItem(
+        "found",
+        scannedByKey.get(entry.key)?.item ?? entry.item,
+        index,
+        warehouseName,
+        pickWarehouseReportString(entry.item, ["TagId", "TAG_ID", "TagID", "tagId"])
+      )
+    );
+  const missingItems = warehouseEntries
+    .filter((entry) => !scannedByKey.has(entry.key))
+    .map((entry, index) =>
+      mapWarehouseComparisonItemToAuditItem("missing", entry.item, index, warehouseName)
+    );
+  const extraItems = scannedEntries
+    .filter((entry) => !warehouseByKey.has(entry.key))
+    .map((entry, index) =>
+      mapWarehouseComparisonItemToAuditItem("extra", entry.item, index, warehouseName)
+    );
+  const items = [...foundItems, ...missingItems, ...extraItems];
+  const summary = {
+    found: foundItems.length,
+    missing: missingItems.length,
+    extra: extraItems.length,
+    scanned: scannedEntries.length,
+    expected: warehouseEntries.length,
+  };
+  const excelRows = buildWarehouseExcelRows(items, warehouseName, observedAt);
+
+  return {
+    title: `${warehouseName} Report`,
+    location: warehouseName,
+    mobileMeta: observedAt ? `${warehouseName} - ${observedAt}` : warehouseName,
+    desktopMeta: observedAt ? `${warehouseName} - ${observedAt}` : warehouseName,
+    status: "Submitted",
+    sessionId: null,
+    referenceId,
+    observedAt,
+    summary,
+    items,
+    excelRows,
+    warehouseSections: [
+      {
+        warehouseId: warehouse.id,
+        warehouseName,
+        referenceId,
+        observedAt,
+        summary,
+        items,
+        excelRows,
+      },
+    ],
+  };
 }
 
 //Reusable button component with icon support
@@ -622,7 +953,9 @@ function EmptyResults() {
 //Admin-specific controls for employee report selection
 function AdminReportControls({
   showEmployeeReports,
+  showWarehouseReports,
   onChangeShowEmployeeReports,
+  onChangeShowWarehouseReports,
   selectedEmployee,
   employees,
   isLoadingEmployees,
@@ -633,7 +966,9 @@ function AdminReportControls({
   onRetryEmployeeLoad,
 }: {
   showEmployeeReports: boolean;
+  showWarehouseReports: boolean;
   onChangeShowEmployeeReports: (value: boolean) => void;
+  onChangeShowWarehouseReports: (value: boolean) => void;
   selectedEmployee: UserDetails | null;
   employees: UserDetails[];
   isLoadingEmployees: boolean;
@@ -657,21 +992,33 @@ function AdminReportControls({
           onPress={() => onChangeShowEmployeeReports(false)}
           className="rounded-full border px-3 py-2"
           style={{
-            borderColor: !showEmployeeReports ? adminTheme.primary : adminTheme.border,
-            backgroundColor: !showEmployeeReports ? adminTheme.infoBg : adminTheme.surface,
+            borderColor:
+              !showEmployeeReports && !showWarehouseReports
+                ? adminTheme.primary
+                : adminTheme.border,
+            backgroundColor:
+              !showEmployeeReports && !showWarehouseReports
+                ? adminTheme.infoBg
+                : adminTheme.surface,
           }}
         >
           <Text
             className="text-sm font-medium"
             style={{
-              color: !showEmployeeReports ? adminTheme.primary : adminTheme.slate,
+              color:
+                !showEmployeeReports && !showWarehouseReports
+                  ? adminTheme.primary
+                  : adminTheme.slate,
             }}
           >
             My reports
           </Text>
         </Pressable>
         <Pressable
-          onPress={() => onChangeShowEmployeeReports(true)}
+          onPress={() => {
+            onChangeShowWarehouseReports(false);
+            onChangeShowEmployeeReports(true);
+          }}
           className="rounded-full border px-3 py-2"
           style={{
             borderColor: showEmployeeReports ? adminTheme.primary : adminTheme.border,
@@ -685,6 +1032,23 @@ function AdminReportControls({
             }}
           >
             Employee reports
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onChangeShowWarehouseReports(true)}
+          className="rounded-full border px-3 py-2"
+          style={{
+            borderColor: showWarehouseReports ? adminTheme.primary : adminTheme.border,
+            backgroundColor: showWarehouseReports ? adminTheme.infoBg : adminTheme.surface,
+          }}
+        >
+          <Text
+            className="text-sm font-medium"
+            style={{
+              color: showWarehouseReports ? adminTheme.primary : adminTheme.slate,
+            }}
+          >
+            Warehouse reports
           </Text>
         </Pressable>
       </View>
@@ -787,6 +1151,223 @@ function AdminReportControls({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function WarehouseReportsScreen({
+  warehouses,
+  isMobile,
+  userId,
+  headerControls,
+  onRefreshWarehouseAccess,
+  onSelectReport,
+}: {
+  warehouses: WarehouseSummary[];
+  isMobile: boolean;
+  userId: string;
+  headerControls?: ReactNode;
+  onRefreshWarehouseAccess: () => Promise<WarehouseSummary[]>;
+  onSelectReport: (report: LatestAuditReport) => void;
+}) {
+  const [isRefreshingWarehouses, setIsRefreshingWarehouses] = useState(false);
+  const [warehouseError, setWarehouseError] = useState<string | null>(null);
+  const [loadingWarehouseId, setLoadingWarehouseId] = useState<string | null>(null);
+
+  const handleRefreshWarehouses = useCallback(async () => {
+    try {
+      setIsRefreshingWarehouses(true);
+      setWarehouseError(null);
+      await onRefreshWarehouseAccess();
+    } catch (error) {
+      console.warn("Failed to refresh warehouse access for reports:", error);
+      setWarehouseError("Unable to load assigned warehouses right now.");
+    } finally {
+      setIsRefreshingWarehouses(false);
+    }
+  }, [onRefreshWarehouseAccess]);
+
+  useEffect(() => {
+    if (warehouses.length > 0) {
+      return;
+    }
+
+    void handleRefreshWarehouses();
+  }, [handleRefreshWarehouses, warehouses.length]);
+
+  async function handleOpenWarehouseReport(warehouse: WarehouseSummary) {
+    try {
+      setLoadingWarehouseId(warehouse.id);
+      setWarehouseError(null);
+
+      const currentDate = formatDateOnlyForApi(new Date());
+      const referenceId = await resolveWarehouseReportReferenceForDate(
+        warehouse,
+        userId,
+        currentDate
+      );
+
+      if (!referenceId) {
+        setWarehouseError(
+          "No submitted audit reference was found for this warehouse today."
+        );
+        return;
+      }
+
+      const comparisonResponse =
+        await apiService.getWarehouseDetailsComparisonByWarehouseId(warehouse.id, {
+          referenceId,
+          startDate: currentDate,
+          endDate: currentDate,
+        });
+      const report = await buildWarehouseComparisonReport(
+        warehouse,
+        comparisonResponse,
+        currentDate
+      );
+
+      setLatestAuditReport(report);
+      onSelectReport(report);
+    } catch (error) {
+      console.warn("Failed to load warehouse report:", error);
+      setWarehouseError("Unable to load warehouse report details right now.");
+
+      if (Platform.OS !== "web") {
+        Alert.alert(
+          "Unable to open report",
+          "We couldn't load this warehouse report right now. Please try again."
+        );
+      }
+    } finally {
+      setLoadingWarehouseId(null);
+    }
+  }
+
+  const content = (
+    <>
+      {headerControls ? <View className={isMobile ? "mb-4" : "mb-5"}>{headerControls}</View> : null}
+
+      <View
+        className="rounded-[20px] border px-4 py-4"
+        style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+      >
+        <View className={`${isMobile ? "" : "flex-row items-start justify-between"}`}>
+          <View className="flex-1">
+            <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+              Warehouse wise report
+            </Text>
+            <Text className="mt-2 text-sm leading-5" style={{ color: adminTheme.muted }}>
+              Select an assigned warehouse to view its asset details.
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={handleRefreshWarehouses}
+            disabled={isRefreshingWarehouses}
+            className={`${isMobile ? "mt-4 self-start" : "ml-4"} flex-row items-center rounded-xl border px-4 py-2.5`}
+            style={{
+              borderColor: adminTheme.border,
+              backgroundColor: adminTheme.surfaceAlt,
+              opacity: isRefreshingWarehouses ? 0.75 : 1,
+            }}
+          >
+            {isRefreshingWarehouses ? (
+              <ActivityIndicator size="small" color={adminTheme.primary} />
+            ) : (
+              <Feather name="refresh-cw" size={16} color={adminTheme.slateSoft} />
+            )}
+            <Text className="ml-2 text-sm font-semibold" style={{ color: adminTheme.slate }}>
+              Refresh
+            </Text>
+          </Pressable>
+        </View>
+
+        {warehouseError ? (
+          <View className="mt-4 rounded-[14px] border px-4 py-3" style={{ borderColor: "#F5B5B5", backgroundColor: "#FFF5F5" }}>
+            <Text className="text-sm leading-5" style={{ color: "#D64545" }}>
+              {warehouseError}
+            </Text>
+          </View>
+        ) : null}
+
+        {isRefreshingWarehouses && warehouses.length === 0 ? (
+          <View className="items-center justify-center py-12">
+            <ActivityIndicator size="large" color={adminTheme.primary} />
+            <Text className="mt-3 text-sm" style={{ color: adminTheme.muted }}>
+              Loading assigned warehouses...
+            </Text>
+          </View>
+        ) : warehouses.length === 0 ? (
+          <View className="mt-4 rounded-[14px] border border-dashed px-4 py-4">
+            <Text className="text-sm leading-5" style={{ color: adminTheme.slateSoft }}>
+              No warehouse access is assigned to this user yet.
+            </Text>
+          </View>
+        ) : (
+          <View className="mt-4" style={{ gap: 10 }}>
+            {warehouses.map((warehouse) => {
+              const isLoading = loadingWarehouseId === warehouse.id;
+
+              return (
+                <Pressable
+                  key={warehouse.id}
+                  onPress={() => handleOpenWarehouseReport(warehouse)}
+                  disabled={Boolean(loadingWarehouseId)}
+                  className="rounded-[18px] border px-4 py-4"
+                  style={({ pressed }) => ({
+                    borderColor: adminTheme.border,
+                    backgroundColor: pressed ? adminTheme.infoBg : adminTheme.surfaceAlt,
+                    opacity: loadingWarehouseId && !isLoading ? 0.65 : 1,
+                  })}
+                >
+                  <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
+                    <View className="flex-1">
+                      <Text className="text-base font-semibold" style={{ color: adminTheme.slate }}>
+                        {warehouse.name || warehouse.code || `Warehouse ${warehouse.id}`}
+                      </Text>
+                      <Text className="mt-1 text-sm" style={{ color: adminTheme.slateSoft }}>
+                        {warehouse.subtitle || `Warehouse ID: ${warehouse.id}`}
+                      </Text>
+                    </View>
+
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color={adminTheme.primary} />
+                    ) : (
+                      <Feather name="chevron-right" size={18} color={adminTheme.slateSoft} />
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    </>
+  );
+
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerStyle={
+        isMobile
+          ? { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 16 }
+          : { paddingHorizontal: 20, paddingVertical: 20 }
+      }
+      showsVerticalScrollIndicator={false}
+    >
+      <View className="mb-5">
+        <Text
+          className={isMobile ? "text-[22px] font-semibold" : "text-[28px] font-semibold"}
+          style={{ color: adminTheme.slate }}
+        >
+          Warehouse Reports
+        </Text>
+        <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
+          Review details for warehouses assigned to your account.
+        </Text>
+      </View>
+
+      {content}
+    </ScrollView>
   );
 }
 
@@ -1314,7 +1895,7 @@ async function handleFetchReportByDate() {
 }
 
 export default function ReportsScreen() {
-  const { user } = useAuthSession();
+  const { user, accessibleWarehouses, refreshWarehouseAccess } = useAuthSession();
   const { width } = useWindowDimensions();
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -1323,6 +1904,7 @@ export default function ReportsScreen() {
   const [selectedAdminReport, setSelectedAdminReport] =
     useState<LatestAuditReport | null>(null);
   const [showEmployeeReports, setShowEmployeeReports] = useState(false);
+  const [showWarehouseReports, setShowWarehouseReports] = useState(false);
   const [organizationEmployees, setOrganizationEmployees] = useState<UserDetails[]>([]);
   const [selectedAdminEmployee, setSelectedAdminEmployee] = useState<UserDetails | null>(null);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
@@ -1372,12 +1954,16 @@ export default function ReportsScreen() {
     showEmployeeReports
       ? selectedAdminEmployee?.UserId?.trim() ?? null
       : user?.employeeId ?? null;
-  const adminHeaderTitle = showEmployeeReports
+  const adminHeaderTitle = showWarehouseReports
+    ? "Warehouse Reports"
+    : showEmployeeReports
     ? selectedAdminEmployee
       ? `${getUserDisplayName(selectedAdminEmployee)} Reports`
       : "Employee Reports"
     : "My Reports";
-  const adminHeaderSubtitle = showEmployeeReports
+  const adminHeaderSubtitle = showWarehouseReports
+    ? "Review the audits grouped by warehouse"
+    : showEmployeeReports
     ? selectedAdminEmployee
       ? `Review submitted audits for ${getUserDisplayName(selectedAdminEmployee)}`
       : "Select an employee to review submitted audits."
@@ -1435,8 +2021,21 @@ export default function ReportsScreen() {
   const adminHeaderControls = (
     <AdminReportControls
       showEmployeeReports={showEmployeeReports}
+      showWarehouseReports={showWarehouseReports}
       onChangeShowEmployeeReports={(value) => {
         setShowEmployeeReports(value);
+        if (value) {
+          setShowWarehouseReports(false);
+        }
+        setSelectedAdminReport(null);
+        setIsEmployeePickerOpen(false);
+      }}
+      onChangeShowWarehouseReports={(value) => {
+        setShowWarehouseReports(value);
+        if (value) {
+          setShowEmployeeReports(false);
+          setSelectedAdminEmployee(null);
+        }
         setSelectedAdminReport(null);
         setIsEmployeePickerOpen(false);
       }}
@@ -1502,6 +2101,22 @@ export default function ReportsScreen() {
   }
 
   if (!activeReport) {
+    if (showWarehouseReports) {
+      return (
+        <WarehouseReportsScreen
+          warehouses={accessibleWarehouses}
+          isMobile={isMobile}
+          userId={user.employeeId}
+          headerControls={adminHeaderControls}
+          onRefreshWarehouseAccess={refreshWarehouseAccess}
+          onSelectReport={(report) => {
+            setSelectedAdminReport(report);
+            setLatestAuditReport(report);
+          }}
+        />
+      );
+    }
+
     return (
       <EmployeeReportsScreen
         onSelectReport={(report) => {

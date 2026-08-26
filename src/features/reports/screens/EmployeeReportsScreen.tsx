@@ -48,6 +48,7 @@ type EmployeeReportSummary = {
 
 type EmployeeReportsScreenProps = {
   onSelectReport: (report: LatestAuditReport) => void;
+  onOpenWarehouseReport?: () => void;
   subjectUserId?: string | null;
   title?: string;
   subtitle?: string;
@@ -1373,6 +1374,39 @@ function DateRangeControls({
   );
 }
 
+function WarehouseReportSection({
+  onOpen,
+  accentColor,
+}: {
+  onOpen?: () => void;
+  accentColor: string;
+}) {
+  if (!onOpen) {
+    return null;
+  }
+
+  return (
+    <View
+      className="mb-5 rounded-[18px] border bg-white px-4 py-4"
+      style={{ borderColor: adminTheme.border }}
+    >
+      <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+        Warehouse wise report
+      </Text>
+      <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+        View assets grouped by warehouse and compare warehouse-level audit totals.
+      </Text>
+      <Pressable
+        onPress={onOpen}
+        className="mt-4 rounded-xl px-4 py-2"
+        style={{ backgroundColor: accentColor }}
+      >
+        <Text className="text-sm font-semibold text-white">Open warehouse report</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function DesktopEmployeeReports({
   reports,
   isLoading,
@@ -1380,6 +1414,7 @@ function DesktopEmployeeReports({
   loadingReferenceId,
   onRetry,
   onSelectReport,
+  onOpenWarehouseReport,
   title,
   subtitle,
   accentColor,
@@ -1397,6 +1432,7 @@ function DesktopEmployeeReports({
   loadingReferenceId: string | null;
   onRetry: () => void;
   onSelectReport: (report: LatestAuditReport) => void;
+  onOpenWarehouseReport?: () => void;
   title: string;
   subtitle: string;
   accentColor: string;
@@ -1436,6 +1472,7 @@ function DesktopEmployeeReports({
       </View>
 
       {headerControls ? <View className="mb-5">{headerControls}</View> : null}
+      <WarehouseReportSection onOpen={onOpenWarehouseReport} accentColor={accentColor} />
 
       <View className="mb-5">
         <View
@@ -1540,6 +1577,7 @@ function MobileEmployeeReports({
   loadingReferenceId,
   onRetry,
   onSelectReport,
+  onOpenWarehouseReport,
   title,
   subtitle,
   accentColor,
@@ -1556,6 +1594,7 @@ function MobileEmployeeReports({
   loadingReferenceId: string | null;
   onRetry: () => void;
   onSelectReport: (report: LatestAuditReport) => void;
+  onOpenWarehouseReport?: () => void;
   title: string;
   subtitle: string;
   accentColor: string;
@@ -1583,6 +1622,7 @@ function MobileEmployeeReports({
 
       <View className="px-4 pt-4">
         {headerControls ? <View className="mb-4">{headerControls}</View> : null}
+        <WarehouseReportSection onOpen={onOpenWarehouseReport} accentColor={accentColor} />
 
         {isLoading ? (
           <View className="items-center justify-center py-12">
@@ -1644,6 +1684,7 @@ function MobileEmployeeReports({
 
 export default function EmployeeReportsScreen({
   onSelectReport,
+  onOpenWarehouseReport,
   subjectUserId,
   title = "My Reports",
   subtitle = "Review the audits you have already submitted",
@@ -1878,6 +1919,7 @@ export default function EmployeeReportsScreen({
       loadingReferenceId={loadingReferenceId}
       onRetry={handleRetry}
       onSelectReport={handleSelectReport}
+      onOpenWarehouseReport={onOpenWarehouseReport}
       title={title}
       subtitle={subtitle}
       accentColor={accentColor}
@@ -1896,6 +1938,7 @@ export default function EmployeeReportsScreen({
       loadingReferenceId={loadingReferenceId}
       onRetry={handleRetry}
       onSelectReport={handleSelectReport}
+      onOpenWarehouseReport={onOpenWarehouseReport}
       title={title}
       subtitle={subtitle}
       accentColor={accentColor}
