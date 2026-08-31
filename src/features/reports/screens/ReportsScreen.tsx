@@ -8,6 +8,7 @@ import {
 } from "@/features/reports/state/latestAuditReportStore";
 import { WarehouseSummary } from "@/models/warehouse";
 import {
+  EmployeeReportApiItem,
   UserDetails,
   WarehouseDetailsApiItem,
   WarehouseDetailsComparisonResponse,
@@ -346,6 +347,15 @@ function buildWarehouseExcelRows(
   }));
 }
 
+function getWarehouseReportRowsForWarehouse(
+  reportRows: EmployeeReportApiItem[],
+  warehouse: WarehouseSummary
+) {
+  return reportRows.filter(
+    (row) => String(row.WareHouseId).trim() === String(warehouse.id).trim()
+  );
+}
+
 function isScannedWarehouseAuditItem(item: WarehouseDetailsApiItem) {
   const status =
     pickWarehouseReportString(item, ["Status", "status", "StatusName", "statusName"])?.toLowerCase() ??
@@ -391,6 +401,16 @@ function uniqueWarehouseComparisonEntries(items: WarehouseDetailsApiItem[], sour
       return entries;
     },
     []
+  );
+}
+
+function mergeWarehouseComparisonEntries(
+  primaryItems: WarehouseDetailsApiItem[],
+  fallbackItems: WarehouseDetailsApiItem[]
+) {
+  return uniqueWarehouseComparisonEntries(
+    [...primaryItems, ...fallbackItems],
+    "warehouse"
   );
 }
 
@@ -508,7 +528,8 @@ function getEmployeeReportReferenceId(item: EmployeeReportApiItem) {
 async function resolveWarehouseReportReferenceForDate(
   warehouse: WarehouseSummary,
   userId: string,
-  reportDate: string
+  reportDate: string,
+  preloadedReportRows?: EmployeeReportApiItem[]
 ) {
   const warehouseReference = resolveWarehouseReportReferenceId(warehouse);
 
@@ -516,12 +537,13 @@ async function resolveWarehouseReportReferenceForDate(
     return warehouseReference;
   }
 
-  const reportRows = await apiService.getReportByEmployee(userId, {
-    fromDate: reportDate,
-    toDate: reportDate,
-  });
-  const warehouseReportRows = reportRows
-    .filter((row) => String(row.WareHouseId).trim() === String(warehouse.id).trim())
+  const reportRows =
+    preloadedReportRows ??
+    (await apiService.getReportByEmployee(userId, {
+      fromDate: reportDate,
+      toDate: reportDate,
+    }));
+  const warehouseReportRows = getWarehouseReportRowsForWarehouse(reportRows, warehouse)
     .sort((left, right) => {
       const leftTime = new Date(left.ScanningDate ?? "").getTime() || 0;
       const rightTime = new Date(right.ScanningDate ?? "").getTime() || 0;
@@ -538,7 +560,8 @@ async function resolveWarehouseReportReferenceForDate(
 async function buildWarehouseComparisonReport(
   warehouse: WarehouseSummary,
   response: WarehouseDetailsComparisonResponse,
-  requestedDate: string
+  requestedDate: string,
+  employeeReportRows: EmployeeReportApiItem[] = []
 ): Promise<LatestAuditReport> {
   const warehouseName = warehouse.name || warehouse.code || `Warehouse ${warehouse.id}`;
   const referenceId = resolveWarehouseReportReferenceId(warehouse, response);
@@ -550,6 +573,17 @@ async function buildWarehouseComparisonReport(
   const auditScanData = Array.isArray(response.AuditScanData)
     ? response.AuditScanData.filter(isScannedWarehouseAuditItem)
     : [];
+  const employeeWarehouseData = getWarehouseReportRowsForWarehouse(
+    employeeReportRows,
+    warehouse
+  ).filter((row) => {
+    const productId = pickWarehouseReportString(
+      row as Record<string, unknown>,
+      ["ProductId", "ProductID", "productId"]
+    );
+
+    return Boolean(productId && productId !== "0");
+  }) as WarehouseDetailsApiItem[];
   const observedAt =
     pickWarehouseReportString(response, ["ObservedAt", "ScanningDate", "ScanDate"]) ??
     auditScanData
@@ -559,7 +593,10 @@ async function buildWarehouseComparisonReport(
       .map((row) => pickWarehouseReportString(row, ["ScanDate", "ScanningDate", "ObservedAt"]))
       .find(Boolean) ??
     requestedDate;
-  const warehouseEntries = uniqueWarehouseComparisonEntries(warehouseData, "warehouse");
+  const warehouseEntries = mergeWarehouseComparisonEntries(
+    warehouseData,
+    employeeWarehouseData
+  );
   const scannedEntries = uniqueWarehouseComparisonEntries(auditScanData, "scanned");
   const warehouseByKey = new Map(warehouseEntries.map((entry) => [entry.key, entry]));
   const scannedByKey = new Map(scannedEntries.map((entry) => [entry.key, entry]));
@@ -577,7 +614,12 @@ async function buildWarehouseComparisonReport(
   const missingItems = warehouseEntries
     .filter((entry) => !scannedByKey.has(entry.key))
     .map((entry, index) =>
-      mapWarehouseComparisonItemToAuditItem("missing", entry.item, index, warehouseName)
+      mapWarehouseComparisonItemToAuditItem(
+        "missing",
+        entry.item,
+        index,
+        warehouseName
+      )
     );
   const extraItems = scannedEntries
     .filter((entry) => !warehouseByKey.has(entry.key))
@@ -1200,10 +1242,15 @@ function WarehouseReportsScreen({
       setWarehouseError(null);
 
       const currentDate = formatDateOnlyForApi(new Date());
+      const employeeReportRows = await apiService.getReportByEmployee(userId, {
+        fromDate: currentDate,
+        toDate: currentDate,
+      });
       const referenceId = await resolveWarehouseReportReferenceForDate(
         warehouse,
         userId,
-        currentDate
+        currentDate,
+        employeeReportRows
       );
 
       if (!referenceId) {
@@ -1222,7 +1269,8 @@ function WarehouseReportsScreen({
       const report = await buildWarehouseComparisonReport(
         warehouse,
         comparisonResponse,
-        currentDate
+        currentDate,
+        employeeReportRows
       );
 
       setLatestAuditReport(report);
