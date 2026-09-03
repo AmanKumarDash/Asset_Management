@@ -40,6 +40,12 @@ export type UserDetails = {
   GSTNo?: string;
 } & Record<string, unknown>;
 
+export type UserDetailsPage = {
+  items: UserDetails[];
+  totalRowCount: number | null;
+  rawItemCount: number;
+};
+
 export type UserAddressRequest = {
   Id: number;
   Address1: string;
@@ -225,6 +231,42 @@ function parseOptionalNumber(value: unknown): number | null {
   return null;
 }
 
+function extractCollectionTotalRowCount<T extends Record<string, unknown>>(
+  payload: ApiCollectionEnvelope<T> | T[],
+  items: T[]
+): number | null {
+  if (!Array.isArray(payload) && payload && typeof payload === "object") {
+    const envelope = payload as Record<string, unknown>;
+    const envelopeTotal =
+      parseOptionalNumber(envelope.TotalRowCount) ??
+      parseOptionalNumber(envelope.totalRowCount) ??
+      parseOptionalNumber(envelope.TotalRows) ??
+      parseOptionalNumber(envelope.totalRows) ??
+      parseOptionalNumber(envelope.TotalCount) ??
+      parseOptionalNumber(envelope.totalCount);
+
+    if (envelopeTotal !== null) {
+      return envelopeTotal;
+    }
+  }
+
+  for (const item of items) {
+    const itemTotal =
+      parseOptionalNumber(item.TotalRowCount) ??
+      parseOptionalNumber(item.totalRowCount) ??
+      parseOptionalNumber(item.TotalRows) ??
+      parseOptionalNumber(item.totalRows) ??
+      parseOptionalNumber(item.TotalCount) ??
+      parseOptionalNumber(item.totalCount);
+
+    if (itemTotal !== null) {
+      return itemTotal;
+    }
+  }
+
+  return null;
+}
+
 function normalizeRfidMachines(cartRows: CartResponseData[]): RfidMachineSummary[] {
   const machinesByNo = new Map<string, RfidMachineSummary>();
 
@@ -368,22 +410,34 @@ class ApiService {
     return extractResponseData<LoginResponse>(response.data);
   }
 
+  async getUserDetailsPage(
+    userId = "",
+    pageNo = 1,
+    rowCount = 10
+  ): Promise<UserDetailsPage> {
+    assertApiBaseUrlConfigured();
+
+    const response = await this.api.get<
+      ApiCollectionEnvelope<UserDetails> | UserDetails[]
+    >(ENDPOINTS.AUTH.GET_USER_DETAILS(userId, pageNo, rowCount));
+
+    const data = extractResponseCollection<UserDetails>(response.data);
+
+    return {
+      items: data.filter((user) => user.UserType === 3),
+      totalRowCount: extractCollectionTotalRowCount(response.data, data),
+      rawItemCount: data.length,
+    };
+  }
+
   async getUserDetails(
-  userId = "",
-  pageNo = 1,
-  rowCount = 10
-): Promise<UserDetails[]> {
-  assertApiBaseUrlConfigured();
-
-  const response = await this.api.get<
-    ApiCollectionEnvelope<UserDetails> | UserDetails[]
-  >(ENDPOINTS.AUTH.GET_USER_DETAILS(userId, pageNo, rowCount));
-
-  const data = extractResponseCollection<UserDetails>(response.data);
-
-  //  IMPORTANT: filter UserType = 3
-  return data.filter((user) => user.UserType === 3);
-}
+    userId = "",
+    pageNo = 1,
+    rowCount = 10
+  ): Promise<UserDetails[]> {
+    const page = await this.getUserDetailsPage(userId, pageNo, rowCount);
+    return page.items;
+  }
 
   // Loads organization details for the currently authenticated user after the bearer token is attached.
   async getOrganizationDetails(): Promise<OrganizationDetails> {

@@ -119,14 +119,24 @@ function formatEmployee(user: UserDetails, index: number): EmployeeListEntry {
   };
 }
 
-function SummaryCards({ employees }: { employees: EmployeeListEntry[] }) {
+function SummaryCards({
+  employees,
+  totalRows,
+}: {
+  employees: EmployeeListEntry[];
+  totalRows: number | null;
+}) {
   const activeEmployees = employees.filter(
     (employee) => employee.statusTone === "success"
   ).length;
   const inactiveEmployees = employees.length - activeEmployees;
 
   const cards = [
-    { label: "Total employees", value: String(employees.length), color: adminTheme.primary },
+    {
+      label: "Total employees",
+      value: String(totalRows ?? employees.length),
+      color: adminTheme.primary,
+    },
     { label: "Active now", value: String(activeEmployees), color: adminTheme.successText },
     { label: "Inactive", value: String(inactiveEmployees), color: adminTheme.mutedText },
   ];
@@ -364,12 +374,14 @@ function MobileEmployees({
   onEdit,
   onDelete,
   onLoadMore,
+  totalRows,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
   canEdit: boolean;
   hasMore: boolean;
   isLoadingMore: boolean;
+  totalRows: number | null;
   onAdd: () => void;
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
@@ -437,7 +449,7 @@ function MobileEmployees({
       </View>
 
       <View className="px-4 pt-4">
-        <SummaryCards employees={employees} />
+        <SummaryCards employees={employees} totalRows={totalRows} />
 
         {employees.map((employee, index) => (
           <Pressable
@@ -527,12 +539,14 @@ function DesktopEmployees({
   onEdit,
   onDelete,
   onLoadMore,
+  totalRows,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
   canEdit: boolean;
   hasMore: boolean;
   isLoadingMore: boolean;
+  totalRows: number | null;
   onAdd: () => void;
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
@@ -574,7 +588,7 @@ function DesktopEmployees({
         </View>
       </View>
 
-      <SummaryCards employees={employees} />
+      <SummaryCards employees={employees} totalRows={totalRows} />
       <EmployeeTable
         employees={employees}
         canAdd={false}
@@ -796,6 +810,7 @@ export default function EmployeesScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreEmployees, setHasMoreEmployees] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
+  const [totalEmployeeRows, setTotalEmployeeRows] = useState<number | null>(null);
   const employeeRequestIdRef = useRef(0);
   const [employeeToDelete, setEmployeeToDelete] =
     useState<EmployeeListEntry | null>(null);
@@ -857,16 +872,18 @@ export default function EmployeesScreen() {
       setLoading(true);
       setHasMoreEmployees(true);
       setCurrentPage(0);
+      setTotalEmployeeRows(null);
     } else {
       setLoadingMore(true);
     }
 
     try {
-      const data = await apiService.getUserDetails(
+      const page = await apiService.getUserDetailsPage(
         "",
         pageNo,
         EMPLOYEE_PAGE_SIZE
       );
+      const data = page.items;
 
       if (employeeRequestIdRef.current !== requestId) {
         return;
@@ -894,7 +911,12 @@ export default function EmployeesScreen() {
         return [...currentEmployees, ...newEmployees];
       });
       setCurrentPage(pageNo);
-      setHasMoreEmployees(data.length > 0);
+      setTotalEmployeeRows(page.totalRowCount);
+      setHasMoreEmployees(
+        page.totalRowCount !== null
+          ? pageNo * EMPLOYEE_PAGE_SIZE < page.totalRowCount
+          : page.rawItemCount >= EMPLOYEE_PAGE_SIZE
+      );
     } catch (error) {
       console.error(error);
     } finally {
@@ -928,6 +950,20 @@ export default function EmployeesScreen() {
       void fetchUsers();
     }, [fetchUsers])
   );
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMoreEmployees || currentPage < 1) {
+      return;
+    }
+
+    void fetchUsersPage(currentPage + 1);
+  }, [
+    currentPage,
+    fetchUsersPage,
+    hasMoreEmployees,
+    loading,
+    loadingMore,
+  ]);
 
   useEffect(() => {
     const routeNotice = Array.isArray(notice) ? notice[0] : notice;
@@ -982,6 +1018,7 @@ export default function EmployeesScreen() {
           canEdit={canManageEmployees}
           hasMore={hasMoreEmployees}
           isLoadingMore={loadingMore}
+          totalRows={totalEmployeeRows}
           onAdd={openAddEmployee}
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
@@ -994,6 +1031,7 @@ export default function EmployeesScreen() {
           canEdit={canManageEmployees}
           hasMore={hasMoreEmployees}
           isLoadingMore={loadingMore}
+          totalRows={totalEmployeeRows}
           onAdd={openAddEmployee}
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
