@@ -1,37 +1,38 @@
 import {
-    AuditReportFields,
-    AuditScanItem,
+  AuditReportFields,
+  AuditScanItem,
 } from "@/features/audits/data/auditScanData";
 import {
-    AuditReportTone,
-    AuditSummary,
-    WarehouseTagLocationItem,
+  AuditReportTone,
+  AuditSummary,
+  WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
-    PersistedAuditReportSession,
-    getAuditReportSessionsForUser,
+  PersistedAuditReportSession,
+  getAuditReportSessionsForUser,
 } from "@/features/reports/state/auditReportSessionStore";
 import {
-    LatestAuditReport,
-    LatestAuditReportExcelRow,
-    LatestAuditReportWarehouseSection,
+  LatestAuditReport,
+  LatestAuditReportExcelRow,
+  LatestAuditReportWarehouseSection,
 } from "@/features/reports/state/latestAuditReportStore";
 import { WarehouseSummary } from "@/models/warehouse";
 import { EmployeeReportApiItem, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
-    useWindowDimensions,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
 
@@ -1374,6 +1375,113 @@ function DateRangeControls({
   );
 }
 
+function SearchFilterControls({
+  searchQuery,
+  onSearchChange,
+  selectedWarehouse,
+  onWarehouseChange,
+  availableWarehouses,
+  accentColor,
+}: {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedWarehouse: string | null;
+  onWarehouseChange: (warehouse: string | null) => void;
+  availableWarehouses: string[];
+  accentColor: string;
+}) {
+  return (
+    <View
+      className="rounded-[20px] border px-4 py-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <Text className="text-sm font-medium" style={{ color: adminTheme.slateSoft }}>
+        Search & Filter
+      </Text>
+
+      <View className="mt-3 gap-3">
+        {/* Search Bar */}
+        <View
+          className="flex-row items-center rounded-xl border px-3 py-2.5"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <Feather name="search" size={16} color={adminTheme.muted} />
+          <TextInput
+            placeholder="Search by employee name, location, or product..."
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholderTextColor={adminTheme.muted}
+            className="ml-2 flex-1 text-sm"
+            style={{ color: adminTheme.slate }}
+          />
+          {searchQuery ? (
+            <Pressable onPress={() => onSearchChange("")}>
+              <Feather name="x" size={16} color={adminTheme.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Warehouse Filter */}
+        {availableWarehouses.length > 0 ? (
+          <View className="gap-2">
+            <Text className="text-xs" style={{ color: adminTheme.muted }}>
+              Warehouse
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              <Pressable
+                onPress={() => onWarehouseChange(null)}
+                className="rounded-full px-3 py-2"
+                style={{
+                  backgroundColor:
+                    selectedWarehouse === null ? accentColor : adminTheme.surfaceAlt,
+                }}
+              >
+                <Text
+                  className="text-xs font-medium"
+                  style={{
+                    color:
+                      selectedWarehouse === null
+                        ? "white"
+                        : adminTheme.slate,
+                  }}
+                >
+                  All
+                </Text>
+              </Pressable>
+
+              {availableWarehouses.map((warehouse) => (
+                <Pressable
+                  key={warehouse}
+                  onPress={() => onWarehouseChange(warehouse)}
+                  className="rounded-full px-3 py-2"
+                  style={{
+                    backgroundColor:
+                      selectedWarehouse === warehouse
+                        ? accentColor
+                        : adminTheme.surfaceAlt,
+                  }}
+                >
+                  <Text
+                    className="text-xs font-medium"
+                    style={{
+                      color:
+                        selectedWarehouse === warehouse
+                          ? "white"
+                          : adminTheme.slate,
+                    }}
+                  >
+                    {warehouse}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function WarehouseReportSection({
   onOpen,
   accentColor,
@@ -1425,6 +1533,12 @@ function DesktopEmployeeReports({
   missingSubjectMessage,
   hasSubjectUserId,
   retryButtonColor,
+  searchQuery,
+  onSearchChange,
+  selectedWarehouse,
+  onWarehouseChange,
+  availableWarehouses,
+  filteredReports,
 }: {
   reports: EmployeeReportSummary[];
   isLoading: boolean;
@@ -1443,6 +1557,12 @@ function DesktopEmployeeReports({
   missingSubjectMessage: string;
   hasSubjectUserId: boolean;
   retryButtonColor: string;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedWarehouse: string | null;
+  onWarehouseChange: (warehouse: string | null) => void;
+  availableWarehouses: string[];
+  filteredReports: EmployeeReportSummary[];
 }) {
   return (
     <ScrollView
@@ -1474,16 +1594,29 @@ function DesktopEmployeeReports({
       {headerControls ? <View className="mb-5">{headerControls}</View> : null}
       <WarehouseReportSection onOpen={onOpenWarehouseReport} accentColor={accentColor} />
 
+      {!isLoading && !errorMessage && hasSubjectUserId && reports.length > 0 ? (
+        <View className="mb-5">
+          <SearchFilterControls
+            searchQuery={searchQuery}
+            onSearchChange={onSearchChange}
+            selectedWarehouse={selectedWarehouse}
+            onWarehouseChange={onWarehouseChange}
+            availableWarehouses={availableWarehouses}
+            accentColor={accentColor}
+          />
+        </View>
+      ) : null}
+
       <View className="mb-5">
         <View
           className="rounded-[18px] border px-4 py-4"
           style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
         >
           <Text className="text-[28px] font-semibold" style={{ color: accentColor }}>
-            {reports.length}
+            {filteredReports.length}
           </Text>
           <Text className="mt-1 text-sm" style={{ color: adminTheme.muted }}>
-            Submitted reports
+            Submitted reports {searchQuery || selectedWarehouse ? `(filtered)` : ""}
           </Text>
         </View>
       </View>
@@ -1499,7 +1632,9 @@ function DesktopEmployeeReports({
         <EmptyState message={errorMessage} onRetry={onRetry} retryButtonColor={retryButtonColor} />
       ) : !hasSubjectUserId ? (
         <EmptyState message={missingSubjectMessage} />
-      ) : reports.length === 0 ? (
+      ) : filteredReports.length === 0 && reports.length > 0 ? (
+        <EmptyState message="No reports match your search or filter criteria." />
+      ) : filteredReports.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
         <View
@@ -1526,14 +1661,14 @@ function DesktopEmployeeReports({
             </View>
           </View>
 
-          {reports.map((report, index) => (
+          {filteredReports.map((report, index) => (
             <Pressable
               key={report.id}
               onPress={() => onSelectReport(report.report)}
               disabled={loadingReferenceId === report.referenceId}
-              className={`px-4 py-3.5 ${index < reports.length - 1 ? "border-b" : ""}`}
+              className={`px-4 py-3.5 ${index < filteredReports.length - 1 ? "border-b" : ""}`}
               style={({ pressed }) => ({
-                borderColor: index < reports.length - 1 ? adminTheme.border : undefined,
+                borderColor: index < filteredReports.length - 1 ? adminTheme.border : undefined,
                 backgroundColor:
                   pressed || loadingReferenceId === report.referenceId
                     ? adminTheme.infoBg
@@ -1587,6 +1722,12 @@ function MobileEmployeeReports({
   missingSubjectMessage,
   hasSubjectUserId,
   retryButtonColor,
+  searchQuery,
+  onSearchChange,
+  selectedWarehouse,
+  onWarehouseChange,
+  availableWarehouses,
+  filteredReports,
 }: {
   reports: EmployeeReportSummary[];
   isLoading: boolean;
@@ -1604,6 +1745,12 @@ function MobileEmployeeReports({
   missingSubjectMessage: string;
   hasSubjectUserId: boolean;
   retryButtonColor: string;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedWarehouse: string | null;
+  onWarehouseChange: (warehouse: string | null) => void;
+  availableWarehouses: string[];
+  filteredReports: EmployeeReportSummary[];
 }) {
   return (
     <ScrollView
@@ -1624,6 +1771,19 @@ function MobileEmployeeReports({
         {headerControls ? <View className="mb-4">{headerControls}</View> : null}
         <WarehouseReportSection onOpen={onOpenWarehouseReport} accentColor={accentColor} />
 
+        {!isLoading && !errorMessage && hasSubjectUserId && reports.length > 0 ? (
+          <View className="mb-4">
+            <SearchFilterControls
+              searchQuery={searchQuery}
+              onSearchChange={onSearchChange}
+              selectedWarehouse={selectedWarehouse}
+              onWarehouseChange={onWarehouseChange}
+              availableWarehouses={availableWarehouses}
+              accentColor={accentColor}
+            />
+          </View>
+        ) : null}
+
         {isLoading ? (
           <View className="items-center justify-center py-12">
             <ActivityIndicator size="large" color={accentColor} />
@@ -1635,16 +1795,18 @@ function MobileEmployeeReports({
           <EmptyState message={errorMessage} onRetry={onRetry} retryButtonColor={retryButtonColor} />
         ) : !hasSubjectUserId ? (
           <EmptyState message={missingSubjectMessage} />
-        ) : reports.length === 0 ? (
+        ) : filteredReports.length === 0 && reports.length > 0 ? (
+          <EmptyState message="No reports match your search or filter criteria." />
+        ) : filteredReports.length === 0 ? (
           <EmptyState message={emptyMessage} />
         ) : (
-          reports.map((report, index) => (
+          filteredReports.map((report, index) => (
             <Pressable
               key={report.id}
               onPress={() => onSelectReport(report.report)}
               disabled={loadingReferenceId === report.referenceId}
               className={`rounded-[18px] border bg-white p-4 ${
-                index < reports.length - 1 ? "mb-3" : ""
+                index < filteredReports.length - 1 ? "mb-3" : ""
               }`}
               style={({ pressed }) => ({
                 borderColor: adminTheme.border,
@@ -1709,6 +1871,45 @@ export default function EmployeeReportsScreen({
   const [selectedEndDate, setSelectedEndDate] = useState<Date>(() => getTodayDate());
   const [appliedStartDate, setAppliedStartDate] = useState<Date>(() => getTodayDate());
   const [appliedEndDate, setAppliedEndDate] = useState<Date>(() => getTodayDate());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null);
+
+  // Extract unique warehouses from reports
+  const uniqueWarehouses = useMemo(() => {
+    const warehouses = new Set<string>();
+    reports.forEach((report) => {
+      if (report.location) {
+        // Handle "Warehouses" prefix and comma-separated values
+        const locations = report.location
+          .replace(/^Warehouses\s+/, "")
+          .split(",")
+          .map((loc) => loc.trim());
+        locations.forEach((loc) => {
+          if (loc) warehouses.add(loc);
+        });
+      }
+    });
+    return Array.from(warehouses).sort();
+  }, [reports]);
+
+  // Filter reports based on search query and warehouse
+  const filteredReports = useMemo(() => {
+    return reports.filter((report) => {
+      // Warehouse filter
+      if (selectedWarehouse && !report.location.includes(selectedWarehouse)) {
+        return false;
+      }
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const searchableText = `${report.title} ${report.location} ${report.scannedLabel}`.toLowerCase();
+        return searchableText.includes(query);
+      }
+
+      return true;
+    });
+  }, [reports, searchQuery, selectedWarehouse]);
 
   const handleChangeStartDate = (date: Date) => {
     const normalizedDate = normalizeDateOnly(date);
@@ -1924,11 +2125,17 @@ export default function EmployeeReportsScreen({
       subtitle={subtitle}
       accentColor={accentColor}
       headerControls={resolvedHeaderControls}
-      loadingMessage={loadingMessage}
+      loadingMessage={loadingMessage} 
       emptyMessage={resolvedEmptyMessage}
       missingSubjectMessage={missingSubjectMessage}
       hasSubjectUserId={Boolean(resolvedSubjectUserId)}
       retryButtonColor={resolvedRetryButtonColor}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      selectedWarehouse={selectedWarehouse}
+      onWarehouseChange={setSelectedWarehouse}
+      availableWarehouses={uniqueWarehouses}
+      filteredReports={filteredReports}
     />
   ) : (
     <DesktopEmployeeReports
@@ -1949,6 +2156,12 @@ export default function EmployeeReportsScreen({
       missingSubjectMessage={missingSubjectMessage}
       hasSubjectUserId={Boolean(resolvedSubjectUserId)}
       retryButtonColor={resolvedRetryButtonColor}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      selectedWarehouse={selectedWarehouse}
+      onWarehouseChange={setSelectedWarehouse}
+      availableWarehouses={uniqueWarehouses}
+      filteredReports={filteredReports}
     />
   );
 }

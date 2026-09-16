@@ -4,7 +4,7 @@ import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { Href, router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   GestureResponderEvent,
@@ -14,6 +14,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -119,12 +120,94 @@ function formatEmployee(user: UserDetails, index: number): EmployeeListEntry {
   };
 }
 
+function SearchFilterControls({
+  searchQuery,
+  onSearchChange,
+  selectedStatus,
+  onStatusChange,
+}: {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedStatus: "all" | "active" | "inactive";
+  onStatusChange: (status: "all" | "active" | "inactive") => void;
+}) {
+  return (
+    <View
+      className="rounded-[20px] border px-4 py-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <Text className="text-sm font-medium" style={{ color: adminTheme.slateSoft }}>
+        Search & Filter
+      </Text>
+
+      <View className="mt-3 gap-3">
+        {/* Search Bar */}
+        <View
+          className="flex-row items-center rounded-xl border px-3 py-2.5"
+          style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
+        >
+          <Feather name="search" size={16} color={adminTheme.muted} />
+          <TextInput
+            placeholder="Search by name, email, or employee ID..."
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholderTextColor={adminTheme.muted}
+            className="ml-2 flex-1 text-sm"
+            style={{ color: adminTheme.slate }}
+          />
+          {searchQuery ? (
+            <Pressable onPress={() => onSearchChange("")}>
+              <Feather name="x" size={16} color={adminTheme.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Status Filter */}
+        <View className="gap-2">
+          <Text className="text-xs" style={{ color: adminTheme.muted }}>
+            Status
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {(["all", "active", "inactive"] as const).map((status) => (
+              <Pressable
+                key={status}
+                onPress={() => onStatusChange(status)}
+                className="rounded-full px-3 py-2"
+                style={{
+                  backgroundColor:
+                    selectedStatus === status
+                      ? adminTheme.primary
+                      : adminTheme.surfaceAlt,
+                }}
+              >
+                <Text
+                  className="text-xs font-medium capitalize"
+                  style={{
+                    color:
+                      selectedStatus === status
+                        ? "white"
+                        : adminTheme.slate,
+                  }}
+                >
+                  {status}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function SummaryCards({
   employees,
   totalRows,
+  filteredCount,
 }: {
   employees: EmployeeListEntry[];
   totalRows: number | null;
+  filteredCount?: number;
 }) {
   const activeEmployees = employees.filter(
     (employee) => employee.statusTone === "success"
@@ -134,7 +217,7 @@ function SummaryCards({
   const cards = [
     {
       label: "Total employees",
-      value: String(totalRows ?? employees.length),
+      value: String(filteredCount ?? totalRows ?? employees.length),
       color: adminTheme.primary,
     },
     { label: "Active now", value: String(activeEmployees), color: adminTheme.successText },
@@ -238,73 +321,83 @@ function EmployeeTable({
         ) : null}
       </View>
 
-      {employees.map((employee, index) => (
-        <Pressable
-          key={employee.userId}
-          onPress={canEdit ? () => onEdit(employee.userId) : undefined}
-          className={`px-5 py-4 ${index < employees.length - 1 ? "border-b" : ""}`}
-          style={
-            index < employees.length - 1
-              ? { borderColor: adminTheme.border }
-              : undefined
-          }
-        >
-          <View className="flex-row items-center">
-            <View className="flex-[1.6] flex-row items-center">
-              <View
-                className="mr-3 h-10 w-10 items-center justify-center rounded-full"
-                style={{ backgroundColor: employee.avatarBg }}
-              >
-                <Text className="text-sm font-semibold" style={{ color: employee.avatarText }}>
-                  {employee.initials}
-                </Text>
-              </View>
-              <Text className="text-sm font-medium" style={{ color: adminTheme.slate }}>
-                {employee.name}
-              </Text>
-            </View>
+      {employees.length === 0 ? (
+        <View className="items-center px-5 py-8">
+          <Text className="text-sm" style={{ color: adminTheme.muted }}>
+            No employees match your search criteria.
+          </Text>
+        </View>
+      ) : (
+        <>
+          {employees.map((employee, index) => (
+            <Pressable
+              key={employee.userId}
+              onPress={canEdit ? () => onEdit(employee.userId) : undefined}
+              className={`px-5 py-4 ${index < employees.length - 1 ? "border-b" : ""}`}
+              style={
+                index < employees.length - 1
+                  ? { borderColor: adminTheme.border }
+                  : undefined
+              }
+            >
+              <View className="flex-row items-center">
+                <View className="flex-[1.6] flex-row items-center">
+                  <View
+                    className="mr-3 h-10 w-10 items-center justify-center rounded-full"
+                    style={{ backgroundColor: employee.avatarBg }}
+                  >
+                    <Text className="text-sm font-semibold" style={{ color: employee.avatarText }}>
+                      {employee.initials}
+                    </Text>
+                  </View>
+                  <Text className="text-sm font-medium" style={{ color: adminTheme.slate }}>
+                    {employee.name}
+                  </Text>
+                </View>
 
-            <Text className="flex-[1.2] text-sm" style={{ color: adminTheme.slate }}>
-              {employee.mobile}
-            </Text>
-            <Text className="flex-[1.8] text-sm" style={{ color: adminTheme.slate }}>
-              {employee.email}
-            </Text>
-            <Text className="flex-[1.1] text-sm" style={{ color: adminTheme.slate }}>
-              {employee.userId}
-            </Text>
-            {/* Status column hidden for now */}
-            {canEdit ? (
-              <>
-                <View className="flex-[0.7] items-end">
-                  <Pressable
-                    onPress={(event) => {
-                      stopRowPress(event);
-                      onEdit(employee.userId);
-                    }}
-                    className="h-9 w-9 items-center justify-center rounded-full"
-                    style={{ backgroundColor: adminTheme.infoBg }}
-                  >
-                    <Feather name="edit-2" size={16} color={adminTheme.primary} />
-                  </Pressable>
-                </View>
-                <View className="flex-[0.7] items-end">
-                  <Pressable
-                    onPress={(event) => {
-                      stopRowPress(event);
-                      onDelete(employee);
-                    }}
-                    className="h-9 w-9 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "#FEE2E2" }}
-                  >
-                    <Feather name="trash-2" size={16} color="#DC2626" />
-                  </Pressable>
-                </View>
-              </>
-            ) : null}
-          </View>
-        </Pressable>
-      ))}
+                <Text className="flex-[1.2] text-sm" style={{ color: adminTheme.slate }}>
+                  {employee.mobile}
+                </Text>
+                <Text className="flex-[1.8] text-sm" style={{ color: adminTheme.slate }}>
+                  {employee.email}
+                </Text>
+                <Text className="flex-[1.1] text-sm" style={{ color: adminTheme.slate }}>
+                  {employee.userId}
+                </Text>
+                {/* Status column hidden for now */}
+                {canEdit ? (
+                  <>
+                    <View className="flex-[0.7] items-end">
+                      <Pressable
+                        onPress={(event) => {
+                          stopRowPress(event);
+                          onEdit(employee.userId);
+                        }}
+                        className="h-9 w-9 items-center justify-center rounded-full"
+                        style={{ backgroundColor: adminTheme.infoBg }}
+                      >
+                        <Feather name="edit-2" size={16} color={adminTheme.primary} />
+                      </Pressable>
+                    </View>
+                    <View className="flex-[0.7] items-end">
+                      <Pressable
+                        onPress={(event) => {
+                          stopRowPress(event);
+                          onDelete(employee);
+                        }}
+                        className="h-9 w-9 items-center justify-center rounded-full"
+                        style={{ backgroundColor: "#FEE2E2" }}
+                      >
+                        <Feather name="trash-2" size={16} color="#DC2626" />
+                      </Pressable>
+                    </View>
+                  </>
+                ) : null}
+              </View>
+            </Pressable>
+          ))}
+        </>
+      )}
     </View>
   );
 }
@@ -375,6 +468,11 @@ function MobileEmployees({
   onDelete,
   onLoadMore,
   totalRows,
+  searchQuery,
+  onSearchChange,
+  selectedStatus,
+  onStatusChange,
+  filteredEmployees,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
@@ -386,6 +484,11 @@ function MobileEmployees({
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
   onLoadMore: () => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedStatus: "all" | "active" | "inactive";
+  onStatusChange: (status: "all" | "active" | "inactive") => void;
+  filteredEmployees: EmployeeListEntry[];
 }) {
   const stopCardPress = (event: GestureResponderEvent) => {
     event.stopPropagation();
@@ -449,20 +552,47 @@ function MobileEmployees({
       </View>
 
       <View className="px-4 pt-4">
-        <SummaryCards employees={employees} totalRows={totalRows} />
+        <SummaryCards employees={filteredEmployees} totalRows={totalRows} filteredCount={filteredEmployees.length} />
 
-        {employees.map((employee, index) => (
-          <Pressable
-            key={employee.userId}
-            onPress={canEdit ? () => onEdit(employee.userId) : undefined}
-            className={`rounded-[20px] border px-4 py-4 ${
-              index < employees.length - 1 ? "mb-3" : ""
-            }`}
+        {employees.length > 0 ? (
+          <View className="mb-4">
+            <SearchFilterControls
+              searchQuery={searchQuery}
+              onSearchChange={onSearchChange}
+              selectedStatus={selectedStatus}
+              onStatusChange={onStatusChange}
+            />
+          </View>
+        ) : null}
+
+        {filteredEmployees.length === 0 && employees.length > 0 ? (
+          <View
+            className="rounded-[20px] border px-5 py-6"
             style={{
               borderColor: adminTheme.border,
               backgroundColor: adminTheme.surface,
             }}
           >
+            <Text className="text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+              No employees match your search
+            </Text>
+            <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+              Try adjusting your search query or filters.
+            </Text>
+          </View>
+        ) : (
+          filteredEmployees.map((employee, index) => (
+            <Pressable
+              key={employee.userId}
+              onPress={canEdit ? () => onEdit(employee.userId) : undefined}
+              className={`rounded-[20px] border px-4 py-4 ${
+                index < filteredEmployees.length - 1 ? "mb-3" : ""
+              }`}
+              style={{
+                borderColor: adminTheme.border,
+                backgroundColor: adminTheme.surface,
+              }}
+            >
               <View className="mb-4 flex-row items-start justify-between gap-3">
               <View className="flex-1 flex-row items-center">
                 <View
@@ -522,7 +652,8 @@ function MobileEmployees({
               </View>
             ) : null}
           </Pressable>
-        ))}
+          ))
+        )}
         <LoadMoreFooter hasMore={hasMore} isLoadingMore={isLoadingMore} />
       </View>
     </ScrollView>
@@ -540,6 +671,11 @@ function DesktopEmployees({
   onDelete,
   onLoadMore,
   totalRows,
+  searchQuery,
+  onSearchChange,
+  selectedStatus,
+  onStatusChange,
+  filteredEmployees,
 }: {
   employees: EmployeeListEntry[];
   canAdd: boolean;
@@ -551,6 +687,11 @@ function DesktopEmployees({
   onEdit: (employeeId: string) => void;
   onDelete: (employee: EmployeeListEntry) => void;
   onLoadMore: () => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  selectedStatus: "all" | "active" | "inactive";
+  onStatusChange: (status: "all" | "active" | "inactive") => void;
+  filteredEmployees: EmployeeListEntry[];
 }) {
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -588,9 +729,21 @@ function DesktopEmployees({
         </View>
       </View>
 
-      <SummaryCards employees={employees} totalRows={totalRows} />
+      <SummaryCards employees={filteredEmployees} totalRows={totalRows} filteredCount={filteredEmployees.length} />
+      
+      {employees.length > 0 ? (
+        <View className="mb-5">
+          <SearchFilterControls
+            searchQuery={searchQuery}
+            onSearchChange={onSearchChange}
+            selectedStatus={selectedStatus}
+            onStatusChange={onStatusChange}
+          />
+        </View>
+      ) : null}
+      
       <EmployeeTable
-        employees={employees}
+        employees={filteredEmployees}
         canAdd={false}
         canEdit={canEdit}
         onAdd={onAdd}
@@ -817,6 +970,30 @@ export default function EmployeesScreen() {
   const [employeeNotice, setEmployeeNotice] = useState<EmployeeNotice | null>(null);
   const [isDeletingEmployee, setIsDeletingEmployee] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<"all" | "active" | "inactive">("all");
+
+  // Filter employees based on search and status
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((employee) => {
+      // Status filter
+      if (selectedStatus === "active" && employee.statusTone !== "success") {
+        return false;
+      }
+      if (selectedStatus === "inactive" && employee.statusTone === "success") {
+        return false;
+      }
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const searchableText = `${employee.name} ${employee.email} ${employee.userId} ${employee.mobile}`.toLowerCase();
+        return searchableText.includes(query);
+      }
+
+      return true;
+    });
+  }, [employees, searchQuery, selectedStatus]);
 
   const openAddEmployee = () => router.push("/employees/new");
   const openEditEmployee = (employeeId: string) =>
@@ -1023,6 +1200,11 @@ export default function EmployeesScreen() {
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
           onLoadMore={loadMoreEmployees}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedStatus={selectedStatus}
+          onStatusChange={setSelectedStatus}
+          filteredEmployees={filteredEmployees}
         />
       ) : (
         <DesktopEmployees
@@ -1036,6 +1218,11 @@ export default function EmployeesScreen() {
           onEdit={openEditEmployee}
           onDelete={requestDeleteEmployee}
           onLoadMore={loadMoreEmployees}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedStatus={selectedStatus}
+          onStatusChange={setSelectedStatus}
+          filteredEmployees={filteredEmployees}
         />
       )}
 
