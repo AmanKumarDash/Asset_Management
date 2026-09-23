@@ -6,9 +6,8 @@ import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
-import { ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -427,75 +426,16 @@ function GunScannerCapture({
   onScanCode: (value: string, source: ScanSource) => void;
 }) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<TextInput>(null);
-  const keyboardBufferRef = useRef("");
 
-  const submitValue = useCallback((nextValue = value) => {
-    const normalizedValue = nextValue.trim();
+  const submitValue = () => {
+    const normalizedValue = value.trim();
 
     if (!normalizedValue || !isScanning) {
       return;
     }
 
     onScanCode(normalizedValue, "gun");
-    keyboardBufferRef.current = "";
     setValue("");
-  }, [isScanning, onScanCode, value]);
-
-  useEffect(() => {
-    if (!isScanning) {
-      return;
-    }
-
-    const focusInput = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(focusInput);
-  }, [isScanning]);
-
-  useEffect(() => {
-    if (!isScanning || Platform.OS !== "web") {
-      keyboardBufferRef.current = "";
-      return;
-    }
-
-    const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.altKey || event.metaKey) {
-        return;
-      }
-
-      if (event.key === "Enter" || event.key === "Tab") {
-        if (keyboardBufferRef.current.trim()) {
-          event.preventDefault();
-          submitValue(keyboardBufferRef.current);
-        }
-        return;
-      }
-
-      if (event.key === "Backspace") {
-        keyboardBufferRef.current = keyboardBufferRef.current.slice(0, -1);
-        setValue(keyboardBufferRef.current);
-        return;
-      }
-
-      if (event.key.length !== 1) {
-        return;
-      }
-
-      event.preventDefault();
-      keyboardBufferRef.current += event.key;
-      setValue(keyboardBufferRef.current);
-    };
-
-    window.addEventListener("keydown", handleWindowKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleWindowKeyDown);
-      keyboardBufferRef.current = "";
-    };
-  }, [isScanning, submitValue]);
-
-  const handleChangeText = (nextValue: string) => {
-    keyboardBufferRef.current = nextValue;
-    setValue(nextValue);
   };
 
   return (
@@ -516,20 +456,18 @@ function GunScannerCapture({
       >
         <Feather name="maximize" size={16} color={adminTheme.slateSoft} />
         <TextInput
-          ref={inputRef}
           value={value}
           editable={isScanning}
-          onChangeText={handleChangeText}
-          onSubmitEditing={() => submitValue()}
+          onChangeText={setValue}
+          onSubmitEditing={submitValue}
           blurOnSubmit={false}
-          autoFocus={isScanning}
           placeholder="Focus here, scan barcode, press Enter"
           placeholderTextColor="#94A3B8"
           className="flex-1 py-3 pl-3 text-sm"
           style={{ color: adminTheme.slate }}
         />
         <Pressable
-          onPress={() => submitValue()}
+          onPress={submitValue}
           disabled={!isScanning || !value.trim()}
           className="rounded-[8px] px-3 py-2"
           style={{
@@ -1485,7 +1423,7 @@ function MobileAuditScan() {
               </Text>
             </Pressable>
           </View>
-
+ 
           <View className="px-4 pt-4">
             <WarehouseSelectionNotice />
           </View>
@@ -1510,6 +1448,10 @@ function MobileAuditScan() {
               }}
               submitError={submitError}
               scanned={summary.scanned}
+              found={summary.found}
+              missing={summary.missing}
+              extra={summary.extra}
+              totalAssets={totalAssets}
               onScanCode={scanAssetCode}
               mobile
             />
@@ -1860,6 +1802,10 @@ function DesktopAuditScan({ width }: { width: number }) {
                 }}
                 submitError={submitError}
                 scanned={summary.scanned}
+                found={summary.found}
+                missing={summary.missing}
+                extra={summary.extra}
+                totalAssets={totalAssets}
                 onScanCode={scanAssetCode}
               />
             </View>
