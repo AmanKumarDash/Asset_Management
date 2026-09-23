@@ -1,20 +1,20 @@
+import { STORAGE_KEYS } from "@/constants/storage";
 import {
-  AssetWarehouseStagingItem,
-  AuditComparisonAsset,
-  AuditComparisonResponse,
-  AuditPhase,
-  AuditReportAsset,
-  AuditReportTone,
-  AuditSummary,
-  WarehouseTagLocationItem,
+    AssetWarehouseStagingItem,
+    AuditComparisonAsset,
+    AuditComparisonResponse,
+    AuditPhase,
+    AuditReportAsset,
+    AuditReportTone,
+    AuditSummary,
+    WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
-import { STORAGE_KEYS } from "@/constants/storage";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
 import {
-  LatestAuditReport,
-  LatestAuditReportWarehouseSection,
-  setLatestAuditReport,
+    LatestAuditReport,
+    LatestAuditReportWarehouseSection,
+    setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
@@ -22,9 +22,9 @@ import { storage } from "@/storage/storage";
 import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AuditExtraProductDetails,
-  AuditReportFields,
-  AuditScanItem,
+    AuditExtraProductDetails,
+    AuditReportFields,
+    AuditScanItem,
 } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
 
@@ -1885,13 +1885,23 @@ export function useAuditScanState() {
     submittedStagingList,
   ]);
 
-  // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
-  const addManualAsset = useCallback(() => {
-    const value = manualAssetId.trim();
+  const scanAssetCode = useCallback((
+    rawValue: string,
+    source: "manual" | "camera" | "gun" = "manual"
+  ) => {
+    const value = rawValue.trim();
 
     if (!value || auditPhase !== "scanning") {
       return;
     }
+
+    const sessionId = scanSessionRef.current;
+    const sourceLabel =
+      source === "camera"
+        ? "Camera barcode"
+        : source === "gun"
+          ? "Gun scanner"
+          : "Manual entry";
 
     scannedTagIdsRef.current.add(value);
 
@@ -1906,8 +1916,8 @@ export function useAuditScanState() {
       return [
         {
           id: value,
-          title: "Manual Asset Entry",
-          subtitle: `${value} - Added manually`,
+          title: sourceLabel,
+          subtitle: `${value} - Added from ${sourceLabel.toLowerCase()}`,
           tone: "extra",
           icon: "plus-circle",
         },
@@ -1915,8 +1925,52 @@ export function useAuditScanState() {
       ];
     });
 
+    void resolveAuditItem(value)
+      .then((resolvedItem) => {
+        const currentWarehouseId = auditWarehouseIdRef.current;
+
+        if (!currentWarehouseId) {
+          return resolvedItem;
+        }
+
+        return enrichExtraItemsWithWarehouseOrigin(
+          [resolvedItem],
+          currentWarehouseId
+        ).then((items) => items[0] ?? resolvedItem);
+      })
+      .then((resolvedItem) => {
+        if (
+          auditPhaseRef.current !== "scanning" ||
+          sessionId !== scanSessionRef.current ||
+          !scannedTagIdsRef.current.has(value)
+        ) {
+          return;
+        }
+
+        setManualItems((current) => {
+          const nextItems = [...current];
+          const existingIndex = nextItems.findIndex(
+            (existingItem) =>
+              existingItem.id === value ||
+              existingItem.id === resolvedItem.id
+          );
+
+          if (existingIndex >= 0) {
+            nextItems[existingIndex] = resolvedItem;
+            return nextItems;
+          }
+
+          nextItems.unshift(resolvedItem);
+          return nextItems;
+        });
+      });
+  }, [auditPhase, mqttItems, resolveAuditItem]);
+
+  // Adds a manually typed asset id into the same scan dataset used by MQTT so both flows submit together.
+  const addManualAsset = useCallback(() => {
+    scanAssetCode(manualAssetId, "manual");
     setManualAssetId("");
-  }, [auditPhase, manualAssetId, mqttItems]);
+  }, [manualAssetId, scanAssetCode]);
 
   const loadExtraTagProductDetails = useCallback(async (
     tagId: string
@@ -2624,6 +2678,7 @@ export function useAuditScanState() {
     prepareWarehouseAudit,
     prepareMultiWarehouseAudit,
     startAudit,
+    scanAssetCode,
     addManualAsset,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,

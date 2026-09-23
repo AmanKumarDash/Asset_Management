@@ -5,10 +5,10 @@ import { WarehouseSummary } from "@/models/warehouse";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
+import { ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  Easing,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -64,86 +64,6 @@ function getStatusIconName(tone: AuditItemTone): "check" | "x" | "plus" {
     default:
       return "plus";
   }
-}
-
-// Generates the main heading shown in the scan panel for the current audit phase.
-function getScanPanelHeading(
-  phase: AuditPhase,
-  connectionStatus: MqttConnectionStatus
-) {
-  if (phase === "idle") {
-    return "Ready to Start Audit";
-  }
-
-  if (phase === "submitting") {
-    return "Submitting audit snapshot...";
-  }
-
-  if (phase === "paused") {
-    return "Audit paused";
-  }
-
-  if (phase === "submitted") {
-    return "Audit report ready";
-  }
-
-  if (phase === "submitError") {
-    return "Audit submission failed";
-  }
-
-  if (connectionStatus === "connected") {
-    return "Scanning for RFID...";
-  }
-
-  if (connectionStatus === "error") {
-    return "Scanner connection failed";
-  }
-
-  return "Connecting to scanner...";
-}
-
-// Builds the descriptive text beneath the scan panel heading, including errors and connection guidance.
-function getScanPanelDescription(
-  phase: AuditPhase,
-  connectionStatus: MqttConnectionStatus,
-  submitError: string | null
-) {
-  if (phase === "idle") {
-    return "Tap Start Audit to activate RFID scanning for this room and begin logging assets.";
-  }
-
-  if (phase === "submitting") {
-    return "MQTT has been disconnected and the scanned snapshot is frozen. We are sending the warehouse staging payload to the backend now.";
-  }
-
-  if (phase === "paused") {
-    return "This warehouse has saved scanned assets. Submit the saved snapshot or resume scanning from where you stopped.";
-  }
-
-  if (phase === "submitted") {
-    return "MQTT is disconnected and the warehouse staging request has been submitted. The list below reflects the final scanned snapshot.";
-  }
-
-  if (phase === "submitError") {
-    return (
-      submitError ??
-      "MQTT is already disconnected and the scanned snapshot is frozen. Retry submit once the audit API is available."
-    );
-  }
-
-  if (submitError) {
-    return submitError;
-  }
-
-  if (connectionStatus === "connected") {
-    return "Hold the RFID reader near an asset tag. Live tag IDs will appear below as they are scanned.";
-  }
-
-  if (connectionStatus === "error") {
-    return "Unable to connect to the MQTT scanner right now. Check the broker settings and try again.";
-  }
-
-  return "Opening the live MQTT scanner connection for this audit.";
 }
 
 // Chooses the text shown on the submit button depending on the audit state.
@@ -304,150 +224,468 @@ function LegendRow() {
   );
 }
 
-// Renders the animated scanner indicator circle, active when scanning is live.
-function ScanningIndicator({ isActive }: { isActive: boolean }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-  const ripple = useRef(new Animated.Value(0)).current;
+type ScanSource = "manual" | "camera" | "gun";
+type ScanPanelMode = "rfid" | "camera" | "gun";
+type FeatherIconName = ComponentProps<typeof Feather>["name"];
+
+function SourceStatusCard({
+  icon,
+  title,
+  subtitle,
+  active,
+  onPress,
+  compact = false,
+}: {
+  icon: FeatherIconName;
+  title: string;
+  subtitle: string;
+  active: boolean;
+  onPress?: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      className="rounded-[8px] border"
+      style={{
+        width: "100%",
+        paddingHorizontal: compact ? 6 : 12,
+        paddingVertical: compact ? 9 : 12,
+        borderColor: active ? adminTheme.primary : adminTheme.border,
+        backgroundColor: active ? "#E8F2FF" : adminTheme.surface,
+      }}
+    >
+      <View className="flex-row items-center" style={{ minWidth: 0 }}>
+        <Feather
+          name={icon}
+          size={compact ? 12 : 15}
+          color={active ? adminTheme.primary : adminTheme.slateSoft}
+        />
+        <Text
+          numberOfLines={1}
+          className="ml-1.5 font-semibold"
+          style={{
+            color: active ? adminTheme.primary : adminTheme.slate,
+            flexShrink: 1,
+            fontSize: compact ? 11 : 14,
+          }}
+        >
+          {title}
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        className="mt-1.5 font-medium"
+        style={{
+          color: active ? adminTheme.primary : adminTheme.slateSoft,
+          fontSize: compact ? 10 : 12,
+        }}
+      >
+        {subtitle}
+      </Text>
+    </Pressable>
+  );
+}
+
+function CameraBarcodeFeed({
+  isScanning,
+  enabled,
+  onToggle,
+  onScanCode,
+}: {
+  isScanning: boolean;
+  enabled: boolean;
+  onToggle: () => void;
+  onScanCode: (value: string, source: ScanSource) => void;
+}) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const lastCameraScanRef = useRef<{ value: string; scannedAt: number } | null>(null);
+  const canShowCamera = isScanning && enabled && permission?.granted;
 
   useEffect(() => {
-    if (!isActive) {
-      pulse.stopAnimation();
-      ripple.stopAnimation();
-      pulse.setValue(1);
-      ripple.setValue(0);
+    if (isScanning && enabled && permission?.granted === undefined) {
+      void requestPermission();
+    }
+  }, [enabled, isScanning, permission?.granted, requestPermission]);
+
+  const handleToggleCamera = () => {
+    if (!isScanning) {
       return;
     }
 
-    const animation = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1.08,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.sequence([
-          Animated.timing(ripple, {
-            toValue: 1,
-            duration: 1400,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(ripple, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    );
+    if (!permission?.granted) {
+      void requestPermission();
+    }
 
-    animation.start();
+    onToggle();
+  };
 
-    return () => {
-      animation.stop();
-    };
-  }, [isActive, pulse, ripple]);
+  const handleBarcodeScanned = (result: BarcodeScanningResult) => {
+    const value = result.data?.trim();
+
+    if (!value) {
+      return;
+    }
+
+    const now = Date.now();
+    const lastScan = lastCameraScanRef.current;
+
+    if (lastScan && lastScan.value === value && now - lastScan.scannedAt < 1400) {
+      return;
+    }
+
+    lastCameraScanRef.current = { value, scannedAt: now };
+    onScanCode(value, "camera");
+  };
 
   return (
-    <View className="mb-5 h-[84px] w-[84px] items-center justify-center">
-      <Animated.View
-        className="absolute h-[84px] w-[84px] rounded-full"
-        style={{
-          backgroundColor: "rgba(111, 166, 233, 0.18)",
-          opacity: ripple.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 0.42],
-          }),
-          transform: [
-            {
-              scale: ripple.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.72, 1.8],
-              }),
-            },
-          ],
-        }}
-      />
-      <Animated.View
-        className="h-[62px] w-[62px] items-center justify-center rounded-full border"
-        style={{
-          backgroundColor: adminTheme.surfaceAlt,
-          borderColor: "#C7DCF8",
-          transform: [{ scale: pulse }],
-        }}
+    <View
+      className="rounded-[8px] border p-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-xs font-semibold uppercase" style={{ color: adminTheme.slate }}>
+          Live camera feed
+        </Text>
+        <Pressable
+          onPress={handleToggleCamera}
+          disabled={!isScanning}
+          className="rounded-[8px] border px-3 py-2"
+          style={{
+            borderColor: enabled ? adminTheme.primary : adminTheme.border,
+            backgroundColor: enabled ? "#E8F2FF" : adminTheme.surfaceAlt,
+            opacity: isScanning ? 1 : 0.7,
+          }}
+        >
+          <Text
+            className="text-xs font-semibold"
+            style={{ color: enabled ? adminTheme.primary : adminTheme.slate }}
+          >
+            {enabled ? "Camera on" : "Open camera"}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View
+        className="h-[150px] overflow-hidden rounded-[8px] border border-dashed"
+        style={{ borderColor: "#CBD5E1", backgroundColor: "#050505" }}
       >
-        <Feather
-          name={isActive ? "radio" : "play-circle"}
-          size={28}
-          color={isActive ? "#6FA6E9" : adminTheme.primary}
-        />
-      </Animated.View>
+        {canShowCamera ? (
+          <CameraView
+            style={{ flex: 1 }}
+            facing="back"
+            onBarcodeScanned={handleBarcodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: [
+                "aztec",
+                "ean13",
+                "ean8",
+                "qr",
+                "pdf417",
+                "upc_e",
+                "datamatrix",
+                "code39",
+                "code93",
+                "itf14",
+                "codabar",
+                "code128",
+                "upc_a",
+              ],
+            }}
+          />
+        ) : (
+          <View className="flex-1 items-center justify-center">
+            <Feather
+              name={permission?.granted === false ? "camera-off" : "crosshair"}
+              size={30}
+              color="#CBD5E1"
+            />
+            <Text className="mt-2 text-xs font-semibold" style={{ color: "#E2E8F0" }}>
+              {permission?.granted === false
+                ? "Camera permission needed"
+                : enabled
+                  ? "Starting camera..."
+                  : "Point at a barcode to auto-capture"}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <Text className="mt-2 text-xs font-semibold" style={{ color: adminTheme.slate }}>
+        Point at a barcode to auto-capture
+      </Text>
     </View>
   );
 }
 
-// Shows the main scan control panel with status text and the start-audit action.
-function ScanPanel({
+function GunScannerCapture({
+  isScanning,
+  onScanCode,
+}: {
+  isScanning: boolean;
+  onScanCode: (value: string, source: ScanSource) => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<TextInput>(null);
+  const keyboardBufferRef = useRef("");
+
+  const submitValue = useCallback((nextValue = value) => {
+    const normalizedValue = nextValue.trim();
+
+    if (!normalizedValue || !isScanning) {
+      return;
+    }
+
+    onScanCode(normalizedValue, "gun");
+    keyboardBufferRef.current = "";
+    setValue("");
+  }, [isScanning, onScanCode, value]);
+
+  useEffect(() => {
+    if (!isScanning) {
+      return;
+    }
+
+    const focusInput = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(focusInput);
+  }, [isScanning]);
+
+  useEffect(() => {
+    if (!isScanning || Platform.OS !== "web") {
+      keyboardBufferRef.current = "";
+      return;
+    }
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (keyboardBufferRef.current.trim()) {
+          event.preventDefault();
+          submitValue(keyboardBufferRef.current);
+        }
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        keyboardBufferRef.current = keyboardBufferRef.current.slice(0, -1);
+        setValue(keyboardBufferRef.current);
+        return;
+      }
+
+      if (event.key.length !== 1) {
+        return;
+      }
+
+      event.preventDefault();
+      keyboardBufferRef.current += event.key;
+      setValue(keyboardBufferRef.current);
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown);
+      keyboardBufferRef.current = "";
+    };
+  }, [isScanning, submitValue]);
+
+  const handleChangeText = (nextValue: string) => {
+    keyboardBufferRef.current = nextValue;
+    setValue(nextValue);
+  };
+
+  return (
+    <View
+      className="rounded-[8px] border p-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+    >
+      <Text className="text-xs font-semibold uppercase" style={{ color: adminTheme.slate }}>
+        Gun scanner input
+      </Text>
+      <View
+        className="mt-3 flex-row items-center rounded-[8px] border px-3"
+        style={{
+          borderColor: adminTheme.border,
+          backgroundColor: isScanning ? "#FFFFFF" : adminTheme.surfaceAlt,
+          opacity: isScanning ? 1 : 0.7,
+        }}
+      >
+        <Feather name="maximize" size={16} color={adminTheme.slateSoft} />
+        <TextInput
+          ref={inputRef}
+          value={value}
+          editable={isScanning}
+          onChangeText={handleChangeText}
+          onSubmitEditing={() => submitValue()}
+          blurOnSubmit={false}
+          autoFocus={isScanning}
+          placeholder="Focus here, scan barcode, press Enter"
+          placeholderTextColor="#94A3B8"
+          className="flex-1 py-3 pl-3 text-sm"
+          style={{ color: adminTheme.slate }}
+        />
+        <Pressable
+          onPress={() => submitValue()}
+          disabled={!isScanning || !value.trim()}
+          className="rounded-[8px] px-3 py-2"
+          style={{
+            backgroundColor:
+              isScanning && value.trim() ? adminTheme.primary : adminTheme.mutedBg,
+          }}
+        >
+          <Feather
+            name="plus"
+            size={16}
+            color={isScanning && value.trim() ? "#FFFFFF" : adminTheme.mutedText}
+          />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function MultiSourceScanWorkspace({
   phase,
   connectionStatus,
   onStartAudit,
   submitError,
+  scanned,
+  onScanCode,
+  mobile = false,
 }: {
   phase: AuditPhase;
   connectionStatus: MqttConnectionStatus;
   onStartAudit: () => void;
   submitError: string | null;
+  scanned: number;
+  onScanCode: (value: string, source: ScanSource) => void;
+  mobile?: boolean;
 }) {
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [selectedMode, setSelectedMode] = useState<ScanPanelMode>("rfid");
+  const isLive = phase === "scanning";
   const showStartButton =
     phase === "idle" || phase === "paused" || phase === "submitted" || phase === "submitError";
+  const selectMode = (mode: ScanPanelMode) => {
+    setSelectedMode(mode);
+
+    if (mode === "camera" && isLive) {
+      setCameraEnabled(true);
+    }
+  };
 
   return (
     <View
-      className="items-center justify-center rounded-[22px] border px-6 py-10"
-      style={{
-        borderColor: adminTheme.border,
-        borderStyle: "dashed",
-        backgroundColor: adminTheme.surface,
-      }}
+      className="rounded-[8px] border p-4"
+      style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surfaceAlt }}
     >
-      <ScanningIndicator isActive={phase === "scanning"} />
-      <Text
-        className="text-[18px] font-semibold"
-        style={{ color: adminTheme.primary }}
-      >
-        {getScanPanelHeading(phase, connectionStatus)}
-      </Text>
-      <Text
-        className="mt-2 text-center text-base leading-6"
-        style={{ color: adminTheme.slateSoft, maxWidth: 520 }}
-      >
-        {getScanPanelDescription(phase, connectionStatus, submitError)}
-      </Text>
+      <View className="flex-row" style={{ gap: mobile ? 6 : 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SourceStatusCard
+            icon="wifi"
+            title={mobile ? "RFID" : "RFID reader"}
+            subtitle={
+              connectionStatus === "connected"
+                ? mobile
+                  ? `${scanned} found`
+                  : `Listening - ${scanned} found`
+                : connectionStatus === "error"
+                  ? mobile
+                    ? "Failed"
+                    : "Connection failed"
+                  : isLive
+                    ? "Connecting..."
+                    : mobile
+                      ? "Ready"
+                      : "Ready with audit"
+            }
+            active={selectedMode === "rfid"}
+            onPress={() => selectMode("rfid")}
+            compact={mobile}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SourceStatusCard
+            icon="camera"
+            title={mobile ? "Camera" : "Camera barcode"}
+            subtitle={
+              selectedMode === "camera" && cameraEnabled && isLive
+                ? mobile
+                  ? "Live"
+                  : "Live view on"
+                : isLive
+                  ? mobile
+                    ? "Open"
+                    : "Tap to open"
+                  : mobile
+                    ? "Starts"
+                    : "Starts with audit"
+            }
+            active={selectedMode === "camera"}
+            onPress={() => selectMode("camera")}
+            compact={mobile}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SourceStatusCard
+            icon="maximize"
+            title={mobile ? "Gun" : "Gun scanner"}
+            subtitle={isLive ? (mobile ? "Input" : "Ready for input") : mobile ? "Focus" : "Focus after start"}
+            active={selectedMode === "gun"}
+            onPress={() => selectMode("gun")}
+            compact={mobile}
+          />
+        </View>
+      </View>
+
+      {selectedMode === "camera" ? (
+        <View className="mt-4">
+          <CameraBarcodeFeed
+            isScanning={isLive}
+            enabled={cameraEnabled}
+            onToggle={() => setCameraEnabled((current) => !current)}
+            onScanCode={onScanCode}
+          />
+        </View>
+      ) : null}
+
+      {selectedMode === "gun" ? (
+        <View className="mt-4">
+          <GunScannerCapture isScanning={isLive} onScanCode={onScanCode} />
+        </View>
+      ) : null}
 
       {showStartButton ? (
-        <Pressable
-          onPress={onStartAudit}
-          className="mt-5 rounded-[14px] px-6 py-3.5"
-          style={{ backgroundColor: adminTheme.primary }}
-        >
-          <Text className="text-base font-semibold text-white">
-            {phase === "idle"
-              ? "Start Audit"
-              : phase === "paused"
-                ? "Resume Audit"
-                : "Start New Audit"}
-          </Text>
-        </Pressable>
+        <View className="mt-4 items-start">
+          <Pressable
+            onPress={onStartAudit}
+            className="rounded-[8px] px-5 py-3"
+            style={{ backgroundColor: adminTheme.primary }}
+          >
+            <Text className="text-sm font-semibold text-white">
+              {phase === "idle"
+                ? "Start multi-source scan"
+                : phase === "paused"
+                  ? "Resume scan"
+                  : "Start new scan"}
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
+
+      {submitError ? (
+        <Text className="mt-3 text-sm" style={{ color: "#D64545" }}>
+          {submitError}
+        </Text>
+      ) : (
+        <Text className="mt-3 text-sm" style={{ color: adminTheme.slateSoft }}>
+          RFID, mobile camera barcode, and gun scanner input can run together in one audit.
+        </Text>
+      )}
     </View>
   );
 }
@@ -1112,18 +1350,15 @@ function WarehouseSelectionNotice({
 function MobileAuditScan() {
   const {
     items,
-    isScanning,
     auditPhase,
     canSubmit,
     canPause,
     isPausingAudit,
     submitError,
     connectionStatus,
-    manualAssetId,
-    setManualAssetId,
     prepareMultiWarehouseAudit,
     startAudit,
-    addManualAsset,
+    scanAssetCode,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
     pauseAudit,
@@ -1265,7 +1500,7 @@ function MobileAuditScan() {
           </View>
 
           <View className="px-4 pt-4">
-            <ScanPanel
+            <MultiSourceScanWorkspace
               phase={auditPhase}
               connectionStatus={connectionStatus}
               onStartAudit={() => {
@@ -1274,6 +1509,9 @@ function MobileAuditScan() {
                 }
               }}
               submitError={submitError}
+              scanned={summary.scanned}
+              onScanCode={scanAssetCode}
+              mobile
             />
           </View>
 
@@ -1441,18 +1679,15 @@ function MobileAuditScan() {
 function DesktopAuditScan({ width }: { width: number }) {
   const {
     items,
-    isScanning,
     auditPhase,
     canSubmit,
     canPause,
     isPausingAudit,
     submitError,
     connectionStatus,
-    manualAssetId,
-    setManualAssetId,
     prepareMultiWarehouseAudit,
     startAudit,
-    addManualAsset,
+    scanAssetCode,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
     pauseAudit,
@@ -1615,7 +1850,7 @@ function DesktopAuditScan({ width }: { width: number }) {
             style={{ gap: 18, alignItems: "flex-start" }}
           >
             <View style={{ flex: 1.25 }}>
-              <ScanPanel
+              <MultiSourceScanWorkspace
                 phase={auditPhase}
                 connectionStatus={connectionStatus}
                 onStartAudit={() => {
@@ -1624,6 +1859,8 @@ function DesktopAuditScan({ width }: { width: number }) {
                   }
                 }}
                 submitError={submitError}
+                scanned={summary.scanned}
+                onScanCode={scanAssetCode}
               />
             </View>
             <View style={{ width: twoColumn ? 300 : 260 }}>
