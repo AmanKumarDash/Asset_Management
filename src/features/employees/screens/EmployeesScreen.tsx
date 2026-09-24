@@ -903,6 +903,18 @@ function EmployeeSuccessModal({
     deleted: "Employee deleted successfully.",
   };
 
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      onClose();
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, [notice, onClose]);
+
   return (
     <Modal
       animationType="fade"
@@ -921,7 +933,7 @@ function EmployeeSuccessModal({
             backgroundColor: adminTheme.surface,
           }}
         >
-          <View className="mb-4 flex-row items-center">
+          <View className="flex-row items-center">
             <View
               className="mr-3 h-11 w-11 items-center justify-center rounded-full"
               style={{ backgroundColor: adminTheme.successBg }}
@@ -937,14 +949,6 @@ function EmployeeSuccessModal({
               </Text>
             </View>
           </View>
-
-          <Pressable
-            onPress={onClose}
-            className="items-center rounded-xl px-4 py-3"
-            style={{ backgroundColor: adminTheme.primary }}
-          >
-            <Text className="text-sm font-semibold text-white">OK</Text>
-          </Pressable>
         </View>
       </View>
     </Modal>
