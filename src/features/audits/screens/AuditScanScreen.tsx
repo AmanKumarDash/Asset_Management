@@ -426,6 +426,21 @@ function GunScannerCapture({
   onScanCode: (value: string, source: ScanSource) => void;
 }) {
   const [value, setValue] = useState("");
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (!isScanning) {
+      return;
+    }
+
+    const focusTimer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 120);
+
+    return () => {
+      clearTimeout(focusTimer);
+    };
+  }, [isScanning]);
 
   const submitValue = () => {
     const normalizedValue = value.trim();
@@ -456,8 +471,11 @@ function GunScannerCapture({
       >
         <Feather name="maximize" size={16} color={adminTheme.slateSoft} />
         <TextInput
+          ref={inputRef}
           value={value}
           editable={isScanning}
+          autoFocus={isScanning}
+          focusable={isScanning}
           onChangeText={setValue}
           onSubmitEditing={submitValue}
           blurOnSubmit={false}
@@ -492,6 +510,10 @@ function MultiSourceScanWorkspace({
   onStartAudit,
   submitError,
   scanned,
+  found = 0,
+  missing = 0,
+  extra = 0,
+  totalAssets = 0,
   onScanCode,
   mobile = false,
 }: {
@@ -500,6 +522,10 @@ function MultiSourceScanWorkspace({
   onStartAudit: () => void;
   submitError: string | null;
   scanned: number;
+  found?: number;
+  missing?: number;
+  extra?: number;
+  totalAssets?: number;
   onScanCode: (value: string, source: ScanSource) => void;
   mobile?: boolean;
 }) {
