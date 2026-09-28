@@ -11,6 +11,7 @@ import { LoginResponse } from "@/features/auth/types/authApi";
 import { OrganizationDetails } from "@/models/organization";
 import { RfidMachineSummary } from "@/models/rfidMachine";
 import { AxiosInstance } from "axios";
+import { API_BASE_URL } from "@/config/env";
 import { assertApiBaseUrlConfigured, axiosInstance } from "./axiosConfig";
 import { ENDPOINTS } from "./endpoints";
 import {
@@ -59,6 +60,26 @@ export type UserAddressRequest = {
   CountryId: number;
   CountryName: string;
   Pin: number;
+};
+
+export type SendMailAttachment = {
+  uri?: string;
+  name?: string;
+  type?: string;
+  blob?: Blob;
+} | Blob | File;
+
+export type SendMailRequest = {
+  To: string;
+  Subject: string;
+  Body?: string;
+  IsHtml?: boolean | "0" | "1";
+  file?: SendMailAttachment | null;
+};
+
+export type SendMailResponse = {
+  success?: boolean;
+  Message?: string;
 };
 
 export type CreateUserRequest = {
@@ -408,6 +429,89 @@ class ApiService {
     );
 
     return extractResponseData<LoginResponse>(response.data);
+  }
+
+  // Sends an email using the backend Account API. The backend expects multipart/form-data and reads Request.Form/Request.Files, so we must not serialize JSON.
+  async sendMail(request: SendMailRequest): Promise<SendMailResponse> {
+    assertApiBaseUrlConfigured();
+
+    const to = request.To?.trim();
+    const subject = request.Subject?.trim();
+
+    if (!to || !subject) {
+      throw new Error("Recipient email and subject are required.");
+    }
+
+    const formData = new FormData();
+    formData.append("To", to);
+    formData.append("Subject", subject);
+    formData.append("Body", request.Body ?? "");
+    formData.append(
+      "IsHtml",
+      request.IsHtml === true || request.IsHtml === "1" ? "1" : "0"
+    );
+
+    if (request.file) {
+      const rawFile = request.file as Record<string, unknown> & {
+        arrayBuffer?: unknown;
+      };
+      const hasNativeUri =
+        typeof rawFile.uri === "string" && rawFile.uri.trim().length > 0;
+      const isBrowserFileLike =
+        typeof Blob !== "undefined" &&
+        (rawFile instanceof Blob ||
+          (typeof rawFile.arrayBuffer === "function" && typeof rawFile.type === "string"));
+
+      if (isBrowserFileLike) {
+        formData.append("file", request.file as Blob);
+      } else if (hasNativeUri) {
+        formData.append(
+          "file",
+          {
+            uri: rawFile.uri as string,
+            name:
+              typeof rawFile.name === "string" && rawFile.name.trim().length > 0
+                ? rawFile.name
+                : "attachment",
+            type:
+              typeof rawFile.type === "string" && rawFile.type.trim().length > 0
+                ? rawFile.type
+                : "application/octet-stream",
+          } as any
+        );
+      } else if (typeof Blob !== "undefined" && request.file instanceof Blob) {
+        formData.append("file", request.file as Blob);
+      } else {
+        formData.append("file", request.file as never);
+      }
+    }
+
+    const response = await fetch(`${API_BASE_URL}${ENDPOINTS.ACCOUNT.SEND_MAIL}`, {
+      method: "POST",
+      body: formData,
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const data = (await response.json().catch(() => null)) as
+      | SendMailResponse
+      | { Message?: string }
+      | null;
+
+    if (!response.ok) {
+      const message =
+        typeof data === "object" && data && "Message" in data && typeof data.Message === "string"
+          ? data.Message
+          : "Failed to send email.";
+
+      throw new Error(message);
+    }
+
+    return {
+      success: true,
+      ...(typeof data === "object" && data ? data : {}),
+    };
   }
 
   async getUserDetailsPage(

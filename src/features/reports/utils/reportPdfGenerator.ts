@@ -410,25 +410,39 @@ function buildPdfHtml(report: LatestAuditReport, auditedBy: string) {
   `;
 }
 
+export async function generateAuditReportPdfFile(
+  report: LatestAuditReport,
+  auditedBy: string
+) {
+  const html = buildPdfHtml(report, auditedBy);
+
+  if (Platform.OS === "web") {
+    const fileName = `Audit-Report-${Date.now()}.pdf`;
+    const blob = new Blob([html], { type: "application/pdf" });
+    return new File([blob], fileName, { type: "application/pdf" });
+  }
+
+  const { uri } = await Print.printToFileAsync({ html });
+
+  return {
+    uri,
+    name: `Audit-Report-${Date.now()}.pdf`,
+    type: "application/pdf",
+  };
+}
+
 export async function exportAuditReportAsPdf(
   report: LatestAuditReport,
   auditedBy: string
 ) {
   try {
-    const html = buildPdfHtml(report, auditedBy);
-    const fileName = `Audit-Report-${Date.now()}`;
-
-    if (Platform.OS === "web") {
-      // For web: Download as HTML that can be printed to PDF
-      downloadAsHtmlWeb(html, fileName);
-      return;
-    }
-
-    // For native platforms: Use Print API
-    const { uri } = await Print.printToFileAsync({ html });
+    const attachment = await generateAuditReportPdfFile(report, auditedBy);
+    const uri =
+      typeof attachment === "object" && attachment && "uri" in attachment && typeof attachment.uri === "string"
+        ? attachment.uri
+        : undefined;
 
     if (uri) {
-      // For native, share the file (which allows saving)
       await shareAsync(uri, {
         mimeType: "application/pdf",
         dialogTitle: "Asset Audit Report",

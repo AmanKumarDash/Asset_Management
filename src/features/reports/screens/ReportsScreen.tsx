@@ -21,6 +21,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -31,7 +32,10 @@ import {
 } from "react-native";
 import DatePicker from "react-native-date-picker";
 import { exportAuditReportAsExcel } from "../utils/reportExcelExporter";
-import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
+import {
+  exportAuditReportAsPdf,
+  generateAuditReportPdfFile,
+} from "../utils/reportPdfGenerator";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
 import { AuditSummary } from "@/features/audits/types/audit";
@@ -1423,8 +1427,10 @@ type ReportDetailProps = {
   report: LatestAuditReport;
   onExportExcel: () => void;
   onExportPdf: () => void;
+  onSendMail: () => void;
   isExportingExcel: boolean;
   isExportingPdf: boolean;
+  isSendingMail: boolean;
   onBack?: () => void;
   showDateFilters?: boolean;
 };
@@ -1441,8 +1447,10 @@ function DesktopReports({
   report,
   onExportExcel,
   onExportPdf,
+  onSendMail,
   isExportingExcel,
   isExportingPdf,
+  isSendingMail,
   onBack,
   showDateFilters = true,
 }: ReportDetailProps) {
@@ -1536,6 +1544,11 @@ async function handleFetchReportByDate() {
             icon="download"
             filled
             onPress={onExportPdf}
+          />
+          <SectionButton
+            title={isSendingMail ? "Sending..." : "Send Mail"}
+            icon="mail"
+            onPress={onSendMail}
           />
         </View>
       </View>
@@ -1706,8 +1719,10 @@ function MobileReports({
   report,
   onExportExcel,
   onExportPdf,
+  onSendMail,
   isExportingExcel,
   isExportingPdf,
+  isSendingMail,
   onBack,
   showDateFilters = true,
 }: ReportDetailProps) {
@@ -1935,6 +1950,16 @@ async function handleFetchReportByDate() {
                 {isExportingPdf ? "Exporting..." : "Export Report (PDF)"}
               </Text>
             </Pressable>
+            <Pressable
+              onPress={onSendMail}
+              className="mt-3 flex-row items-center justify-center rounded-[18px] border bg-white px-5 py-4"
+              style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+            >
+              <Feather name="mail" size={18} color={adminTheme.slateSoft} />
+              <Text className="ml-3 text-[18px] font-semibold" style={{ color: adminTheme.slate }}>
+                {isSendingMail ? "Sending..." : "Send Report by Mail"}
+              </Text>
+            </Pressable>
           </View>
         </View>
       </ScrollView>
@@ -1947,6 +1972,9 @@ export default function ReportsScreen() {
   const { width } = useWindowDimensions();
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isSendingMail, setIsSendingMail] = useState(false);
+  const [mailRecipientDraft, setMailRecipientDraft] = useState("");
+  const [isMailPromptVisible, setIsMailPromptVisible] = useState(false);
   const [selectedEmployeeReport, setSelectedEmployeeReport] =
     useState<LatestAuditReport | null>(null);
   const [selectedAdminReport, setSelectedAdminReport] =
@@ -2062,6 +2090,65 @@ export default function ReportsScreen() {
     }
   }
 
+  function isValidEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  }
+
+  async function handleSendMail() {
+    if (!user || !activeReport) {
+      return;
+    }
+
+    setMailRecipientDraft(user.email || "");
+    setIsMailPromptVisible(true);
+  }
+
+  async function submitMailToRecipient() {
+    if (!user || !activeReport) {
+      return;
+    }
+
+    const normalizedRecipient = mailRecipientDraft.trim();
+
+    if (!normalizedRecipient) {
+      Alert.alert("Email required", "Please enter a recipient email address.");
+      return;
+    }
+
+    if (!isValidEmail(normalizedRecipient)) {
+      Alert.alert("Invalid email", "Please enter a valid recipient email address.");
+      return;
+    }
+
+    setIsMailPromptVisible(false);
+    setIsSendingMail(true);
+
+    try {
+      const file = await generateAuditReportPdfFile(activeReport, user.name);
+
+      await apiService.sendMail({
+        To: normalizedRecipient,
+        Subject: `${activeReport.title || "Audit report"}`,
+        Body: `Hello,<br /><br />Please find attached the audit report for <strong>${activeReport.title || "Asset Audit Report"}</strong>.<br /><br />Regards,<br />${user.name}.`,
+        IsHtml: true,
+        file,
+      });
+
+      Alert.alert("Email sent", "The report was sent successfully.");
+    } catch (error) {
+      console.warn("Failed to send report by email:", error);
+      Alert.alert(
+        "Mail failed",
+        error instanceof Error && error.message
+          ? error.message
+          : "We couldn't send this report right now. Please try again."
+      );
+    } finally {
+      setIsSendingMail(false);
+      setMailRecipientDraft("");
+    }
+  }
+
   if (!user) {
     return null;
   }
@@ -2113,38 +2200,144 @@ export default function ReportsScreen() {
   if (user.role === "employee") {
     if (!activeReport) {
       return (
-        <EmployeeReportsScreen
-          onSelectReport={(report) => {
-            setSelectedEmployeeReport(report);
-            setLatestAuditReport(report);
-          }}
-          title="My Reports"
-          subtitle="Review the audits you have already submitted"
-          showOpenScanButton
-        />
+        <>
+          <EmployeeReportsScreen
+            onSelectReport={(report) => {
+              setSelectedEmployeeReport(report);
+              setLatestAuditReport(report);
+            }}
+            title="My Reports"
+            subtitle="Review the audits you have already submitted"
+            showOpenScanButton
+          />
+
+          <Modal
+            visible={isMailPromptVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setIsMailPromptVisible(false)}
+          >
+            <View className="flex-1 items-center justify-center px-5" style={{ backgroundColor: "rgba(15, 23, 42, 0.45)" }}>
+              <View className="w-full rounded-[20px] border p-5" style={{ backgroundColor: adminTheme.surface, borderColor: adminTheme.border }}>
+                <Text className="text-xl font-semibold" style={{ color: adminTheme.slate }}>
+                  Send report by email
+                </Text>
+                <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+                  Enter a recipient email address.
+                </Text>
+                <TextInput
+                  value={mailRecipientDraft}
+                  onChangeText={setMailRecipientDraft}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  placeholder="name@example.com"
+                  className="mt-4 rounded-xl border px-3 py-3 text-base"
+                  style={{ borderColor: adminTheme.border, color: adminTheme.slate, backgroundColor: adminTheme.surfaceAlt }}
+                />
+                <View className="mt-5 flex-row justify-end" style={{ gap: 12 }}>
+                  <Pressable
+                    onPress={() => setIsMailPromptVisible(false)}
+                    className="rounded-xl border px-4 py-2.5"
+                    style={{ borderColor: adminTheme.border }}
+                  >
+                    <Text className="font-semibold" style={{ color: adminTheme.slate }}>
+                      Cancel
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={submitMailToRecipient}
+                    className="rounded-xl px-4 py-2.5"
+                    style={{ backgroundColor: adminTheme.primary }}
+                  >
+                    <Text className="font-semibold" style={{ color: "#fff" }}>
+                      Send
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </>
       );
     }
 
-    return isMobile ? (
-      <MobileReports
-        report={activeReport}
-        onExportExcel={handleExportExcel}
-        onExportPdf={handleExportPdf}
-        isExportingExcel={isExportingExcel}
-        isExportingPdf={isExportingPdf}
-        onBack={() => setSelectedEmployeeReport(null)}
-        showDateFilters={false}
-      />
-    ) : (
-      <DesktopReports
-        report={activeReport}
-        onExportExcel={handleExportExcel}
-        onExportPdf={handleExportPdf}
-        isExportingExcel={isExportingExcel}
-        isExportingPdf={isExportingPdf}
-        onBack={() => setSelectedEmployeeReport(null)}
-        showDateFilters={false}
-      />
+    return (
+      <>
+        {isMobile ? (
+          <MobileReports
+            report={activeReport}
+            onExportExcel={handleExportExcel}
+            onExportPdf={handleExportPdf}
+            onSendMail={handleSendMail}
+            isExportingExcel={isExportingExcel}
+            isExportingPdf={isExportingPdf}
+            isSendingMail={isSendingMail}
+            onBack={() => setSelectedEmployeeReport(null)}
+            showDateFilters={false}
+          />
+        ) : (
+          <DesktopReports
+            report={activeReport}
+            onExportExcel={handleExportExcel}
+            onExportPdf={handleExportPdf}
+            onSendMail={handleSendMail}
+            isExportingExcel={isExportingExcel}
+            isExportingPdf={isExportingPdf}
+            isSendingMail={isSendingMail}
+            onBack={() => setSelectedEmployeeReport(null)}
+            showDateFilters={false}
+          />
+        )}
+
+        <Modal
+          visible={isMailPromptVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsMailPromptVisible(false)}
+        >
+          <View className="flex-1 items-center justify-center px-5" style={{ backgroundColor: "rgba(15, 23, 42, 0.45)" }}>
+            <View className="w-full rounded-[20px] border p-5" style={{ backgroundColor: adminTheme.surface, borderColor: adminTheme.border }}>
+              <Text className="text-xl font-semibold" style={{ color: adminTheme.slate }}>
+                Send report by email
+              </Text>
+              <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+                Enter a recipient email address.
+              </Text>
+              <TextInput
+                value={mailRecipientDraft}
+                onChangeText={setMailRecipientDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholder="name@example.com"
+                className="mt-4 rounded-xl border px-3 py-3 text-base"
+                style={{ borderColor: adminTheme.border, color: adminTheme.slate, backgroundColor: adminTheme.surfaceAlt }}
+              />
+              <View className="mt-5 flex-row justify-end" style={{ gap: 12 }}>
+                <Pressable
+                  onPress={() => setIsMailPromptVisible(false)}
+                  className="rounded-xl border px-4 py-2.5"
+                  style={{ borderColor: adminTheme.border }}
+                >
+                  <Text className="font-semibold" style={{ color: adminTheme.slate }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={submitMailToRecipient}
+                  className="rounded-xl px-4 py-2.5"
+                  style={{ backgroundColor: adminTheme.primary }}
+                >
+                  <Text className="font-semibold" style={{ color: "#fff" }}>
+                    Send
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </>
     );
   }
 
@@ -2193,25 +2386,81 @@ export default function ReportsScreen() {
     );
   }
 
-  return isMobile ? (
-    <MobileReports
-      report={activeReport}
-      onExportExcel={handleExportExcel}
-      onExportPdf={handleExportPdf}
-      isExportingExcel={isExportingExcel}
-      isExportingPdf={isExportingPdf}
-      onBack={() => setSelectedAdminReport(null)}
-      showDateFilters={false}
-    />
-  ) : (
-    <DesktopReports
-      report={activeReport}
-      onExportExcel={handleExportExcel}
-      onExportPdf={handleExportPdf}
-      isExportingExcel={isExportingExcel}
-      isExportingPdf={isExportingPdf}
-      onBack={() => setSelectedAdminReport(null)}
-      showDateFilters={false}
-    />
+  return (
+    <>
+      {isMobile ? (
+        <MobileReports
+          report={activeReport}
+          onExportExcel={handleExportExcel}
+          onExportPdf={handleExportPdf}
+          onSendMail={handleSendMail}
+          isExportingExcel={isExportingExcel}
+          isExportingPdf={isExportingPdf}
+          isSendingMail={isSendingMail}
+          onBack={() => setSelectedAdminReport(null)}
+          showDateFilters={false}
+        />
+      ) : (
+        <DesktopReports
+          report={activeReport}
+          onExportExcel={handleExportExcel}
+          onExportPdf={handleExportPdf}
+          onSendMail={handleSendMail}
+          isExportingExcel={isExportingExcel}
+          isExportingPdf={isExportingPdf}
+          isSendingMail={isSendingMail}
+          onBack={() => setSelectedAdminReport(null)}
+          showDateFilters={false}
+        />
+      )}
+
+      <Modal
+        visible={isMailPromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsMailPromptVisible(false)}
+      >
+        <View className="flex-1 items-center justify-center px-5" style={{ backgroundColor: "rgba(15, 23, 42, 0.45)" }}>
+          <View className="w-full rounded-[20px] border p-5" style={{ backgroundColor: adminTheme.surface, borderColor: adminTheme.border }}>
+            <Text className="text-xl font-semibold" style={{ color: adminTheme.slate }}>
+              Send report by email
+            </Text>
+            <Text className="mt-2 text-sm" style={{ color: adminTheme.muted }}>
+              Enter a recipient email address.
+            </Text>
+            <TextInput
+              value={mailRecipientDraft}
+              onChangeText={setMailRecipientDraft}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              placeholder="name@example.com"
+              className="mt-4 rounded-xl border px-3 py-3 text-base"
+              style={{ borderColor: adminTheme.border, color: adminTheme.slate, backgroundColor: adminTheme.surfaceAlt }}
+            />
+            <View className="mt-5 flex-row justify-end" style={{ gap: 12 }}>
+              <Pressable
+                onPress={() => setIsMailPromptVisible(false)}
+                className="rounded-xl border px-4 py-2.5"
+                style={{ borderColor: adminTheme.border }}
+              >
+                <Text className="font-semibold" style={{ color: adminTheme.slate }}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={submitMailToRecipient}
+                className="rounded-xl px-4 py-2.5"
+                style={{ backgroundColor: adminTheme.primary }}
+              >
+                <Text className="font-semibold" style={{ color: "#fff" }}>
+                  Send
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }

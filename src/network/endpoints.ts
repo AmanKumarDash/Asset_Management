@@ -1,4 +1,7 @@
 export const ENDPOINTS = {
+  ACCOUNT: {
+    SEND_MAIL: "/api/Account/sendmail",
+  },
   ADMIN: {
     CREATE_USER: "/api/Admin/createuser",
   },
