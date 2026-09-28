@@ -3,7 +3,7 @@ import {
   LatestAuditReportExcelRow,
   LatestAuditReportWarehouseSection,
 } from "@/features/reports/state/latestAuditReportStore";
-import { File, Paths } from "expo-file-system";
+import { File as ExpoFile, Paths } from "expo-file-system";
 import { shareAsync } from "expo-sharing";
 import { Platform } from "react-native";
 
@@ -181,18 +181,42 @@ function downloadExcelWeb(html: string, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function exportAuditReportAsExcel(report: LatestAuditReport) {
+export async function generateAuditReportExcelFile(report: LatestAuditReport) {
   const html = buildExcelHtml(report);
-  const fileName = `Audit-Report-${Date.now()}`;
+  const fileName = `Audit-Report-${Date.now()}.xls`;
 
   if (Platform.OS === "web") {
-    downloadExcelWeb(html, fileName);
+    return new globalThis.File(
+      [new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" })],
+      fileName,
+      {
+        type: "application/vnd.ms-excel",
+      }
+    );
+  }
+
+  const file = new ExpoFile(Paths.document, fileName);
+  file.write(html);
+
+  return {
+    uri: file.uri,
+    name: file.name,
+    type: "application/vnd.ms-excel",
+  };
+}
+
+export async function exportAuditReportAsExcel(report: LatestAuditReport) {
+  const attachment = await generateAuditReportExcelFile(report);
+  const uri =
+    typeof attachment === "object" && attachment && "uri" in attachment && typeof attachment.uri === "string"
+      ? attachment.uri
+      : undefined;
+
+  if (!uri) {
     return;
   }
 
-  const file = new File(Paths.document, `${fileName}.xls`);
-  file.write(html);
-  await shareAsync(file.uri, {
+  await shareAsync(uri, {
     mimeType: "application/vnd.ms-excel",
     dialogTitle: "Audit Excel Report",
     UTI: "com.microsoft.excel.xls",

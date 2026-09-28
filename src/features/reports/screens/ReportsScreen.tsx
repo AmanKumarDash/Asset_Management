@@ -31,11 +31,11 @@ import {
   useWindowDimensions,
 } from "react-native";
 import DatePicker from "react-native-date-picker";
-import { exportAuditReportAsExcel } from "../utils/reportExcelExporter";
 import {
-  exportAuditReportAsPdf,
-  generateAuditReportPdfFile,
-} from "../utils/reportPdfGenerator";
+  exportAuditReportAsExcel,
+  generateAuditReportExcelFile,
+} from "../utils/reportExcelExporter";
+import { exportAuditReportAsPdf } from "../utils/reportPdfGenerator";
 import EmployeeReportsScreen from "./EmployeeReportsScreen";
 
 import { AuditSummary } from "@/features/audits/types/audit";
@@ -2124,12 +2124,12 @@ export default function ReportsScreen() {
     setIsSendingMail(true);
 
     try {
-      const file = await generateAuditReportPdfFile(activeReport, user.name);
+      const file = await generateAuditReportExcelFile(activeReport);
 
       await apiService.sendMail({
         To: normalizedRecipient,
         Subject: `${activeReport.title || "Audit report"}`,
-        Body: `Hello,<br /><br />Please find attached the audit report for <strong>${activeReport.title || "Asset Audit Report"}</strong>.<br /><br />Regards,<br />${user.name}.`,
+        Body: `Hello,<br /><br />Please find attached the Excel audit report for <strong>${activeReport.title || "Asset Audit Report"}</strong>.<br /><br />Regards,<br />${user.name}.`,
         IsHtml: true,
         file,
       });
