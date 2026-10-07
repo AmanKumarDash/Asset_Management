@@ -1,17 +1,17 @@
+import { API_BASE_URL } from "@/config/env";
 import {
   AssetWarehouseStagingItem,
   AuditComparisonResponse,
   AuditSubmitRequest,
   AuditSubmitResponse,
-  WarehouseTagLocationItem,
   WarehouseTagBaselineItem,
+  WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { InventoryBarcodeScanDetail } from "@/features/audits/types/inventory";
 import { LoginResponse } from "@/features/auth/types/authApi";
 import { OrganizationDetails } from "@/models/organization";
 import { RfidMachineSummary } from "@/models/rfidMachine";
 import { AxiosInstance } from "axios";
-import { API_BASE_URL } from "@/config/env";
 import { assertApiBaseUrlConfigured, axiosInstance } from "./axiosConfig";
 import { ENDPOINTS } from "./endpoints";
 import {
@@ -239,6 +239,11 @@ type MissingTagProductMappingResponse = Partial<MissingTagProductMappingRequest>
   TagIdNumber?: string;
 };
 
+export type BarcodeOrTagClassification = {
+  tagIds: string[];
+  barcodeNumbers: string[];
+};
+
 function parseOptionalNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -247,6 +252,72 @@ function parseOptionalNumber(value: unknown): number | null {
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value.trim());
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function extractBarcodeOrTagFlag(value: unknown): 0 | 1 | null {
+  if (typeof value === "number" && (value === 0 || value === 1)) {
+    return value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const normalizedValue = value.trim().toLowerCase();
+
+    if (normalizedValue === "1" || normalizedValue === "tag" || normalizedValue === "tagno") {
+      return 1;
+    }
+
+    if (
+      normalizedValue === "0" ||
+      normalizedValue === "barcode" ||
+      normalizedValue === "barcodeno"
+    ) {
+      return 0;
+    }
+
+    try {
+      return extractBarcodeOrTagFlag(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return extractBarcodeOrTagFlag(value[0]);
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidateKeys = [
+    "IsTag",
+    "isTag",
+    "IsBarcodeOrTag",
+    "isBarcodeOrTag",
+    "Type",
+    "type",
+    "Result",
+    "result",
+    "Value",
+    "value",
+    "Data",
+    "data",
+  ];
+
+  for (const key of candidateKeys) {
+    const flag = extractBarcodeOrTagFlag(record[key]);
+
+    if (flag !== null) {
+      return flag;
+    }
   }
 
   return null;
@@ -657,6 +728,41 @@ class ApiService {
     >(ENDPOINTS.INVENTORY.SEARCH_BARCODE_SCAN_MODE(searchText));
 
     return extractResponseCollection<InventoryBarcodeScanDetail>(response.data);
+  }
+
+  async classifyBarcodeOrTagNumbers(
+    values: (number | string)[]
+  ): Promise<BarcodeOrTagClassification> {
+    assertApiBaseUrlConfigured();
+
+    const normalizedValues = Array.from(
+      new Set(
+        values
+          .map((value) => String(value).trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+    const classifiedValues = await Promise.all(
+      normalizedValues.map(async (value) => {
+        const response = await this.api.get<unknown>(
+          ENDPOINTS.AJAX.IS_BARCODE_OR_TAG(value, value)
+        );
+        const flag = extractBarcodeOrTagFlag(response.data);
+
+        if (flag === null) {
+          throw new Error(`Unable to classify scanned value "${value}".`);
+        }
+
+        return { value, flag };
+      })
+    );
+
+    return {
+      tagIds: normalizedValues,
+      barcodeNumbers: classifiedValues
+        .filter((item) => item.flag === 0)
+        .map((item) => item.value),
+    };
   }
 
   // Loads the warehouse baseline tag list so the audit can compare expected vs scanned assets.

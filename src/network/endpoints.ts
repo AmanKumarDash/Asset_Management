@@ -21,6 +21,12 @@ export const ENDPOINTS = {
         userId
       )}&pageNo=${pageNo}&rowCount=${rowCount}&sortOrder=${sortOrder}&sortColumn=${sortColumn}`,
   },
+  AJAX: {
+    IS_BARCODE_OR_TAG: (tagNo: string, barcode: string) =>
+      `/api/ajax/IsBarcodeOrTag?TagNo=${encodeURIComponent(
+        tagNo
+      )}&Barcode=${encodeURIComponent(barcode)}`,
+  },
   ORG: {
     GET_DETAILS: "/api/org/GetDetails",
   },

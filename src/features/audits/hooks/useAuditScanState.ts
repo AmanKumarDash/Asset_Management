@@ -1,20 +1,20 @@
 import { STORAGE_KEYS } from "@/constants/storage";
 import {
-    AssetWarehouseStagingItem,
-    AuditComparisonAsset,
-    AuditComparisonResponse,
-    AuditPhase,
-    AuditReportAsset,
-    AuditReportTone,
-    AuditSummary,
-    WarehouseTagLocationItem,
+  AssetWarehouseStagingItem,
+  AuditComparisonAsset,
+  AuditComparisonResponse,
+  AuditPhase,
+  AuditReportAsset,
+  AuditReportTone,
+  AuditSummary,
+  WarehouseTagLocationItem,
 } from "@/features/audits/types/audit";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { saveAuditReportSession } from "@/features/reports/state/auditReportSessionStore";
 import {
-    LatestAuditReport,
-    LatestAuditReportWarehouseSection,
-    setLatestAuditReport,
+  LatestAuditReport,
+  LatestAuditReportWarehouseSection,
+  setLatestAuditReport,
 } from "@/features/reports/state/latestAuditReportStore";
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
@@ -22,9 +22,9 @@ import { storage } from "@/storage/storage";
 import { appLogger } from "@/utils/appLogger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    AuditExtraProductDetails,
-    AuditReportFields,
-    AuditScanItem,
+  AuditExtraProductDetails,
+  AuditReportFields,
+  AuditScanItem,
 } from "../data/auditScanData";
 import { InventoryBarcodeScanDetail } from "../types/inventory";
 
@@ -346,6 +346,29 @@ function registerStagedLookup(
   });
 
   lookups.set(String(lookup.TagId), lookup);
+}
+
+function buildStagingListFromTagIds(
+  tagIds: string[],
+  stagedLookups: Map<string, StagedAssetLookup>,
+  warehouseId: number
+): AssetWarehouseStagingItem[] {
+  return tagIds.map((tagId) => {
+    const stagedLookup = stagedLookups.get(tagId);
+
+    if (stagedLookup) {
+      return {
+        ...stagedLookup,
+        WareHouseId: warehouseId,
+      };
+    }
+
+    return {
+      TagId: tagId,
+      ProductId: 0,
+      WareHouseId: warehouseId,
+    };
+  });
 }
 
 function getComparisonAssetTagId(
@@ -1272,6 +1295,7 @@ export function useAuditScanState() {
   const [isPausingAudit, setIsPausingAudit] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
+  const scannedValueTypesRef = useRef(new Map<string, "barcode" | "tag">());
   const lookupQueueRef = useRef<InventoryLookupQueueJob[]>([]);
   const activeLookupCountRef = useRef(0);
   const stagedLookupsRef = useRef(new Map<string, StagedAssetLookup>());
@@ -1344,6 +1368,27 @@ export function useAuditScanState() {
 
     if (pendingLookup) {
       return pendingLookup;
+    }
+
+    if (!scannedValueTypesRef.current.has(tagId)) {
+      void apiService.classifyBarcodeOrTagNumbers([tagId])
+        .then(({ barcodeNumbers }) => {
+          const scannedValueType = barcodeNumbers.includes(tagId)
+            ? "barcode"
+            : "tag";
+
+          scannedValueTypesRef.current.set(tagId, scannedValueType);
+          appLogger.info("AuditScan", "Scanned value classified.", {
+            tagId,
+            scannedValueType,
+          });
+        })
+        .catch((error) => {
+          appLogger.warn("AuditScan", "Unable to classify scanned value.", {
+            tagId,
+            error,
+          });
+        });
     }
 
     const lookupPromise = enqueueInventoryLookup(tagId)
@@ -1593,6 +1638,7 @@ export function useAuditScanState() {
     activeLookupCountRef.current = 0;
     itemCacheRef.current.clear();
     pendingLookupsRef.current.clear();
+    scannedValueTypesRef.current.clear();
     apiService.clearWarehouseIdAccessByTagCache();
     stagedLookupsRef.current.clear();
     latestReportRef.current = null;
@@ -2236,7 +2282,7 @@ export function useAuditScanState() {
       return;
     }
 
-    const tagIds = Array.from(new Set(liveItems.map((item) => item.id)));
+    const scannedValues = Array.from(new Set(liveItems.map((item) => item.id)));
     const warehouseId = parseNumericId(auditWarehouseId);
     const sessionId = auditApiSessionId ?? createAuditSessionId();
 
@@ -2245,8 +2291,8 @@ export function useAuditScanState() {
       return;
     }
 
-    const pendingLookups = tagIds.flatMap((tagId) => {
-      const pendingLookup = pendingLookupsRef.current.get(tagId);
+    const pendingLookups = scannedValues.flatMap((value) => {
+      const pendingLookup = pendingLookupsRef.current.get(value);
       return pendingLookup ? [pendingLookup] : [];
     });
 
@@ -2254,28 +2300,36 @@ export function useAuditScanState() {
       await Promise.all(pendingLookups);
     }
 
-    const stagingList = tagIds.map((tagId) => {
-      const stagedLookup = stagedLookupsRef.current.get(tagId);
-
-      if (stagedLookup) {
-        return {
-          ...stagedLookup,
-          WareHouseId: warehouseId,
-        };
-      }
-
-      return {
-        TagId: tagId,
-        ProductId: 0,
-        WareHouseId: warehouseId,
-      };
-    });
-    const snapshotItems = buildSnapshotItems(tagIds, liveItems);
-
     setIsPausingAudit(true);
     setSubmitError(null);
 
     try {
+      const { tagIds, barcodeNumbers } =
+        await apiService.classifyBarcodeOrTagNumbers(scannedValues);
+
+      if (tagIds.length === 0) {
+        setSubmitError(
+          barcodeNumbers.length > 0
+            ? "Barcode submit API is not available yet. No tag ids were found to pause."
+            : "No tag ids were found to pause."
+        );
+        return;
+      }
+
+      if (barcodeNumbers.length > 0) {
+        appLogger.info("AuditScan", "Barcode values were classified separately during pause.", {
+          barcodeNumbers,
+          tagIds,
+        });
+      }
+
+      const stagingList = buildStagingListFromTagIds(
+        tagIds,
+        stagedLookupsRef.current,
+        warehouseId
+      );
+      const snapshotItems = buildSnapshotItems(tagIds, liveItems);
+
       if (!auditApiSessionId) {
         setAuditApiSessionId(sessionId);
       }
@@ -2309,7 +2363,7 @@ export function useAuditScanState() {
       appLogger.error("AuditScan", "Pause audit failed.", {
         warehouseId,
         sessionId,
-        tagIds,
+        scannedValues,
         error,
       });
     } finally {
@@ -2345,13 +2399,13 @@ export function useAuditScanState() {
       return;
     }
 
-    const tagIds = canRetry || auditPhase === "paused"
+    const scannedValues = canRetry || auditPhase === "paused"
       ? submittedTagIds.length > 0
         ? submittedTagIds
         : Array.from(new Set(frozenItems.map((item) => item.id)))
       : Array.from(new Set(liveItems.map((item) => item.id)));
 
-    if (tagIds.length === 0) {
+    if (scannedValues.length === 0) {
       setSubmitError("No scanned tags are available to submit yet.");
       appLogger.warn("AuditScan", "Submit blocked because no scanned tags were captured for the staging payload.");
       return;
@@ -2376,13 +2430,57 @@ export function useAuditScanState() {
       ? []
       : canRetry
         ? []
-        : tagIds.flatMap((tagId) => {
-            const pendingLookup = pendingLookupsRef.current.get(tagId);
+        : scannedValues.flatMap((value) => {
+            const pendingLookup = pendingLookupsRef.current.get(value);
             return pendingLookup ? [pendingLookup] : [];
           });
 
     if (pendingLookups.length > 0) {
       await Promise.all(pendingLookups);
+    }
+
+    let tagIds = scannedValues;
+    let barcodeNumbers: string[] = [];
+    const shouldClassifyScannedValues =
+      !canRetry && !(auditPhase === "paused" && submittedStagingList.length > 0);
+
+    if (shouldClassifyScannedValues) {
+      try {
+        const classification =
+          await apiService.classifyBarcodeOrTagNumbers(scannedValues);
+
+        tagIds = classification.tagIds;
+        barcodeNumbers = classification.barcodeNumbers;
+      } catch (error) {
+        setSubmitError("Unable to classify scanned values as tag ids or barcodes.");
+        appLogger.error("AuditScan", "Barcode/tag classification failed before submit.", {
+          warehouseId,
+          scannedValues,
+          error,
+        });
+        return;
+      }
+    }
+
+    if (tagIds.length === 0) {
+      setSubmitError(
+        barcodeNumbers.length > 0
+          ? "Barcode submit API is not available yet. No tag ids were found to submit."
+          : "No tag ids are available to submit."
+      );
+      appLogger.warn("AuditScan", "Submit blocked because no classified tag ids were available.", {
+        warehouseId,
+        scannedValues,
+        barcodeNumbers,
+      });
+      return;
+    }
+
+    if (barcodeNumbers.length > 0) {
+      appLogger.info("AuditScan", "Barcode values were classified separately during submit.", {
+        barcodeNumbers,
+        tagIds,
+      });
     }
 
     const matchedTagIds =
@@ -2400,23 +2498,11 @@ export function useAuditScanState() {
       ? submittedStagingList
       : auditPhase === "paused" && submittedStagingList.length > 0
         ? submittedStagingList
-        : tagIds.map((tagId) => {
-          const stagedLookup = stagedLookupsRef.current.get(tagId);
-
-          if (stagedLookup) {
-            return {
-              ...stagedLookup,
-              WareHouseId: warehouseId,
-            };
-          }
-
-          // For unmatched tags, create a staging entry with ProductId: 0
-          return {
-            TagId: tagId,
-            ProductId: 0,
-            WareHouseId: warehouseId,
-          };
-        });
+        : buildStagingListFromTagIds(
+          tagIds,
+          stagedLookupsRef.current,
+          warehouseId
+        );
 
     if (stagingList.length === 0) {
       const message = "No scanned tags are available to submit.";
@@ -2428,6 +2514,7 @@ export function useAuditScanState() {
         {
           warehouseId,
           tagIds,
+          barcodeNumbers,
           stagedLookupKeys: Array.from(
             stagedLookupsRef.current.keys()
           ),
