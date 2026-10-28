@@ -59,14 +59,14 @@ function getDatewiseScanKey(
   item: Pick<DatewiseScanItem, "ProductId" | "TagId" | "ReferenceId">,
   fallbackKey: string
 ) {
-  if (item.ProductId !== 0) {
-    return `product:${item.ProductId}`;
-  }
-
   const tagId = item.TagId?.trim();
 
   if (tagId) {
     return `tag:${tagId}`;
+  }
+
+  if (item.ProductId !== 0) {
+    return `product:${item.ProductId}`;
   }
 
   const referenceId = item.ReferenceId?.trim();
@@ -78,13 +78,13 @@ function getDatewiseWarehouseKey(
   item: DatewiseScanItem["WarehouseAuditData"][number]["WarehouseData"][number],
   fallbackKey: string
 ) {
-  if (item.ProductId !== 0) {
-    return `product:${item.ProductId}`;
-  }
-
   const tagId = item.TagId?.trim();
 
-  return tagId ? `tag:${tagId}` : fallbackKey;
+  if (tagId) {
+    return `tag:${tagId}`;
+  }
+
+  return item.ProductId !== 0 ? `product:${item.ProductId}` : fallbackKey;
 }
 
 function computeDatewiseAuditItems(data: DatewiseScanItem[]): {
@@ -373,12 +373,6 @@ function isScannedWarehouseAuditItem(item: WarehouseDetailsApiItem) {
 }
 
 function getWarehouseComparisonKey(item: WarehouseDetailsApiItem, fallbackKey: string) {
-  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
-
-  if (productId && productId !== "0") {
-    return `product:${productId}`;
-  }
-
   const tagId = pickWarehouseReportString(item, [
     "TagId",
     "TAG_ID",
@@ -390,7 +384,12 @@ function getWarehouseComparisonKey(item: WarehouseDetailsApiItem, fallbackKey: s
     "ID",
   ]);
 
-  return tagId ? `tag:${tagId}` : fallbackKey;
+  if (tagId) {
+    return `tag:${tagId}`;
+  }
+
+  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
+  return productId && productId !== "0" ? `product:${productId}` : fallbackKey;
 }
 
 function uniqueWarehouseComparisonEntries(items: WarehouseDetailsApiItem[], source: string) {

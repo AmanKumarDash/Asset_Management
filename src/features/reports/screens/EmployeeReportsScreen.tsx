@@ -265,10 +265,6 @@ function getComparisonKey(
   const productId =
     rawProductId !== null && rawProductId !== 0 ? rawProductId : null;
 
-  if (productId !== null) {
-    return `product:${productId}`;
-  }
-
   const tagKey =
     getTagKey(asset.TagId) ??
     getTagKey(asset.ID) ??
@@ -276,6 +272,10 @@ function getComparisonKey(
 
   if (tagKey) {
     return `tag:${tagKey}`;
+  }
+
+  if (productId !== null) {
+    return `product:${productId}`;
   }
 
   return fallbackKey;

@@ -422,6 +422,17 @@ function getComparisonKey(
   asset: AuditComparisonAsset | StagedAssetLookup,
   fallbackKey: string
 ): string {
+  // A product can have multiple individually tagged units. Compare by tag first
+  // so each physical asset survives the report reconciliation independently.
+  const tagKey =
+    getTagKey((asset as AuditComparisonAsset).TagId) ??
+    getTagKey((asset as AuditComparisonAsset).ID) ??
+    pickString(asset as Record<string, unknown>, ["TAG_ID", "TagID", "tagId"]);
+
+  if (tagKey) {
+    return `tag:${tagKey}`;
+  }
+
   const rawProductId =
     parseNumericId((asset as AuditComparisonAsset).ProductId) ??
     parseNumericId((asset as AuditComparisonAsset).ProductID) ??
@@ -446,15 +457,6 @@ function getComparisonKey(
 
   if (productId !== null) {
     return `product:${productId}`;
-  }
-
-  const tagKey =
-    getTagKey((asset as AuditComparisonAsset).TagId) ??
-    getTagKey((asset as AuditComparisonAsset).ID) ??
-    pickString(asset as Record<string, unknown>, ["TAG_ID", "TagID", "tagId"]);
-
-  if (tagKey) {
-    return `tag:${tagKey}`;
   }
 
   return fallbackKey;
