@@ -727,6 +727,10 @@ function getWarehouseLocationId(location: WarehouseTagLocationItem): string | nu
 }
 
 function getWarehouseLabel(warehouseId: string, warehouseName?: string | null) {
+  if (parseNumericId(warehouseId) === 0) {
+    return "Not assigned to any warehouse";
+  }
+
   return warehouseName?.trim() || `Warehouse ${warehouseId}`;
 }
 
@@ -2786,7 +2790,6 @@ export function useAuditScanState() {
     isPreparingWarehouse,
   };
 }
-
 
 
 
