@@ -373,12 +373,6 @@ function isScannedWarehouseAuditItem(item: WarehouseDetailsApiItem) {
 }
 
 function getWarehouseComparisonKey(item: WarehouseDetailsApiItem, fallbackKey: string) {
-  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
-
-  if (productId && productId !== "0") {
-    return `product:${productId}`;
-  }
-
   const tagId = pickWarehouseReportString(item, [
     "TagId",
     "TAG_ID",
@@ -390,7 +384,12 @@ function getWarehouseComparisonKey(item: WarehouseDetailsApiItem, fallbackKey: s
     "ID",
   ]);
 
-  return tagId ? `tag:${tagId}` : fallbackKey;
+  if (tagId) {
+    return `tag:${tagId.toUpperCase()}`;
+  }
+
+  const productId = pickWarehouseReportString(item, ["ProductId", "ProductID", "productId"]);
+  return productId && productId !== "0" ? `product:${productId}` : fallbackKey;
 }
 
 function uniqueWarehouseComparisonEntries(items: WarehouseDetailsApiItem[], source: string) {
@@ -849,6 +848,7 @@ function SummaryCard({
           <SummaryLegendRow label="Found" value={report.summary.found} color="#467A13" />
           <SummaryLegendRow label="Missing" value={report.summary.missing} color="#E34D45" />
           <SummaryLegendRow label="Extra" value={report.summary.extra} color="#C47E17" />
+          <SummaryLegendRow label="Scanned" value={report.summary.scanned} color={adminTheme.primary} />
           <SummaryLegendRow label="Expected" value={expected} color="#D4D4D8" />
         </View>
       </View>
@@ -1035,7 +1035,10 @@ function AdminReportControls({
 
       <View className="mt-3 flex-row flex-wrap" style={{ gap: 8 }}>
         <Pressable
-          onPress={() => onChangeShowEmployeeReports(false)}
+          onPress={() => {
+            onChangeShowWarehouseReports(false);
+            onChangeShowEmployeeReports(false);
+          }}
           className="rounded-full border px-3 py-2"
           style={{
             borderColor:

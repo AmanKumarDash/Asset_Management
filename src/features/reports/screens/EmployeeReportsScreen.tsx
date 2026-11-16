@@ -258,6 +258,15 @@ function getComparisonKey(
   asset: AuditComparisonAsset,
   fallbackKey: string
 ): string {
+  const tagKey =
+    getTagKey(asset.TagId) ??
+    getTagKey(asset.ID) ??
+    pickString(asset, ["TAG_ID", "TagID", "tagId"]);
+
+  if (tagKey) {
+    return `tag:${tagKey.toUpperCase()}`;
+  }
+
   const rawProductId =
     parseNumericId(asset.ProductId) ??
     parseNumericId(asset.ProductID) ??
@@ -267,15 +276,6 @@ function getComparisonKey(
 
   if (productId !== null) {
     return `product:${productId}`;
-  }
-
-  const tagKey =
-    getTagKey(asset.TagId) ??
-    getTagKey(asset.ID) ??
-    pickString(asset, ["TAG_ID", "TagID", "tagId"]);
-
-  if (tagKey) {
-    return `tag:${tagKey}`;
   }
 
   return fallbackKey;
@@ -1066,10 +1066,28 @@ function buildEmployeeReports(
 
   return Array.from(groupedReports.entries())
     .map(([groupId, reportItems]) => {
-      const sortedItems = [...reportItems].sort((left, right) => {
+      const orderedItems = [...reportItems].sort((left, right) => {
         const leftTime = new Date(left.ScanningDate ?? "").getTime() || 0;
         const rightTime = new Date(right.ScanningDate ?? "").getTime() || 0;
         return rightTime - leftTime;
+      });
+      const seenReportTags = new Set<string>();
+      const sortedItems = orderedItems.filter((item, index) => {
+        const currentReferenceId = resolveReferenceId(item, index);
+        const tagId = String(item.TagId ?? "").trim().toUpperCase();
+
+        if (!tagId) {
+          return true;
+        }
+
+        const key = `${currentReferenceId}:tag:${tagId}`;
+
+        if (seenReportTags.has(key)) {
+          return false;
+        }
+
+        seenReportTags.add(key);
+        return true;
       });
 
       const latestItem = sortedItems[0];

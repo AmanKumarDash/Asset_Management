@@ -7,8 +7,7 @@ import {
   Platform,
   ScrollView,
   Text,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import AuthButton from "../components/AuthButton";
 import AuthCard from "../components/AuthCard";
@@ -96,9 +95,9 @@ export default function LoginScreen() {
               setShowPassword={setShowPassword}
             />
 
-            <TouchableOpacity className="mb-4 items-end">
+            {/* <TouchableOpacity className="mb-4 items-end">
               <Text className="text-sm text-blue-600">Forgot password?</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
 
             <AuthButton
               title={isSubmitting ? "Signing In..." : "Sign In"}

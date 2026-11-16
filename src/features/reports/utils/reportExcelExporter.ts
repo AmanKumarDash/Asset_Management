@@ -175,10 +175,14 @@ function downloadExcelWeb(html: string, fileName: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = `${fileName}.xls`;
+  link.rel = "noopener";
+  link.style.display = "none";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  // Browsers may start reading the blob after click() returns. Revoking here
+  // can cancel the download before it begins, especially on mobile browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export async function generateAuditReportExcelFile(report: LatestAuditReport) {
@@ -206,6 +210,11 @@ export async function generateAuditReportExcelFile(report: LatestAuditReport) {
 }
 
 export async function exportAuditReportAsExcel(report: LatestAuditReport) {
+  if (Platform.OS === "web") {
+    downloadExcelWeb(buildExcelHtml(report), `Audit-Report-${Date.now()}`);
+    return;
+  }
+
   const attachment = await generateAuditReportExcelFile(report);
   const uri =
     typeof attachment === "object" && attachment && "uri" in attachment && typeof attachment.uri === "string"

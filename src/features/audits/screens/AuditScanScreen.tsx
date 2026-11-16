@@ -299,8 +299,20 @@ function CameraBarcodeFeed({
   onScanCode: (value: string, source: ScanSource) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
-  const lastCameraScanRef = useRef<{ value: string; scannedAt: number } | null>(null);
+  const scanArmedRef = useRef(true);
+  const [candidateValue, setCandidateValue] = useState<string | null>(null);
+  const [recentScan, setRecentScan] = useState<string | null>(null);
+  const [scanPaused, setScanPaused] = useState(false);
   const canShowCamera = isScanning && enabled && permission?.granted;
+
+  useEffect(() => {
+    if (!isScanning) {
+      scanArmedRef.current = true;
+      setCandidateValue(null);
+      setRecentScan(null);
+      setScanPaused(false);
+    }
+  }, [isScanning]);
 
   useEffect(() => {
     if (isScanning && enabled && permission?.granted === undefined) {
@@ -327,15 +339,27 @@ function CameraBarcodeFeed({
       return;
     }
 
-    const now = Date.now();
-    const lastScan = lastCameraScanRef.current;
-
-    if (lastScan && lastScan.value === value && now - lastScan.scannedAt < 1400) {
+    if (!scanArmedRef.current) {
       return;
     }
 
-    lastCameraScanRef.current = { value, scannedAt: now };
-    onScanCode(value, "camera");
+    scanArmedRef.current = false;
+    setCandidateValue(value);
+    setScanPaused(true);
+  };
+
+  const confirmCameraScan = () => {
+    if (!candidateValue) return;
+    onScanCode(candidateValue, "camera");
+    setRecentScan(candidateValue);
+    setCandidateValue(null);
+  };
+
+  const armNextCameraScan = () => {
+    setCandidateValue(null);
+    setRecentScan(null);
+    scanArmedRef.current = true;
+    setScanPaused(false);
   };
 
   return (
@@ -374,7 +398,7 @@ function CameraBarcodeFeed({
           <CameraView
             style={{ flex: 1 }}
             facing="back"
-            onBarcodeScanned={handleBarcodeScanned}
+            onBarcodeScanned={scanPaused ? undefined : handleBarcodeScanned}
             barcodeScannerSettings={{
               barcodeTypes: [
                 "aztec",
@@ -411,8 +435,37 @@ function CameraBarcodeFeed({
         )}
       </View>
 
+      {candidateValue ? (
+        <View className="mt-2 rounded-md p-3" style={{ backgroundColor: "#FFF1DB" }}>
+          <View className="flex-row items-center">
+            <Feather name="scan" size={16} color="#B97818" />
+            <Text numberOfLines={1} className="ml-2 flex-1 text-xs font-semibold" style={{ color: "#81500E" }}>
+              Detected: {candidateValue}
+            </Text>
+          </View>
+          <View className="mt-2 flex-row" style={{ gap: 8 }}>
+            <Pressable onPress={confirmCameraScan} className="rounded-md px-3 py-2" style={{ backgroundColor: adminTheme.primary }}>
+              <Text className="text-xs font-semibold text-white">Add to audit</Text>
+            </Pressable>
+            <Pressable onPress={armNextCameraScan} className="rounded-md border px-3 py-2" style={{ borderColor: adminTheme.border }}>
+              <Text className="text-xs font-semibold" style={{ color: adminTheme.slate }}>Discard / scan again</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : recentScan ? (
+        <View className="mt-2 flex-row items-center rounded-md px-3 py-2" style={{ backgroundColor: "#EAF5DB" }}>
+          <Feather name="check-circle" size={16} color="#4F7F1F" />
+          <Text numberOfLines={1} className="ml-2 flex-1 text-xs font-semibold" style={{ color: "#3F6419" }}>
+            Added to audit: {recentScan}
+          </Text>
+          <Pressable onPress={armNextCameraScan} className="ml-2 rounded-md px-2 py-1" style={{ backgroundColor: "#D8EBC0" }}>
+            <Text className="text-xs font-semibold" style={{ color: "#3F6419" }}>Scan next</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <Text className="mt-2 text-xs font-semibold" style={{ color: adminTheme.slate }}>
-        Point at a barcode to auto-capture
+        Point at a barcode, review the detected value, then add it to the audit.
       </Text>
     </View>
   );
@@ -1494,7 +1547,7 @@ function MobileAuditScan() {
             </View>
 
             <View className="mb-4">
-              <View className="flex-row items-center" style={{ gap: 10 }}>
+              <View className="flex-col" style={{ gap: 10 }}>
                 <View
                   className="flex-1 rounded-[14px] border px-3 py-2"
                   style={{
@@ -1512,10 +1565,10 @@ function MobileAuditScan() {
                   />
                 </View>
 
-                <View className="relative">
+                <View style={{ width: "100%" }}>
                   <Pressable
                     onPress={() => setStatusMenuOpen((current) => !current)}
-                    className="flex-row items-center rounded-[14px] border px-3 py-2"
+                    className="flex-row items-center justify-between rounded-[14px] border px-3 py-2"
                     style={{
                       borderColor: adminTheme.border,
                       backgroundColor: adminTheme.surface,
@@ -1536,7 +1589,7 @@ function MobileAuditScan() {
 
                   {statusMenuOpen ? (
                     <View
-                      className="absolute right-0 mt-2 w-44 rounded-[16px] border bg-white shadow"
+                      className="mt-2 w-full rounded-[16px] border bg-white"
                       style={{ borderColor: adminTheme.border }}
                     >
                       {(["all", "found", "missing", "extra"] as StatusFilter[]).map(

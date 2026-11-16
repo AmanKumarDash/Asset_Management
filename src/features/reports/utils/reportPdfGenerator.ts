@@ -436,6 +436,21 @@ export async function exportAuditReportAsPdf(
   auditedBy: string
 ) {
   try {
+    if (Platform.OS === "web") {
+      const printWindow = window.open("", "_blank");
+
+      if (!printWindow) {
+        throw new Error("The browser blocked the PDF print window.");
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(buildPdfHtml(report, auditedBy));
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.setTimeout(() => printWindow.print(), 500);
+      return;
+    }
+
     const attachment = await generateAuditReportPdfFile(report, auditedBy);
     const uri =
       typeof attachment === "object" && attachment && "uri" in attachment && typeof attachment.uri === "string"
