@@ -49,11 +49,12 @@
           "android": {
             "buildArchs": [
               "arm64-v8a"
-              
+
             ]
           }
         }
-      ]
+      ],
+      "expo-audio"
     ],
 
     "experiments": {

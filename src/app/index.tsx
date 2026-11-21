@@ -1,7 +1,8 @@
+import { useState } from "@/utils/appLogger";
 import BrandSplashScreen from "@/features/splash/screens/BrandSplashScreen";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 export default function Index() {
   const { isHydrated, isAuthenticated } = useAuthSession();

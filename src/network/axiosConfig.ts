@@ -22,7 +22,15 @@ const baseConfig = {
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  _diagnosticStartedAt?: number;
 };
+
+function getDiagnosticEndpoint(url?: string) {
+  return (url ?? "unknown")
+    .split("?")[0]
+    .replace(/\/[0-9]+(?=\/|$)/g, "/:id")
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, "/:id");
+}
 
 type RefreshTokenResponse = {
   token?: string;
@@ -120,6 +128,11 @@ async function refreshAccessToken() {
     }
 
     const refreshClient = axios.create(baseConfig);
+    const refreshStartedAt = Date.now();
+    appLogger.info("Network", "Token refresh request started.", {
+      method: "POST",
+      endpoint: getDiagnosticEndpoint(ENDPOINTS.AUTH.REFRESH),
+    });
     const response = await refreshClient.post<
       ApiEnvelope<RefreshTokenResponse> | RefreshTokenResponse
     >(ENDPOINTS.AUTH.REFRESH, null, {
@@ -144,6 +157,7 @@ async function refreshAccessToken() {
     setAccessToken(nextToken);
 
     appLogger.info("Network", "Access token refreshed successfully.", {
+      durationMs: Date.now() - refreshStartedAt,
       hasRefreshToken: Boolean(
         refreshedBundle.refreshToken ?? currentRefreshToken
       ),
@@ -196,6 +210,14 @@ export const axiosInstance = axios.create(baseConfig);
 
 // Inject the latest bearer token into every outgoing request when a session is active.
 axiosInstance.interceptors.request.use((config) => {
+  const diagnosticConfig = config as RetryableRequestConfig;
+  diagnosticConfig._diagnosticStartedAt = Date.now();
+  appLogger.info("Network", "API request started.", {
+    method: config.method?.toUpperCase() ?? "GET",
+    endpoint: getDiagnosticEndpoint(config.url),
+    retry: Boolean(diagnosticConfig._retry),
+  });
+
   const headers = AxiosHeaders.from(config.headers);
 
   if (accessToken) {
@@ -207,7 +229,19 @@ axiosInstance.interceptors.request.use((config) => {
 });
 
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const config = response.config as RetryableRequestConfig;
+    appLogger.info("Network", "API request completed.", {
+      method: config.method?.toUpperCase() ?? "GET",
+      endpoint: getDiagnosticEndpoint(config.url),
+      status: response.status,
+      durationMs: config._diagnosticStartedAt
+        ? Date.now() - config._diagnosticStartedAt
+        : undefined,
+      retry: Boolean(config._retry),
+    });
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config as RetryableRequestConfig | undefined;
     const requestUrl = originalRequest?.url ?? "";
@@ -217,6 +251,16 @@ axiosInstance.interceptors.response.use(
       !originalRequest?._retry &&
       !requestUrl.includes(ENDPOINTS.AUTH.LOGIN) &&
       !requestUrl.includes(ENDPOINTS.AUTH.REFRESH);
+
+    appLogger.warn("Network", "API request received an error response.", {
+      endpoint: getDiagnosticEndpoint(originalRequest?.url),
+      method: originalRequest?.method?.toUpperCase() ?? "UNKNOWN",
+      status: error.response?.status ?? "network",
+      durationMs: originalRequest?._diagnosticStartedAt
+        ? Date.now() - originalRequest._diagnosticStartedAt
+        : undefined,
+      willRefreshToken: shouldAttemptRefresh,
+    });
 
     // Retry once after refresh for normal protected endpoints, but never loop on login/refresh calls.
     if (shouldAttemptRefresh && originalRequest) {
@@ -234,10 +278,14 @@ axiosInstance.interceptors.response.use(
     }
 
     appLogger.error("Network", "API request failed.", {
-      url: error.config?.url,
+      endpoint: getDiagnosticEndpoint(error.config?.url),
       method: error.config?.method,
       status: error.response?.status ?? "network",
       message: error.message,
+      durationMs: originalRequest?._diagnosticStartedAt
+        ? Date.now() - originalRequest._diagnosticStartedAt
+        : undefined,
+      retry: Boolean(originalRequest?._retry),
     });
 
     return Promise.reject(error);

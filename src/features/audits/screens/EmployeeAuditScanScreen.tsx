@@ -1,9 +1,10 @@
+import { useState } from "@/utils/appLogger";
 ﻿import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
 import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { Href, router } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
   Easing,

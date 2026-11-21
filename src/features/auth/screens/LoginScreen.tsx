@@ -1,7 +1,7 @@
-import { appLogger } from "@/utils/appLogger";
+import { appLogger, useState } from "@/utils/appLogger";
 import { Feather } from "@expo/vector-icons";
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+
 import {
   KeyboardAvoidingView,
   Platform,

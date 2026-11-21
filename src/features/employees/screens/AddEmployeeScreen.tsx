@@ -1,3 +1,4 @@
+import { useState } from "@/utils/appLogger";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { OrganizationAddress } from "@/models/organization";
 import { WarehouseSummary } from "@/models/warehouse";
@@ -12,7 +13,7 @@ import { getApiErrorMessage } from "@/network/responses";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   ActivityIndicator,
   Pressable,

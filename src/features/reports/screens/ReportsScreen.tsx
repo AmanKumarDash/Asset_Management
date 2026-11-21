@@ -1,3 +1,4 @@
+import { useState } from "@/utils/appLogger";
 import { AuditItemTone, AuditScanItem } from "@/features/audits/data/auditScanData";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import {
@@ -17,7 +18,7 @@ import {
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,

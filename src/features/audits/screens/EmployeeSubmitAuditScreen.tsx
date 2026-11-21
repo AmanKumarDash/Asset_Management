@@ -1,6 +1,7 @@
+import { useState } from "@/utils/appLogger";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import {
   employeeMismatchPreview,

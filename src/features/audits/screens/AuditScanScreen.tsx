@@ -1,3 +1,4 @@
+import { useState } from "@/utils/appLogger";
 import AuditSetupPanel from "@/features/audits/components/AuditSetupPanel";
 import { useAuditSetup } from "@/features/audits/hooks/useAuditSetup";
 import { AuditPhase } from "@/features/audits/types/audit";
@@ -5,11 +6,13 @@ import { WarehouseSummary } from "@/models/warehouse";
 import { MqttConnectionStatus } from "@/network/mqttService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
-import { ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentProps, useEffect, useMemo, useRef } from "react";
 import {
   Pressable,
   ScrollView,
+  Modal,
   Text,
   TextInput,
   View,
@@ -299,11 +302,16 @@ function CameraBarcodeFeed({
   onScanCode: (value: string, source: ScanSource) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
+  const scanBeepPlayer = useAudioPlayer(require("../../../../assets/sounds/scan-beep.wav"));
   const scanArmedRef = useRef(true);
   const [candidateValue, setCandidateValue] = useState<string | null>(null);
   const [recentScan, setRecentScan] = useState<string | null>(null);
   const [scanPaused, setScanPaused] = useState(false);
   const canShowCamera = isScanning && enabled && permission?.granted;
+
+  useEffect(() => {
+    void setAudioModeAsync({ playsInSilentMode: true });
+  }, []);
 
   useEffect(() => {
     if (!isScanning) {
@@ -344,6 +352,10 @@ function CameraBarcodeFeed({
     }
 
     scanArmedRef.current = false;
+    void scanBeepPlayer
+      .seekTo(0)
+      .then(() => scanBeepPlayer.play())
+      .catch(() => undefined);
     setCandidateValue(value);
     setScanPaused(true);
   };
@@ -687,7 +699,7 @@ function MultiSourceScanWorkspace({
               {phase === "idle"
                 ? "Start multi-source scan"
                 : phase === "paused"
-                  ? "Resume scan"
+                  ? "Start multi-source scan"
                   : "Start new scan"}
             </Text>
           </Pressable>
@@ -1159,6 +1171,99 @@ function PauseActionButton({
   );
 }
 
+function RestartAuditActionButton({
+  phase,
+  isRestarting,
+  isPausing,
+  onRestartAudit,
+  mobile = false,
+}: {
+  phase: AuditPhase;
+  isRestarting: boolean;
+  isPausing: boolean;
+  onRestartAudit: () => Promise<boolean>;
+  mobile?: boolean;
+}) {
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+
+  if (phase !== "paused" && phase !== "scanning") {
+    return null;
+  }
+
+  const confirmRestart = async () => {
+    await onRestartAudit();
+    setConfirmationOpen(false);
+  };
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setConfirmationOpen(true)}
+        disabled={isRestarting || isPausing}
+        className={`items-center rounded-[14px] border ${mobile ? "px-5 py-4" : "px-4 py-4"}`}
+        style={{
+          borderColor: adminTheme.border,
+          backgroundColor: adminTheme.surface,
+          opacity: isRestarting || isPausing ? 0.6 : 1,
+        }}
+      >
+        <Text className={`${mobile ? "text-base" : "text-[16px]"} font-semibold`} style={{ color: adminTheme.slate }}>
+          Restart scan
+        </Text>
+      </Pressable>
+
+      <Modal
+        visible={confirmationOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmationOpen(false)}
+      >
+        <View
+          className="flex-1 items-center justify-center px-6"
+          style={{ backgroundColor: "rgba(15, 23, 42, 0.48)" }}
+        >
+          <View
+            className="w-full rounded-[16px] p-5"
+            style={{ maxWidth: 420, backgroundColor: adminTheme.surface }}
+          >
+            <Text className="text-lg font-semibold" style={{ color: adminTheme.slate }}>
+              Restart this scan?
+            </Text>
+            <Text className="mt-2 text-sm" style={{ color: adminTheme.slateSoft }}>
+              The saved scan progress for this warehouse will be cleared and a new scan session will start.
+            </Text>
+            <View className="mt-5 flex-row justify-end" style={{ gap: 10 }}>
+              <Pressable
+                onPress={() => setConfirmationOpen(false)}
+                disabled={isRestarting || isPausing}
+                className="rounded-[8px] border px-4 py-3"
+                style={{ borderColor: adminTheme.border, backgroundColor: adminTheme.surface }}
+              >
+                <Text className="text-sm font-semibold" style={{ color: adminTheme.slate }}>
+                  Keep paused
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void confirmRestart()}
+                disabled={isRestarting || isPausing}
+                className="rounded-[8px] px-4 py-3"
+                style={{
+                  backgroundColor: adminTheme.primary,
+                  opacity: isRestarting || isPausing ? 0.6 : 1,
+                }}
+              >
+                <Text className="text-sm font-semibold text-white">
+                  {isRestarting ? "Restarting..." : "Restart scan"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 function ProceedNextWarehouseButton({
   show,
   onProceed,
@@ -1203,8 +1308,10 @@ function DesktopProgressCard({
   canSubmit,
   canPause,
   isPausingAudit,
+  isRestartingAudit,
   totalAssets,
   onPauseAudit,
+  onRestartAudit,
   onSubmitAudit,
   hasNextWarehouse,
   onProceedNextWarehouse,
@@ -1217,8 +1324,10 @@ function DesktopProgressCard({
   canSubmit: boolean;
   canPause: boolean;
   isPausingAudit: boolean;
+  isRestartingAudit: boolean;
   totalAssets: number;
   onPauseAudit: () => void;
+  onRestartAudit: () => Promise<boolean>;
   onSubmitAudit: () => void;
   hasNextWarehouse: boolean;
   onProceedNextWarehouse: () => void;
@@ -1294,6 +1403,16 @@ function DesktopProgressCard({
           isPausing={isPausingAudit}
           onPauseAudit={onPauseAudit}
         />
+        {phase === "paused" || phase === "scanning" ? (
+          <View className="mt-3">
+            <RestartAuditActionButton
+              phase={phase}
+              isRestarting={isRestartingAudit}
+              isPausing={isPausingAudit}
+              onRestartAudit={onRestartAudit}
+            />
+          </View>
+        ) : null}
         <View className="mt-3" />
         <SubmitActionButton
           phase={phase}
@@ -1371,10 +1490,13 @@ function MobileAuditScan() {
     canSubmit,
     canPause,
     isPausingAudit,
+    isRestartingAudit,
     submitError,
     connectionStatus,
     prepareMultiWarehouseAudit,
     startAudit,
+    restartAudit,
+    auditMqttMachineId,
     scanAssetCode,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
@@ -1403,6 +1525,16 @@ function MobileAuditScan() {
     error,
     refreshSetup,
   } = useAuditSetup();
+  useEffect(() => {
+    if (
+      auditPhase === "paused" &&
+      auditMqttMachineId &&
+      rfidMachines.some((machine) => machine.id === auditMqttMachineId) &&
+      selectedMachineId !== auditMqttMachineId
+    ) {
+      setSelectedMachineId(auditMqttMachineId);
+    }
+  }, [auditMqttMachineId, auditPhase, rfidMachines, selectedMachineId, setSelectedMachineId]);
   const selectionLocked =
     auditPhase === "scanning" ||
     auditPhase === "paused" ||
@@ -1420,6 +1552,11 @@ function MobileAuditScan() {
   );
   const canPrepareAudit =
     selectedWarehouseIds.length > 0 && Boolean(selectedMachine) && !isPreparingWarehouse;
+  const restartAuditWithSelectedMachine = () => {
+    const targetMachineId = auditMqttMachineId ?? selectedMachine?.id ?? null;
+    const targetMachine = rfidMachines.find((machine) => machine.id === targetMachineId);
+    return restartAudit(targetMachineId, targetMachine?.topic ?? null);
+  };
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -1522,7 +1659,7 @@ function MobileAuditScan() {
               connectionStatus={connectionStatus}
               onStartAudit={() => {
                 if (activeWarehouseId) {
-                  startAudit(activeWarehouseId, selectedMachine?.topic);
+                  startAudit(activeWarehouseId, selectedMachine?.topic, selectedMachine?.id);
                 }
               }}
               submitError={submitError}
@@ -1675,6 +1812,17 @@ function MobileAuditScan() {
               onPauseAudit={pauseAudit}
               mobile
             />
+            {auditPhase === "paused" || auditPhase === "scanning" ? (
+              <View className="mt-3">
+                <RestartAuditActionButton
+                  phase={auditPhase}
+                  isRestarting={isRestartingAudit}
+                  isPausing={isPausingAudit}
+                  onRestartAudit={restartAuditWithSelectedMachine}
+                  mobile
+                />
+              </View>
+            ) : null}
             <ProceedNextWarehouseButton
               show={auditPhase === "submitted" && hasNextWarehouse}
               onProceed={proceedToNextWarehouse}
@@ -1704,10 +1852,13 @@ function DesktopAuditScan({ width }: { width: number }) {
     canSubmit,
     canPause,
     isPausingAudit,
+    isRestartingAudit,
     submitError,
     connectionStatus,
     prepareMultiWarehouseAudit,
     startAudit,
+    restartAudit,
+    auditMqttMachineId,
     scanAssetCode,
     loadExtraTagProductDetails,
     saveExtraTagProductDetails,
@@ -1736,6 +1887,16 @@ function DesktopAuditScan({ width }: { width: number }) {
     error,
     refreshSetup,
   } = useAuditSetup();
+  useEffect(() => {
+    if (
+      auditPhase === "paused" &&
+      auditMqttMachineId &&
+      rfidMachines.some((machine) => machine.id === auditMqttMachineId) &&
+      selectedMachineId !== auditMqttMachineId
+    ) {
+      setSelectedMachineId(auditMqttMachineId);
+    }
+  }, [auditMqttMachineId, auditPhase, rfidMachines, selectedMachineId, setSelectedMachineId]);
   const twoColumn = width >= 1340;
   const selectionLocked =
     auditPhase === "scanning" ||
@@ -1754,6 +1915,11 @@ function DesktopAuditScan({ width }: { width: number }) {
   );
   const canPrepareAudit =
     selectedWarehouseIds.length > 0 && Boolean(selectedMachine) && !isPreparingWarehouse;
+  const restartAuditWithSelectedMachine = () => {
+    const targetMachineId = auditMqttMachineId ?? selectedMachine?.id ?? null;
+    const targetMachine = rfidMachines.find((machine) => machine.id === targetMachineId);
+    return restartAudit(targetMachineId, targetMachine?.topic ?? null);
+  };
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -1876,7 +2042,7 @@ function DesktopAuditScan({ width }: { width: number }) {
                 connectionStatus={connectionStatus}
                 onStartAudit={() => {
                   if (activeWarehouseId) {
-                    startAudit(activeWarehouseId, selectedMachine?.topic);
+                    startAudit(activeWarehouseId, selectedMachine?.topic, selectedMachine?.id);
                   }
                 }}
                 submitError={submitError}
@@ -1898,8 +2064,10 @@ function DesktopAuditScan({ width }: { width: number }) {
                 canSubmit={canSubmit}
                 canPause={canPause}
                 isPausingAudit={isPausingAudit}
+                isRestartingAudit={isRestartingAudit}
                 totalAssets={totalAssets}
                 onPauseAudit={pauseAudit}
+                onRestartAudit={restartAuditWithSelectedMachine}
                 onSubmitAudit={submitAudit}
                 hasNextWarehouse={hasNextWarehouse}
                 onProceedNextWarehouse={proceedToNextWarehouse}

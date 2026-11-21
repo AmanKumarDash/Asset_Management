@@ -1,10 +1,11 @@
+import { useState } from "@/utils/appLogger";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { UserDetails, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { Href, router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   GestureResponderEvent,

@@ -1,4 +1,5 @@
-import { ReactNode, useState } from "react";
+import { useState } from "@/utils/appLogger";
+import { ReactNode } from "react";
 import { View, useWindowDimensions } from "react-native";
 import { usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";

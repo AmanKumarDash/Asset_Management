@@ -19,8 +19,8 @@ import {
 import { apiService } from "@/network/ApiService";
 import mqttService, { MqttConnectionStatus } from "@/network/mqttService";
 import { storage } from "@/storage/storage";
-import { appLogger } from "@/utils/appLogger";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { appLogger, useState } from "@/utils/appLogger";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   AuditExtraProductDetails,
   AuditReportFields,
@@ -37,6 +37,7 @@ type WarehouseAuditSelection = {
 type PausedAuditSnapshot = {
   warehouseId: string;
   sessionId: string;
+  machineId?: string | null;
   tagIds: string[];
   stagingList: AssetWarehouseStagingItem[];
   items: AuditScanItem[];
@@ -1266,6 +1267,7 @@ export function useAuditScanState() {
   const [auditWarehouseId, setAuditWarehouseId] = useState<string | null>(null);
   const [auditWarehouseIds, setAuditWarehouseIds] = useState<string[]>([]);
   const [auditMqttTopic, setAuditMqttTopic] = useState<string | null>(null);
+  const [auditMqttMachineId, setAuditMqttMachineId] = useState<string | null>(null);
   const [auditApiSessionId, setAuditApiSessionId] = useState<string | null>(null);
   const [activeWarehouseIndex, setActiveWarehouseIndex] = useState(0);
   const [pendingMissingItems, setPendingMissingItems] = useState<
@@ -1277,6 +1279,7 @@ export function useAuditScanState() {
   const [expectedAssetCount, setExpectedAssetCount] = useState(0);
   const [isPreparingWarehouse, setIsPreparingWarehouse] = useState(false);
   const [isPausingAudit, setIsPausingAudit] = useState(false);
+  const [isRestartingAudit, setIsRestartingAudit] = useState(false);
   const itemCacheRef = useRef(new Map<string, AuditScanItem>());
   const pendingLookupsRef = useRef(new Map<string, Promise<AuditScanItem>>());
   const scannedValueTypesRef = useRef(new Map<string, "barcode" | "tag">());
@@ -1638,6 +1641,7 @@ export function useAuditScanState() {
     setSubmittedReferenceId(null);
     setReportSummary({ found: 0, missing: 0, extra: 0, scanned: 0 });
     setExpectedAssetCount(0);
+    setAuditMqttMachineId(null);
     expectedTagIdsRef.current = new Set<string>();
     setSubmitError(null);
     setConnectionStatus("idle");
@@ -1671,6 +1675,7 @@ export function useAuditScanState() {
     setSubmittedMatchedTagIds(snapshot.tagIds);
     setSubmittedStagingList(snapshot.stagingList);
     setAuditApiSessionId(snapshot.sessionId);
+    setAuditMqttMachineId(snapshot.machineId ?? null);
     setExpectedAssetCount(snapshot.expectedAssetCount);
     setSubmitError(null);
     setConnectionStatus("idle");
@@ -1822,7 +1827,11 @@ export function useAuditScanState() {
   // Begins a new audit session only after a warehouse is chosen so scanning is always tied to a location.
   // We snapshot the current expectedAssetCount before clearScanSession wipes it to zero, then restore it
   // immediately so the progress card denominator stays correct once MQTT scanning begins.
-  const startAudit = useCallback(async (warehouseId?: string, mqttTopic?: string | null) => {
+  const startAudit = useCallback(async (
+    warehouseId?: string,
+    mqttTopic?: string | null,
+    machineId?: string | null
+  ) => {
     if (!warehouseId || isPreparingWarehouse) {
       return;
     }
@@ -1897,6 +1906,7 @@ export function useAuditScanState() {
 
     setAuditWarehouseId(warehouseId);
     setAuditMqttTopic(normalizedMqttTopic);
+    setAuditMqttMachineId(machineId?.trim() || auditMqttMachineId || null);
     setAuditWarehouseIds((current) => (current.length > 0 ? current : [warehouseId]));
     setAuditApiSessionId((current) =>
       current && auditPhase !== "submitted" ? current : nextAuditSessionId
@@ -1908,11 +1918,91 @@ export function useAuditScanState() {
   }, [
     auditApiSessionId,
     auditPhase,
+    auditMqttMachineId,
     clearScanSession,
     expectedAssetCount,
     frozenItems,
     isPreparingWarehouse,
     submittedStagingList,
+  ]);
+
+  const restartAudit = useCallback(async (
+    machineId?: string | null,
+    mqttTopic?: string | null
+  ) => {
+    if (
+      (auditPhase !== "paused" && auditPhase !== "scanning") ||
+      isRestartingAudit ||
+      isPausingAudit ||
+      !auditWarehouseId
+    ) {
+      return false;
+    }
+
+    const normalizedMachineId = machineId?.trim() || auditMqttMachineId || null;
+    const normalizedMqttTopic = mqttTopic?.trim();
+
+    if (auditMqttMachineId && normalizedMachineId !== auditMqttMachineId) {
+      setSubmitError("This audit belongs to a different RFID machine. Select the original machine to restart it.");
+      return false;
+    }
+
+    if (!normalizedMqttTopic) {
+      setSubmitError(
+        auditMqttMachineId
+          ? "The RFID machine used for this audit is unavailable. Select that machine to restart the scan."
+          : "Select an RFID machine before restarting the audit."
+      );
+      return false;
+    }
+
+    const currentExpectedCount = expectedAssetCount;
+    const currentExpectedTagIds = new Set(expectedTagIdsRef.current);
+    const nextAuditSessionId = createAuditSessionId();
+    const wasScanning = auditPhase === "scanning";
+
+    setIsRestartingAudit(true);
+    setSubmitError(null);
+
+    try {
+      await removePausedAuditSnapshot(user?.employeeId, auditWarehouseId);
+      clearScanSession(wasScanning ? "idle" : "scanning");
+      expectedTagIdsRef.current = currentExpectedTagIds;
+      setAuditApiSessionId(nextAuditSessionId);
+      setAuditWarehouseId(auditWarehouseId);
+      setAuditMqttMachineId(normalizedMachineId);
+      setAuditMqttTopic(normalizedMqttTopic);
+      setExpectedAssetCount(currentExpectedCount);
+
+      if (wasScanning) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        setAuditPhase("scanning");
+      }
+
+      appLogger.info("AuditScan", "Restarted paused audit with a fresh scan session.", {
+        warehouseId: auditWarehouseId,
+        sessionId: nextAuditSessionId,
+      });
+      return true;
+    } catch (error) {
+      setSubmitError("Unable to restart this audit right now. Please try again.");
+      appLogger.error("AuditScan", "Restarting paused audit failed.", {
+        warehouseId: auditWarehouseId,
+        error,
+      });
+      return false;
+    } finally {
+      setIsRestartingAudit(false);
+    }
+  }, [
+    auditMqttMachineId,
+    auditPhase,
+    auditWarehouseId,
+    clearScanSession,
+    expectedAssetCount,
+    isPausingAudit,
+    isRestartingAudit,
+    user?.employeeId,
   ]);
 
   const scanAssetCode = useCallback((
@@ -2322,6 +2412,7 @@ export function useAuditScanState() {
       await savePausedAuditSnapshot(user?.employeeId, {
         warehouseId: auditWarehouseId,
         sessionId,
+        machineId: auditMqttMachineId,
         tagIds,
         stagingList,
         items: snapshotItems,
@@ -2356,6 +2447,7 @@ export function useAuditScanState() {
   }, [
     auditApiSessionId,
     auditPhase,
+    auditMqttMachineId,
     auditWarehouseId,
     expectedAssetCount,
     isPausingAudit,
@@ -2742,6 +2834,7 @@ export function useAuditScanState() {
     canSubmit,
     canPause,
     isPausingAudit,
+    isRestartingAudit,
     submitError,
     connectionStatus,
     manualAssetId,
@@ -2749,6 +2842,7 @@ export function useAuditScanState() {
     prepareWarehouseAudit,
     prepareMultiWarehouseAudit,
     startAudit,
+    restartAudit,
     scanAssetCode,
     addManualAsset,
     loadExtraTagProductDetails,
@@ -2759,6 +2853,7 @@ export function useAuditScanState() {
     resetAudit,
     summary,
     auditWarehouseId: activeAuditWarehouseId,
+    auditMqttMachineId,
     activeWarehouseIndex,
     auditWarehouseIds,
     hasNextWarehouse,

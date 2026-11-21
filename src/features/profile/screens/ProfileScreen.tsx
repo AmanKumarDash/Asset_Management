@@ -1,6 +1,7 @@
+import { useState } from "@/utils/appLogger";
 ﻿import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   ActivityIndicator,
   Pressable,

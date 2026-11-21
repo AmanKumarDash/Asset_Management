@@ -13,6 +13,7 @@ import { OrganizationDetails } from "@/models/organization";
 import { RfidMachineSummary } from "@/models/rfidMachine";
 import { AxiosInstance } from "axios";
 import { assertApiBaseUrlConfigured, axiosInstance } from "./axiosConfig";
+import { appLogger } from "@/utils/appLogger";
 import { ENDPOINTS } from "./endpoints";
 import {
   ApiCollectionEnvelope,
@@ -81,6 +82,33 @@ export type SendMailResponse = {
   success?: boolean;
   Message?: string;
 };
+
+async function withAuditApiLog<T>(
+  method: string,
+  metadata: Record<string, unknown>,
+  request: () => Promise<T>,
+  summarize?: (result: T) => Record<string, unknown>
+): Promise<T> {
+  const startedAt = Date.now();
+  appLogger.info("AuditAPI", `${method} request started.`, metadata);
+
+  try {
+    const result = await request();
+    appLogger.info("AuditAPI", `${method} request completed.`, {
+      ...metadata,
+      durationMs: Date.now() - startedAt,
+      ...summarize?.(result),
+    });
+    return result;
+  } catch (error) {
+    appLogger.error("AuditAPI", `${method} request failed.`, {
+      ...metadata,
+      durationMs: Date.now() - startedAt,
+      error,
+    });
+    throw error;
+  }
+}
 
 export type CreateUserRequest = {
   UserId?: string;
@@ -557,13 +585,33 @@ class ApiService {
       }
     }
 
-    const response = await fetch(`${API_BASE_URL}${ENDPOINTS.ACCOUNT.SEND_MAIL}`, {
+    const endpoint = ENDPOINTS.ACCOUNT.SEND_MAIL;
+    const startedAt = Date.now();
+    appLogger.info("Network", "API request started.", {
       method: "POST",
-      body: formData,
-      headers: {
-        Accept: "application/json",
-      },
+      endpoint,
+      operation: "sendMail",
     });
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Accept: "application/json",
+        },
+      });
+    } catch (error) {
+      appLogger.error("Network", "API request failed.", {
+        method: "POST",
+        endpoint,
+        operation: "sendMail",
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
 
     const data = (await response.json().catch(() => null)) as
       | SendMailResponse
@@ -576,8 +624,25 @@ class ApiService {
           ? data.Message
           : "Failed to send email.";
 
+      appLogger.error("Network", "API request failed.", {
+        method: "POST",
+        endpoint,
+        operation: "sendMail",
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        message,
+      });
+
       throw new Error(message);
     }
+
+    appLogger.info("Network", "API request completed.", {
+      method: "POST",
+      endpoint,
+      operation: "sendMail",
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+    });
 
     return {
       success: true,
@@ -1025,6 +1090,85 @@ class ApiService {
   }
 }
 
-export const apiService = new ApiService();
+function summarizeMethodArgument(value: unknown) {
+  if (value === null || value === undefined || typeof value === "boolean" || typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return `<string length=${value.length}>`;
+  }
+
+  if (Array.isArray(value)) {
+    return { type: "array", length: value.length };
+  }
+
+  if (typeof value === "object") {
+    return { type: value.constructor?.name ?? "object", keys: Object.keys(value).slice(0, 20) };
+  }
+
+  return typeof value;
+}
+
+const apiServiceInstance = new ApiService();
+
+// Logs every public API service method without printing credentials, scanned values, or request bodies.
+export const apiService = new Proxy(apiServiceInstance, {
+  get(target, property, receiver) {
+    const method = Reflect.get(target, property, receiver);
+
+    if (typeof method !== "function" || property === "constructor") {
+      return method;
+    }
+
+    return (...args: unknown[]) => {
+      const methodName = String(property);
+      const startedAt = Date.now();
+      appLogger.info("ApiService", "Method called.", {
+        method: methodName,
+        arguments: args.map(summarizeMethodArgument),
+      });
+
+      try {
+        const result = method.apply(target, args) as unknown;
+
+        if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+          return Promise.resolve(result).then(
+            (value) => {
+              appLogger.info("ApiService", "Method completed.", {
+                method: methodName,
+                durationMs: Date.now() - startedAt,
+              });
+              return value;
+            },
+            (error: unknown) => {
+              appLogger.error("ApiService", "Method failed.", {
+                method: methodName,
+                durationMs: Date.now() - startedAt,
+                errorName: error instanceof Error ? error.name : typeof error,
+                message: error instanceof Error ? error.message : "Unknown error",
+              });
+              throw error;
+            }
+          );
+        }
+
+        appLogger.info("ApiService", "Method completed.", {
+          method: methodName,
+          durationMs: Date.now() - startedAt,
+        });
+        return result;
+      } catch (error) {
+        appLogger.error("ApiService", "Method failed.", {
+          method: methodName,
+          durationMs: Date.now() - startedAt,
+          errorName: error instanceof Error ? error.name : typeof error,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+        throw error;
+      }
+    };
+  },
+});
 
 

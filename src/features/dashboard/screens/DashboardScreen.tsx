@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useState } from "@/utils/appLogger";
+import { useMemo } from "react";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import {

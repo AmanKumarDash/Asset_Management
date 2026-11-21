@@ -1,3 +1,4 @@
+import { useState } from "@/utils/appLogger";
 import {
   AuditReportFields,
   AuditScanItem,
@@ -22,7 +23,7 @@ import { EmployeeReportApiItem, apiService } from "@/network/ApiService";
 import { adminTheme } from "@/theme/adminTheme";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,

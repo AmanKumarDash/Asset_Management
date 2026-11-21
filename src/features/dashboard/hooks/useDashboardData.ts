@@ -1,3 +1,4 @@
+import { useState } from "@/utils/appLogger";
 import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
 import { UserDetails, apiService, EmployeeReportApiItem } from "@/network/ApiService";
 import {
@@ -5,7 +6,7 @@ import {
   AuditComparisonResponse,
 } from "@/features/audits/types/audit";
 import { WarehouseSummary } from "@/models/warehouse";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 export type DashboardPeriod = "daily" | "weekly" | "monthly";
 
